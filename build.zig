@@ -4,16 +4,24 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    var module = b.createModule(
+    // var module = b.createModule(
+    //     .{
+    //         .source_file = .{
+    //             .path = "src/main.zig",
+    //         },
+    //     },
+    // );
+
+    // try b.modules.put(b.dupe("datetime"), module);
+
+    b.addModule(
+        "datetime",
         .{
             .source_file = .{
                 .path = "src/main.zig",
             },
         },
     );
-
-    try b.modules.put(b.dupe("datetime"), module);
-
     const lib = b.addStaticLibrary(.{
         .name = "datetime",
         .root_source_file = .{ .path = "src/main.zig" },
