@@ -470,19 +470,14 @@ pub const tenthsPerNanoSecond = hundredthsPerNanoSecond * 10;
 pub const hundredthsPerNanoSecond = milliSecondsPerNanoSecond * 10;
 pub const milliSecondsPerNanoSecond = microSecondsPerNanoSecond * 1_000;
 pub const microSecondsPerNanoSecond = 1_000;
-pub const nanoSecondsPerSecond = microSecondsPerNanoSecond * 1_000;
+pub const nanoSecondsPerSecond = microSecondsPerSecond * 1_000;
 pub const microSecondsPerSecond = milliSecondsPerSecond * 1_000;
 pub const milliSecondsPerSecond = 1_000;
 pub const secondsPerMinute = 60;
 pub const minutesPerHour = 60;
 pub const secondsPerHour = minutesPerHour * secondsPerMinute;
 pub const hoursPerDay = 24;
-pub const secodsPerDay = hoursPerDay * minutesPerHour * secondsPerMinute;
-
-// const daysSinceJan1st = [2][13]u32{
-//     [_]u32{ 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365 }, // 365 days, non-leap
-//     [_]u32{ 0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366 }, // 366 days, leap
-// };
+pub const secondsPerDay = hoursPerDay * minutesPerHour * secondsPerMinute;
 
 pub const Instant = struct {
     timestamp: i128,
@@ -491,14 +486,14 @@ pub const Instant = struct {
     const Self = @This();
 
     pub fn now() Self {
-        return Instant{
+        return Self{
             .timestamp = std.time.nanoTimestamp(),
             .timezone = "UTC",
         };
     }
 
     pub fn utc() Self {
-        return Instant{
+        return Self{
             .timestamp = std.time.nanoTimestamp(),
             .timezone = "UTC",
         };
@@ -520,24 +515,33 @@ pub const Instant = struct {
             self.timestamp,
             nanoSecondsPerSecond,
         );
-        const second: Second = @intCast(@mod(seconds, secondsPerMinute));
+        const second: Second = @intCast(@mod(
+            seconds,
+            secondsPerMinute,
+        ));
         seconds -= second;
 
         const minute: Minute = @intCast(@divTrunc(
-            @mod(seconds, secondsPerHour),
+            @mod(
+                seconds,
+                secondsPerHour,
+            ),
             secondsPerMinute,
         ));
         seconds -= @as(u32, minute) * secondsPerMinute;
 
         const hour: Hour = @intCast(@divTrunc(
-            @mod(seconds, secodsPerDay),
+            @mod(
+                seconds,
+                secondsPerDay,
+            ),
             secondsPerHour,
         ));
         seconds -= @as(u32, hour) * secondsPerHour;
 
         const days: i32 = @intCast(@divTrunc(
             seconds,
-            secodsPerDay,
+            secondsPerDay,
         ));
 
         const date = civilFromDays(days);
@@ -557,6 +561,51 @@ pub const Instant = struct {
     //     std.debug.print("{i} {i} {i} {i} {i} {i} {i}", .{ year, month, mday, hour, minute, second, nanosecond });
     // }
 };
+
+test "instantTest" {
+    const cases = [_]struct {
+        instant: Instant,
+        datetime: DateTime,
+    }{
+        .{
+            .instant = Instant{
+                .timestamp = 0,
+                .timezone = "UTC",
+            },
+            .datetime = DateTime{
+                .year = 1970,
+                .month = .Jan,
+                .day = 1,
+                .hour = 0,
+                .minute = 0,
+                .second = 0,
+                .nanosecond = 0,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .instant = Instant{
+                .timestamp = 1697316872549526016,
+                .timezone = "UTC",
+            },
+            .datetime = DateTime{
+                .year = 2023,
+                .month = .Oct,
+                .day = 14,
+                .hour = 20,
+                .minute = 54,
+                .second = 32,
+                .nanosecond = 549526016,
+                .weekday = .Sat,
+            },
+        },
+    };
+
+    inline for (cases) |case| {
+        const datetime = case.instant.asDateTime();
+        try std.testing.expectEqual(case.datetime, datetime);
+    }
+}
 
 pub fn daysFromCivil(year: Year, month: Month, d: Day) i32 {
     std.debug.assert(d >= 1 and d <= month.lastDay(year));
@@ -676,7 +725,7 @@ test "civilFromDays" {
 
     for (tests) |case| {
         const result = civilFromDays(case.days);
-        try std.testing.expect(std.meta.eql(case.result, result));
+        try std.testing.expectEqual(case.result, result);
     }
 }
 
@@ -753,27 +802,10 @@ const DayOfWeek = enum(u3) {
 
     pub fn weekdayNumber(self: Self) u3 {
         return @intFromEnum(self);
-        // return switch (self) {
-        //     .Sun => 0,
-        //     .Mon => 1,
-        //     .Tue => 2,
-        //     .Wed => 3,
-        //     .Thu => 4,
-        //     .Fri => 5,
-        //     .Sat => 6,
-        // };
     }
+
     pub fn isoWeekdayNumber(self: Self) u3 {
         return if (self == .Sun) 7 else @intFromEnum(self);
-        // return switch (self) {
-        //     .Sun => 7,
-        //     .Mon => 1,
-        //     .Tue => 2,
-        //     .Wed => 3,
-        //     .Thu => 4,
-        //     .Fri => 5,
-        //     .Sat => 6,
-        // };
     }
 };
 
