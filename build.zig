@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
 
     // try b.modules.put(b.dupe("datetime"), module);
 
-    b.addModule(
+    _ = b.addModule(
         "datetime",
         .{
             .source_file = .{
