@@ -258,7 +258,7 @@ pub const DateTime = struct {
                         if (self.year < 0) {
                             try writer.writeAll("-");
                         }
-                        try writer.print("{d:0>4}", .{@abs(self.year)});
+                        try writer.print("{d:0>4}", .{std.math.absCast(self.year)});
                     },
 
                     .A => try writeTwelveHour(self.hour, .upper),

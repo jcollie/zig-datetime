@@ -14,22 +14,10 @@
     make-shell = {
       url = "github:ursi/nix-make-shell";
     };
-    zig = {
-      url = "github:mitchellh/zig-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    zls = {
-      url = "github:zigtools/zls";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.zig-overlay.follows = "zig";
-    };
   };
 
   outputs = { self, nixpkgs, flake-utils, bash, ... }@inputs:
-    let
-      systems = builtins.attrNames inputs.zig.packages;
-    in
-    flake-utils.lib.eachSystem systems (
+    flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs {
@@ -53,8 +41,9 @@
           in
           make-shell {
             packages = [
-              inputs.zig.packages.${system}.master
-              # inputs.zls.packages.${system}.zls
+              pkgs.zon2nix
+              pkgs.zig_0_11
+              pkgs.zls
             ];
             env = {
               PS1 = prompt;
