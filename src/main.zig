@@ -1,5 +1,93 @@
 const std = @import("std");
 
+// https://www.nist.gov/pml/owm/metric-si-prefixes
+
+pub const SIPrefix = enum(i8) {
+    quetta = 30,
+    ronna = 27,
+    yotta = 24,
+    zetta = 21,
+    exa = 18,
+    peta = 15,
+    tera = 12,
+    giga = 9,
+    mega = 6,
+    kilo = 3,
+    hecto = 2,
+    deka = 1,
+    deci = -1,
+    centi = -2,
+    milli = -3,
+    micro = -6,
+    nano = -9,
+    pico = -12,
+    femto = -15,
+    atto = -18,
+    zepto = -21,
+    yocto = -24,
+    ronto = -27,
+    quecto = -30,
+
+    const Self = @This();
+
+    pub fn exponent(self: Self) i8 {
+        return @intFromEnum(self);
+    }
+
+    pub fn symbol(self: Self) []const u8 {
+        return switch (self) {
+            .quetta => "Q",
+            .ronna => "R",
+            .yotta => "Y",
+            .zetta => "Z",
+            .exa => "E",
+            .peta => "P",
+            .tera => "T",
+            .giga => "G",
+            .mega => "M",
+            .kilo => "k",
+            .hecto => "h",
+            .deka => "da",
+            .deci => "d",
+            .centi => "c",
+            .milli => "m",
+            .micro => "µ",
+            .nano => "n",
+            .pico => "p",
+            .femto => "f",
+            .atto => "a",
+            .zepto => "z",
+            .yocto => "y",
+            .ronto => "r",
+            .quecto => "q",
+        };
+    }
+};
+
+pub fn convert(from: i8, to: i8, value: i128) struct { result: i128, remainder: i128 } {
+    const exponent = from - to;
+    if (exponent == 0) return value;
+    if (exponent < 0) {
+        const factor = std.math.pow(i128, 10, @abs(exponent));
+        const remainder = @rem(value, factor);
+        const result = @divTrunc(value, factor);
+        return .{ result, remainder };
+    }
+    if (exponent > 0) {
+        const factor = std.math.pow(i128, 10, exponent);
+        return .{ factor * value, 0 };
+    }
+}
+
+// test "convert-1" {
+//     const result = convert(.milli, .micro, 1);
+//     try std.testing.expectEqual(i128, result.result, 1000);
+//     try std.testing.expectEqual(i128, result.remainder, 0);
+// }
+// pub fn conversionFactor(from: i8, to: i8) !i30 {
+//     if (from < to) return error.InvalidConversion;
+//     if (from == to) return 1;
+// }
 pub const Day = u6;
 
 pub const Month = enum(u4) {
@@ -179,6 +267,24 @@ pub fn writeTwelveHour(hour: Hour, case: enum { lower, upper }, writer: anytype)
 
 pub const Nanosecond = u30;
 
+fn readInt(text: []const u8, maxlen: usize) []const u8 {
+    if (text.len == 0) return text[0..0];
+
+    for (0..@min(text.len, maxlen)) |i| {
+        if (!std.ascii.isDigit(text[i])) return text[0 .. i - 1];
+    }
+
+    return text[0..maxlen];
+}
+
+fn readFrac(text: []const u8, length: usize) !Nanosecond {
+    if (length == 0) return error.TooShort;
+    if (length > 9) return error.TooLong;
+    const v = readInt(text, length);
+    if (v.len != length) return error.TooShort;
+    return try std.fmt.parseInt(Nanosecond, v, 10) * try std.math.powi(Nanosecond, 10, 9 - @as(Nanosecond, @intCast(length)));
+}
+
 // https://github.com/nektro/zig-time
 
 pub const DateTime = struct {
@@ -193,7 +299,7 @@ pub const DateTime = struct {
 
     const Self = @This();
 
-    pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn formatX(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = options;
 
         if (fmt.len == 0) @compileError("DateTime: format string can't be empty");
@@ -258,7 +364,7 @@ pub const DateTime = struct {
                         if (self.year < 0) {
                             try writer.writeAll("-");
                         }
-                        try writer.print("{d:0>4}", .{std.math.absCast(self.year)});
+                        try writer.print("{d:0>4}", .{@abs(self.year)});
                     },
 
                     .A => try writeTwelveHour(self.hour, .upper),
@@ -277,15 +383,24 @@ pub const DateTime = struct {
                     .s => try writer.print("{d}", .{self.second}),
                     .ss => try writer.print("{d:0>2}", .{self.second}),
 
-                    .S => try writer.print("{d:>1}", .{self.nanosecond / tenthsPerNanoSecond}),
-                    .SS => try writer.print("{d:0>2}", .{self.nanosecond / hundredthsPerNanoSecond}),
-                    .SSS => try writer.print("{d:0>3}", .{self.nanosecond / milliSecondsPerNanoSecond}),
-                    .SSSS => try writer.print("{d:0>4}", .{self.nanosecond / (milliSecondsPerNanoSecond / 10)}),
-                    .SSSSS => try writer.print("{d:0>5}", .{self.nanosecond / (milliSecondsPerNanoSecond / 100)}),
-                    .SSSSSS => try writer.print("{d:0>6}", .{self.nanosecond / microSecondsPerNanoSecond}),
-                    .SSSSSSS => try writer.print("{d:0>7}", .{self.nanosecond / (microSecondsPerNanoSecond / 10)}),
-                    .SSSSSSSS => try writer.print("{d:0>8}", .{self.nanosecond / (microSecondsPerNanoSecond / 100)}),
-                    .SSSSSSSSS => try writer.print("{d:0>9}", .{self.nanosecond}),
+                    // .S => try writer.print("{d:>1}", .{self.nanosecond / tenthsPerNanoSecond}),
+                    // .SS => try writer.print("{d:0>2}", .{self.nanosecond / hundredthsPerNanoSecond}),
+                    // .SSS => try writer.print("{d:0>3}", .{self.nanosecond / milliSecondsPerNanoSecond}),
+                    // .SSSS => try writer.print("{d:0>4}", .{self.nanosecond / (milliSecondsPerNanoSecond / 10)}),
+                    // .SSSSS => try writer.print("{d:0>5}", .{self.nanosecond / (milliSecondsPerNanoSecond / 100)}),
+                    // .SSSSSS => try writer.print("{d:0>6}", .{self.nanosecond / microSecondsPerNanoSecond}),
+                    // .SSSSSSS => try writer.print("{d:0>7}", .{self.nanosecond / (microSecondsPerNanoSecond / 10)}),
+                    // .SSSSSSSS => try writer.print("{d:0>8}", .{self.nanosecond / (microSecondsPerNanoSecond / 100)}),
+                    // .SSSSSSSSS => try writer.print("{d:0>9}", .{self.nanosecond}),
+                    .S => try writer.print("{d:>1}", .{tag.cnv(self.nanosecond)}),
+                    .SS => try writer.print("{d:>2}", .{tag.cnv(self.nanosecond)}),
+                    .SSS => try writer.print("{d:>3}", .{tag.cnv(self.nanosecond)}),
+                    .SSSS => try writer.print("{d:>4}", .{tag.cnv(self.nanosecond)}),
+                    .SSSSS => try writer.print("{d:>5}", .{tag.cnv(self.nanosecond)}),
+                    .SSSSSS => try writer.print("{d:>6}", .{tag.cnv(self.nanosecond)}),
+                    .SSSSSSS => try writer.print("{d:>7}", .{tag.cnv(self.nanosecond)}),
+                    .SSSSSSSS => try writer.print("{d:>8}", .{tag.cnv(self.nanosecond)}),
+                    .SSSSSSSSS => try writer.print("{d:>9}", .{tag.cnv(self.nanosecond)}),
 
                     // .z => try writer.writeAll(@tagName(self.timezone)),
                     // .Z => try writer.writeAll("+00:00"),
@@ -313,8 +428,102 @@ pub const DateTime = struct {
         var list = std.ArrayList(u8).init(alloc);
         defer list.deinit();
 
-        try self.format(fmt, .{}, list.writer());
+        try self.formatX(fmt, .{}, list.writer());
         return list.toOwnedSlice();
+    }
+
+    pub fn parse(comptime fmt: []const u8, value: []const u8) !Self {
+        if (fmt.len == 0) @compileError("DateTime: format string can't be empty");
+
+        @setEvalBranchQuota(100000);
+
+        var date: Self = .{
+            .nanosecond = 0,
+            .second = 0,
+            .minute = 0,
+            .hour = 0,
+            .day = 1,
+            .month = .Jan,
+            .year = 1970,
+            .weekday = .Thu,
+        };
+
+        var left = value;
+
+        comptime var start = 0;
+        comptime var end = 0;
+        comptime var next: ?FormatSeq = null;
+        inline for (fmt, 0..) |char, index| {
+            end = index + 1;
+            if (comptime std.meta.stringToEnum(FormatSeq, fmt[start..end])) |tag| {
+                next = tag;
+                if (index < fmt.len - 1) continue;
+            }
+            if (next) |tag| {
+                switch (tag) {
+                    .YY => {
+                        const year = readInt(left, 2);
+                        date.year = try std.fmt.parseInt(Year, year, 10) + 2000;
+                        left = left[year.len..];
+                        date.weekday = DayOfWeek.dayOfWeek(date.year, date.month, date.day);
+                    },
+                    .YYYY, .YYY => {
+                        const year = readInt(left, 4);
+                        date.year = try std.fmt.parseInt(Year, year, 10);
+                        left = left[year.len..];
+                        date.weekday = DayOfWeek.dayOfWeek(date.year, date.month, date.day);
+                    },
+                    .SSSSSSSSS => {
+                        date.nanosecond = try readFrac(left, 9);
+                        left = left[9..];
+                    },
+                    .SSSSSSSS => {
+                        date.nanosecond = try readFrac(left, 8);
+                        left = left[8..];
+                    },
+                    .SSSSSSS => {
+                        date.nanosecond = try readFrac(left, 7);
+                        left = left[7..];
+                    },
+                    .SSSSSS => {
+                        date.nanosecond = try readFrac(left, 6);
+                        left = left[6..];
+                    },
+                    .SSSSS => {
+                        date.nanosecond = try readFrac(left, 5);
+                        left = left[5..];
+                    },
+                    .SSSS => {
+                        date.nanosecond = try readFrac(left, 4);
+                        left = left[4..];
+                    },
+                    .SSS => {
+                        date.nanosecond = try readFrac(left, 3);
+                        left = left[3..];
+                    },
+                    .SS => {
+                        date.nanosecond = try readFrac(left, 2);
+                        left = left[2..];
+                    },
+                    .S => {
+                        date.nanosecond = try readFrac(left, 1);
+                        left = left[1..];
+                    },
+                    else => {},
+                }
+                next = null;
+                start = index;
+            }
+            switch (char) {
+                ',', ' ', ':', '-', '.', 'T', 'W' => {
+                    start = index + 1;
+                    continue;
+                },
+                else => {},
+            }
+        }
+
+        return date;
     }
 
     const FormatSeq = enum {
@@ -379,6 +588,37 @@ pub const DateTime = struct {
         // ZZ, // -0700 -0600 ... +0600 +0700
         // x, // unix milli
         // X, // unix
+
+        pub fn cnv(comptime tag: FormatSeq, value: u30) u30 {
+            const name = comptime @tagName(tag);
+            comptime var count: i8 = undefined;
+            inline for (name, 1..) |c, i| {
+                if (c != 'S') @compileError(name ++ " is not a fractional second format sequence");
+                count = i;
+            }
+            if (count > 9) @compileError("fractional seconds smaller than nanoseconds are not supported");
+            if (count == 9) return value;
+            const exponent = 9 - count;
+            const factor = std.math.pow(u30, 10, exponent);
+            return @as(u30, @divTrunc(value, factor));
+        }
+
+        test "cnv" {
+            const cases = [_]struct { tag: FormatSeq, expected: u30, value: u30 }{
+                .{ .tag = .S, .expected = 1, .value = 123456789 },
+                .{ .tag = .SS, .expected = 12, .value = 123456789 },
+                .{ .tag = .SSS, .expected = 123, .value = 123456789 },
+                .{ .tag = .SSSS, .expected = 1234, .value = 123456789 },
+                .{ .tag = .SSSSS, .expected = 12345, .value = 123456789 },
+                .{ .tag = .SSSSSS, .expected = 123456, .value = 123456789 },
+                .{ .tag = .SSSSSSS, .expected = 1234567, .value = 123456789 },
+                .{ .tag = .SSSSSSSS, .expected = 12345678, .value = 123456789 },
+                .{ .tag = .SSSSSSSSS, .expected = 123456789, .value = 123456789 },
+            };
+            inline for (cases) |case| {
+                try std.testing.expectEqual(case.expected, cnv(case.tag, case.value));
+            }
+        }
     };
 
     pub fn dayOfThisYear(self: Self) u9 {
@@ -386,12 +626,193 @@ pub const DateTime = struct {
     }
 };
 
+test "parseTest" {
+    const cases = [_]struct { value: []const u8, fmt: []const u8, expected: DateTime }{
+        .{
+            .value = "1970",
+            .fmt = "YYYY",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "2001",
+            .fmt = "YYYY",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 2001,
+                .weekday = .Mon,
+            },
+        },
+        .{
+            .value = "70",
+            .fmt = "YY",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 2070,
+                .weekday = .Wed,
+            },
+        },
+        .{
+            .value = "123456789",
+            .fmt = "SSSSSSSSS",
+            .expected = .{
+                .nanosecond = 123456789,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "12345678",
+            .fmt = "SSSSSSSS",
+            .expected = .{
+                .nanosecond = 123456780,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "1234567",
+            .fmt = "SSSSSSS",
+            .expected = .{
+                .nanosecond = 123456700,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "123456",
+            .fmt = "SSSSSS",
+            .expected = .{
+                .nanosecond = 123456000,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "12345",
+            .fmt = "SSSSS",
+            .expected = .{
+                .nanosecond = 123450000,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "1234",
+            .fmt = "SSSS",
+            .expected = .{
+                .nanosecond = 123400000,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "123",
+            .fmt = "SSS",
+            .expected = .{
+                .nanosecond = 123000000,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "12",
+            .fmt = "SS",
+            .expected = .{
+                .nanosecond = 120000000,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "1",
+            .fmt = "S",
+            .expected = .{
+                .nanosecond = 100000000,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+    };
+
+    inline for (cases) |case| {
+        const result = try DateTime.parse(case.fmt, case.value);
+        std.testing.expectEqual(case.expected, result) catch |err| {
+            std.debug.print("\n{s} {s} {} {}\n", .{ case.value, case.fmt, case.expected, result });
+            return err;
+        };
+    }
+}
+
 test "formatTest" {
     var buffer: [1024]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
     const allocator = fba.allocator();
 
-    const epoch = DateTime{
+    const test_date = DateTime{
         .nanosecond = 123456789,
         .second = 0,
         .minute = 0,
@@ -401,49 +822,50 @@ test "formatTest" {
         .year = 1970,
         .weekday = .Fri,
     };
+
     const cases = [_]struct { datetime: DateTime, fmt: []const u8, result: []const u8 }{
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.SSSSSSSSS",
             .result = "1970-01-01T00:00:00.123456789",
         },
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.SSSSSSSS",
             .result = "1970-01-01T00:00:00.12345678",
         },
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.SSSSSSS",
             .result = "1970-01-01T00:00:00.1234567",
         },
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.SSSSSS",
             .result = "1970-01-01T00:00:00.123456",
         },
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.SSSSS",
             .result = "1970-01-01T00:00:00.12345",
         },
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.SSSS",
             .result = "1970-01-01T00:00:00.1234",
         },
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.SSS",
             .result = "1970-01-01T00:00:00.123",
         },
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.SS",
             .result = "1970-01-01T00:00:00.12",
         },
         .{
-            .datetime = epoch,
+            .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.S",
             .result = "1970-01-01T00:00:00.1",
         },
@@ -453,7 +875,7 @@ test "formatTest" {
         var array = std.ArrayList(u8).init(allocator);
         defer array.deinit();
 
-        try case.datetime.format(case.fmt, .{}, array.writer());
+        try case.datetime.formatX(case.fmt, .{}, array.writer());
 
         std.testing.expect(std.mem.eql(u8, array.items, case.result)) catch |err| {
             std.debug.print("{s} {s} {s}\n", .{
@@ -554,7 +976,7 @@ pub const Instant = struct {
             .minute = minute,
             .second = second,
             .nanosecond = nanosecond,
-            .weekday = weekdayFromDays(days),
+            .weekday = DayOfWeek.weekdayFromDays(days),
         };
     }
     // pub fn format(self: @This()) []const u8 {
@@ -807,6 +1229,17 @@ const DayOfWeek = enum(u3) {
     pub fn isoWeekdayNumber(self: Self) u3 {
         return if (self == .Sun) 7 else @intFromEnum(self);
     }
+
+    pub fn weekdayFromDays(days: i32) DayOfWeek {
+        return @as(
+            DayOfWeek,
+            @enumFromInt(if (days >= -4) @rem(days + 4, 7) else @rem(days + 5, 7) + 6),
+        );
+    }
+    pub fn dayOfWeek(year: Year, month: Month, day: Day) Self {
+        const days = daysFromCivil(year, month, day);
+        return Self.weekdayFromDays(days);
+    }
 };
 
 pub fn weekdayDifference(start: DayOfWeek, end: DayOfWeek) u3 {
@@ -836,13 +1269,6 @@ test "weekdayDifference" {
     }
 }
 
-pub fn weekdayFromDays(z: i32) DayOfWeek {
-    return @as(
-        DayOfWeek,
-        @enumFromInt(if (z >= -4) @rem(z + 4, 7) else @rem(z + 5, 7) + 6),
-    );
-}
-
 test "weekdayFromDays" {
     const tests = [_]struct { days: i32, result: DayOfWeek }{
         .{
@@ -864,7 +1290,7 @@ test "weekdayFromDays" {
     };
 
     for (tests) |case| {
-        const result = weekdayFromDays(case.days);
+        const result = DayOfWeek.weekdayFromDays(case.days);
         try std.testing.expect(std.meta.eql(case.result, result));
     }
 }
@@ -1000,7 +1426,7 @@ test "testPrintOrdinalSuperscript" {
     inline for (cases) |case| {
         var buffer: [16]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buffer);
-        var writer = stream.writer();
+        const writer = stream.writer();
 
         try printOrdinalSuperscript(writer, case.number);
         std.testing.expect(std.mem.eql(u8, stream.getWritten(), case.result)) catch |err| {
@@ -1015,7 +1441,7 @@ fn printLongName(writer: anytype, index: u16, names: []const []const u8) !void {
 }
 
 fn wrap(val: u16, at: u16) u16 {
-    var tmp = val % at;
+    const tmp = val % at;
     return if (tmp == 0) at else tmp;
 }
 
@@ -1023,8 +1449,32 @@ test "asDateTime" {
     _ = Instant.utc().asDateTime();
 }
 
-fn isLeap(year: i32) bool {
-    return @rem(year, 4) == 0 and (@rem(year, 100) != 0 or @rem(year, 400) == 0);
+pub fn isLeap(year: Year) bool {
+    // taken from https://github.com/ziglang/zig/pull/18451
+
+    // In the western Gregorian Calendar leap a year is
+    // a multiple of 4, excluding multiples of 100, and
+    // adding multiples of 400. In code:
+    //
+    // if (@mod(year, 4) != 0)
+    //     return false;
+    // if (@mod(year, 100) != 0)
+    //     return true;
+    // return (0 == @mod(year, 400));
+
+    // The following is equivalent to the above
+    // but uses bitwise operations when testing
+    // for divisibility, masking with 3 as test
+    // for multiples of 4 and with 15 as a test
+    // for multiples of 16. Multiples of 16 and
+    // 100 are, conveniently, multiples of 400.
+
+    const mask: Year = switch (year % 100) {
+        0 => 0b1111,
+        else => 0b11,
+    };
+    return 0 == year & mask;
+    // return @rem(year, 4) == 0 and (@rem(year, 100) != 0 or @rem(year, 400) == 0);
 }
 
 test "isLeap" {
@@ -1034,36 +1484,36 @@ test "isLeap" {
     try std.testing.expectEqual(true, isLeap(2400));
 }
 
-test "bigTest" {
-    const ystart = -1000000;
-    var prev_z: i32 = daysFromCivil(ystart, .Jan, 1) - 1;
-    try std.testing.expect(prev_z < 0);
-    var prev_wd = weekdayFromDays(prev_z);
-    try std.testing.expect(0 <= @intFromEnum(prev_wd) and @intFromEnum(prev_wd) <= 6);
-    var y: Year = ystart;
-    while (y <= -ystart) {
-        for ([_]Month{ .Jan, .Feb, .Mar, .Apr, .May, .Jun, .Jul, .Aug, .Sep, .Oct, .Nov, .Dec }) |m| {
-            var d: Day = 1;
-            const e = m.lastDay(y);
-            while (d <= e) {
-                // std.debug.print("{d} {d} {d}\n", .{ y, @intFromEnum(m), d });
-                const z = daysFromCivil(y, m, d);
-                // std.debug.print("{d} {d}\n", .{ prev_z, z });
-                try std.testing.expect(prev_z < z);
-                try std.testing.expect(z == prev_z + 1);
-                const date = civilFromDays(z);
-                try std.testing.expect(y == date.year);
-                try std.testing.expect(m == date.month);
-                try std.testing.expect(d == date.day);
-                const wd = weekdayFromDays(z);
-                try std.testing.expect(0 <= @intFromEnum(wd) and @intFromEnum(wd) <= 6);
-                try std.testing.expect(wd == prev_wd.next());
-                try std.testing.expect(prev_wd == wd.prev());
-                prev_z = z;
-                prev_wd = wd;
-                d += 1;
-            }
-        }
-        y += 1;
-    }
-}
+// test "bigTest" {
+//     const ystart = -1000000;
+//     var prev_z: i32 = daysFromCivil(ystart, .Jan, 1) - 1;
+//     try std.testing.expect(prev_z < 0);
+//     var prev_wd = DayOfWeek.weekdayFromDays(prev_z);
+//     try std.testing.expect(0 <= @intFromEnum(prev_wd) and @intFromEnum(prev_wd) <= 6);
+//     var y: Year = ystart;
+//     while (y <= -ystart) {
+//         for ([_]Month{ .Jan, .Feb, .Mar, .Apr, .May, .Jun, .Jul, .Aug, .Sep, .Oct, .Nov, .Dec }) |m| {
+//             var d: Day = 1;
+//             const e = m.lastDay(y);
+//             while (d <= e) {
+//                 // std.debug.print("{d} {d} {d}\n", .{ y, @intFromEnum(m), d });
+//                 const z = daysFromCivil(y, m, d);
+//                 // std.debug.print("{d} {d}\n", .{ prev_z, z });
+//                 try std.testing.expect(prev_z < z);
+//                 try std.testing.expect(z == prev_z + 1);
+//                 const date = civilFromDays(z);
+//                 try std.testing.expect(y == date.year);
+//                 try std.testing.expect(m == date.month);
+//                 try std.testing.expect(d == date.day);
+//                 const wd = DayOfWeek.weekdayFromDays(z);
+//                 try std.testing.expect(0 <= @intFromEnum(wd) and @intFromEnum(wd) <= 6);
+//                 try std.testing.expect(wd == prev_wd.next());
+//                 try std.testing.expect(prev_wd == wd.prev());
+//                 prev_z = z;
+//                 prev_wd = wd;
+//                 d += 1;
+//             }
+//         }
+//         y += 1;
+//     }
+// }

@@ -1,5 +1,5 @@
 {
-  description = "zig-ha";
+  description = "zig-datetime";
 
   inputs = {
     nixpkgs = {
@@ -8,45 +8,50 @@
     flake-utils = {
       url = "github:numtide/flake-utils";
     };
-    bash = {
-      url = "git+https://git.ocjtech.us/jeff/nixos-bash-prompt-builder.git";
-    };
     make-shell = {
       url = "github:ursi/nix-make-shell";
     };
+    zig = {
+      url = "github:mitchellh/zig-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    zls = {
+      url = "github:zigtools/zls";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.zig-overlay.follows = "zig";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, bash, ... }@inputs:
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    zig,
+    zls,
+    ...
+  } @ inputs:
     flake-utils.lib.eachDefaultSystem (
-      system:
-      let
+      system: let
         pkgs = import nixpkgs {
           inherit system;
         };
-      in
-      {
-        devShells.default =
-          let
-            project = "zig-datetime";
-            prompt = (
-              bash.build_ps1_prompt
-                bash.ansi_normal_blue
-                "${project} - ${bash.username}@${bash.hostname_short}: ${bash.current_working_directory}"
-                "${project}:${bash.current_working_directory}"
-            );
-            make-shell = import inputs.make-shell {
-              inherit system;
-              pkgs = pkgs;
-            };
-          in
+      in {
+        devShells.default = let
+          project = "zig-datetime";
+          make-shell = import inputs.make-shell {
+            inherit system;
+            pkgs = pkgs;
+          };
+        in
           make-shell {
             packages = [
               pkgs.zon2nix
-              pkgs.zig_0_11
-              pkgs.zls
+              zig.packages.${pkgs.system}.master
+              zls.packages.${pkgs.system}.zls
             ];
             env = {
-              PS1 = prompt;
+              name = project;
             };
           };
       }
