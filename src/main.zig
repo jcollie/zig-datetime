@@ -1481,36 +1481,36 @@ test "isLeap" {
     try std.testing.expectEqual(true, isLeap(2400));
 }
 
-// test "bigTest" {
-//     const ystart = -1000000;
-//     var prev_z: i32 = daysFromCivil(ystart, .Jan, 1) - 1;
-//     try std.testing.expect(prev_z < 0);
-//     var prev_wd = DayOfWeek.weekdayFromDays(prev_z);
-//     try std.testing.expect(0 <= @intFromEnum(prev_wd) and @intFromEnum(prev_wd) <= 6);
-//     var y: Year = ystart;
-//     while (y <= -ystart) {
-//         for ([_]Month{ .Jan, .Feb, .Mar, .Apr, .May, .Jun, .Jul, .Aug, .Sep, .Oct, .Nov, .Dec }) |m| {
-//             var d: Day = 1;
-//             const e = m.lastDay(y);
-//             while (d <= e) {
-//                 // std.debug.print("{d} {d} {d}\n", .{ y, @intFromEnum(m), d });
-//                 const z = daysFromCivil(y, m, d);
-//                 // std.debug.print("{d} {d}\n", .{ prev_z, z });
-//                 try std.testing.expect(prev_z < z);
-//                 try std.testing.expect(z == prev_z + 1);
-//                 const date = civilFromDays(z);
-//                 try std.testing.expect(y == date.year);
-//                 try std.testing.expect(m == date.month);
-//                 try std.testing.expect(d == date.day);
-//                 const wd = DayOfWeek.weekdayFromDays(z);
-//                 try std.testing.expect(0 <= @intFromEnum(wd) and @intFromEnum(wd) <= 6);
-//                 try std.testing.expect(wd == prev_wd.next());
-//                 try std.testing.expect(prev_wd == wd.prev());
-//                 prev_z = z;
-//                 prev_wd = wd;
-//                 d += 1;
-//             }
-//         }
-//         y += 1;
-//     }
-// }
+test "bigTest" {
+    const ystart = -1000000;
+    var prev_z: i32 = daysFromCivil(ystart, .Jan, 1) - 1;
+    try std.testing.expect(prev_z < 0);
+    var prev_wd = DayOfWeek.weekdayFromDays(prev_z);
+    try std.testing.expect(0 <= @intFromEnum(prev_wd) and @intFromEnum(prev_wd) <= 6);
+    var y: Year = ystart;
+    while (y <= -ystart) {
+        for ([_]Month{ .Jan, .Feb, .Mar, .Apr, .May, .Jun, .Jul, .Aug, .Sep, .Oct, .Nov, .Dec }) |m| {
+            var d: Day = 1;
+            const e = m.lastDay(y);
+            while (d <= e) {
+                // std.debug.print("{d} {d} {d}\n", .{ y, @intFromEnum(m), d });
+                const z = daysFromCivil(y, m, d);
+                // std.debug.print("{d} {d}\n", .{ prev_z, z });
+                try std.testing.expect(prev_z < z);
+                try std.testing.expect(z == prev_z + 1);
+                const date = civilFromDays(z);
+                try std.testing.expect(y == date.year);
+                try std.testing.expect(m == date.month);
+                try std.testing.expect(d == date.day);
+                const wd = DayOfWeek.weekdayFromDays(z);
+                try std.testing.expect(0 <= @intFromEnum(wd) and @intFromEnum(wd) <= 6);
+                try std.testing.expect(wd == prev_wd.next());
+                try std.testing.expect(prev_wd == wd.prev());
+                prev_z = z;
+                prev_wd = wd;
+                d += 1;
+            }
+        }
+        y += 1;
+    }
+}
