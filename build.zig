@@ -17,19 +17,19 @@ pub fn build(b: *std.Build) void {
     _ = b.addModule(
         "datetime",
         .{
-            .source_file = .{
-                .path = "src/main.zig",
-            },
+            .root_source_file = .{ .path = "src/main.zig" },
+            .target = target,
+            .optimize = optimize,
         },
     );
 
-    const lib = b.addStaticLibrary(.{
-        .name = "datetime",
-        .root_source_file = .{ .path = "src/main.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    b.installArtifact(lib);
+    // const lib = b.addStaticLibrary(.{
+    //     .name = "datetime",
+    //     .root_source_file = .{ .path = "src/main.zig" },
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
+    // b.installArtifact(lib);
 
     const main_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
