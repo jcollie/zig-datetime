@@ -473,6 +473,31 @@ pub const DateTime = struct {
                         left = left[year.len..];
                         date.weekday = DayOfWeek.dayOfWeek(date.year, date.month, date.day);
                     },
+                    .MMMM => {
+                        const map = std.ComptimeStringMapWithEql(Month, .{
+                            .{ "january", .Jan },
+                            .{ "february", .Feb },
+                            .{ "march", .Mar },
+                            .{ "april", .Apr },
+                            .{ "may", .May },
+                            .{ "june", .Jun },
+                            .{ "july", .Jul },
+                            .{ "august", .Aug },
+                            .{ "september", .Sep },
+                            .{ "october", .Oct },
+                            .{ "november", .Nov },
+                            .{ "december", .Dec },
+                        }, std.comptime_string_map.eqlAsciiIgnoreCase);
+                        date.month = month: {
+                            for (1..left.len) |l| {
+                                if (map.get(left[0..l])) |m| {
+                                    left = left[l..];
+                                    break :month m;
+                                }
+                            }
+                            return error.ParseError;
+                        };
+                    },
                     .SSSSSSSSS => {
                         date.nanosecond = try readFrac(left, 9);
                         left = left[9..];
@@ -787,6 +812,188 @@ test "parseTest" {
             .fmt = "S",
             .expected = .{
                 .nanosecond = 100000000,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "january",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "february",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Feb,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "march",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Mar,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "apr",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Apr,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "may",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .May,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "june",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jun,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "july",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jul,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "august",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Aug,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "september",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Sep,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "october",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Oct,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "november",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Jan,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "december",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
+                .second = 0,
+                .minute = 0,
+                .hour = 0,
+                .day = 1,
+                .month = .Dec,
+                .year = 1970,
+                .weekday = .Thu,
+            },
+        },
+        .{
+            .value = "january",
+            .fmt = "MMMM",
+            .expected = .{
+                .nanosecond = 0,
                 .second = 0,
                 .minute = 0,
                 .hour = 0,
