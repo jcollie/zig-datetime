@@ -4,41 +4,25 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // var module = b.createModule(
-    //     .{
-    //         .source_file = .{
-    //             .path = "src/main.zig",
-    //         },
-    //     },
-    // );
-
-    // try b.modules.put(b.dupe("datetime"), module);
-
+    const test_filter = b.option([]const u8, "test-filter", "Filter for test");
     _ = b.addModule(
         "datetime",
         .{
-            .root_source_file = .{ .path = "src/main.zig" },
+            .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         },
     );
 
-    // const lib = b.addStaticLibrary(.{
-    //     .name = "datetime",
-    //     .root_source_file = .{ .path = "src/main.zig" },
-    //     .target = target,
-    //     .optimize = optimize,
-    // });
-    // b.installArtifact(lib);
-
-    const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+    const tests = b.addTest(.{
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .filter = test_filter,
     });
 
-    const run_main_tests = b.addRunArtifact(main_tests);
+    const run_tests = b.addRunArtifact(tests);
 
-    const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&run_main_tests.step);
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&run_tests.step);
 }

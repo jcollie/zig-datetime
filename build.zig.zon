@@ -1,5 +1,11 @@
 .{
-    .name = "datetime",
+    .name = .datetime,
     .version = "0.0.1",
-    .paths = .{""},
+    .fingerprint = 0x93f3c6caefdaebeb,
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
 }

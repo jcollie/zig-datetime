@@ -1,0 +1,180 @@
+const std = @import("std");
+
+// pub fn Ordinal(style: enum {.normal, .superscript}) type {
+//     return struct {
+//         pub fn print(writer: anytype, num: )
+
+// };
+// }
+const normal = [_][]const u8{
+    "th",
+    "st",
+    "nd",
+    "rd",
+    "th",
+    "th",
+    "th",
+    "th",
+    "th",
+    "th",
+};
+
+test "normal" {
+    try std.testing.expectEqual(10, normal.len);
+}
+
+const superscripts = [_][]const u8{
+    "ᵗʰ",
+    "ˢᵗ",
+    "ⁿᵈ",
+    "ʳᵈ",
+    "ᵗʰ",
+    "ᵗʰ",
+    "ᵗʰ",
+    "ᵗʰ",
+    "ᵗʰ",
+    "ᵗʰ",
+};
+
+test "superscript" {
+    try std.testing.expectEqual(10, superscripts.len);
+}
+
+pub fn ordinal(writer: anytype, num: anytype, superscript: bool) !void {
+    const info = @typeInfo(@TypeOf(num));
+    if (info != .int) @compileError("ordinal can only print integers");
+    if (info.int.signedness != .unsigned) @compileError("ordinal can only print unsigned integers");
+
+    const table = if (superscript) superscripts else normal;
+
+    try writer.print("{}", .{num});
+    try writer.writeAll(
+        switch (num / 10 % 10) {
+            1 => table[0],
+            else => table[num % 10],
+        },
+    );
+}
+
+test "print ordinal normal" {
+    const cases = [_]struct { number: u16, result: []const u8 }{
+        .{
+            .number = 0,
+            .result = "0th",
+        },
+        .{
+            .number = 1,
+            .result = "1st",
+        },
+        .{
+            .number = 2,
+            .result = "2nd",
+        },
+        .{
+            .number = 3,
+            .result = "3rd",
+        },
+        .{
+            .number = 4,
+            .result = "4th",
+        },
+        .{
+            .number = 11,
+            .result = "11th",
+        },
+        .{
+            .number = 12,
+            .result = "12th",
+        },
+        .{
+            .number = 13,
+            .result = "13th",
+        },
+        .{
+            .number = 14,
+            .result = "14th",
+        },
+        .{
+            .number = 31,
+            .result = "31st",
+        },
+        .{
+            .number = 112,
+            .result = "112th",
+        },
+        .{
+            .number = 9311,
+            .result = "9311th",
+        },
+    };
+
+    inline for (cases) |case| {
+        var array: std.ArrayListUnmanaged(u8) = .empty;
+        defer array.deinit(std.testing.allocator);
+
+        try ordinal(array.writer(), case.number, false);
+        std.testing.expectEqualStrings(case.result, array.items);
+    }
+}
+
+test "print ordinal superscript" {
+    const cases = [_]struct { number: u16, result: []const u8 }{
+        .{
+            .number = 0,
+            .result = "0ᵗʰ",
+        },
+        .{
+            .number = 1,
+            .result = "1ˢᵗ",
+        },
+        .{
+            .number = 2,
+            .result = "2ⁿᵈ",
+        },
+        .{
+            .number = 3,
+            .result = "3ʳᵈ",
+        },
+        .{
+            .number = 4,
+            .result = "4ᵗʰ",
+        },
+        .{
+            .number = 11,
+            .result = "11ᵗʰ",
+        },
+        .{
+            .number = 12,
+            .result = "12ᵗʰ",
+        },
+        .{
+            .number = 13,
+            .result = "13ᵗʰ",
+        },
+        .{
+            .number = 14,
+            .result = "14ᵗʰ",
+        },
+        .{
+            .number = 31,
+            .result = "31ˢᵗ",
+        },
+        .{
+            .number = 112,
+            .result = "112ᵗʰ",
+        },
+        .{
+            .number = 9311,
+            .result = "9311ᵗʰ",
+        },
+    };
+
+    inline for (cases) |case| {
+        var array: std.ArrayListUnmanaged(u8) = .empty;
+        defer array.deinit(std.testing.allocator);
+        const writer = array.writer(std.testing.allocator);
+
+        try ordinal(writer, case.number, true);
+        std.testing.expectEqualStrings(case.result, array.items);
+    }
+}
