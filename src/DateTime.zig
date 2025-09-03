@@ -61,9 +61,7 @@ pub fn updateDayOfWeek(self: *DateTime) void {
     self.weekday = date.dayOfWeek();
 }
 
-pub fn format(self: DateTime, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = options;
-
+pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) !void {
     if (fmt.len == 0) @compileError("DateTime: format string can't be empty");
 
     @setEvalBranchQuota(100000);
@@ -200,22 +198,24 @@ pub fn format(self: DateTime, comptime fmt: []const u8, options: std.fmt.FormatO
             else => {},
         }
     }
+
+    try writer.flush();
 }
 
 pub fn formatAlloc(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []const u8) ![]const u8 {
-    var list: std.ArrayListUnmanaged(u8) = .empty;
-    defer list.deinit(alloc);
+    var buf: std.Io.Writer.Allocating = .init(alloc);
+    errdefer buf.deinit();
 
-    try self.format(fmt, .{}, list.writer(alloc));
-    return list.toOwnedSlice(alloc);
+    try self.format(fmt, &buf.writer);
+    return try buf.toOwnedSlice(alloc);
 }
 
 pub fn formatAllocSentinel(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []const u8, comptime sentinel: u8) ![]const u8 {
-    var list: std.ArrayListUnmanaged(u8) = .empty;
-    defer list.deinit(alloc);
+    var buf: std.Io.Writer.Allocating = .init(alloc);
+    errdefer buf.deinit();
 
-    try self.format(fmt, .{}, list.writer(alloc));
-    return list.toOwnedSliceSentinel(alloc, sentinel);
+    try self.format(fmt, &buf.writer);
+    return try buf.toOwnedSliceSentinel(alloc, sentinel);
 }
 
 const AmPm = enum {
@@ -1124,11 +1124,11 @@ test "formatTest" {
     };
 
     inline for (cases) |case| {
-        var array = std.ArrayList(u8).init(std.testing.allocator);
-        defer array.deinit();
+        var buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
+        defer buf.deinit();
 
-        try case.datetime.format(case.fmt, .{}, array.writer());
+        try case.datetime.format(case.fmt, &buf.writer);
 
-        try std.testing.expectEqualStrings(case.result, array.items);
+        try std.testing.expectEqualStrings(case.result, buf.written());
     }
 }

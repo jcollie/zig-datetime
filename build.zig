@@ -4,8 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const test_filter = b.option([]const u8, "test-filter", "Filter for test");
-    _ = b.addModule(
+    const test_filter = b.option([]const u8, "test-filter", "Filter for test") orelse "";
+    const module = b.addModule(
         "datetime",
         .{
             .root_source_file = b.path("src/main.zig"),
@@ -15,10 +15,8 @@ pub fn build(b: *std.Build) void {
     );
 
     const tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .filter = test_filter,
+        .root_module = module,
+        .filters = &.{test_filter},
     });
 
     const run_tests = b.addRunArtifact(tests);
