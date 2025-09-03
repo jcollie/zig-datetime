@@ -207,7 +207,7 @@ pub fn formatAlloc(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []con
     errdefer buf.deinit();
 
     try self.format(fmt, &buf.writer);
-    return try buf.toOwnedSlice(alloc);
+    return try buf.toOwnedSlice();
 }
 
 pub fn formatAllocSentinel(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []const u8, comptime sentinel: u8) ![]const u8 {
@@ -215,7 +215,7 @@ pub fn formatAllocSentinel(self: DateTime, alloc: std.mem.Allocator, comptime fm
     errdefer buf.deinit();
 
     try self.format(fmt, &buf.writer);
-    return try buf.toOwnedSliceSentinel(alloc, sentinel);
+    return try buf.toOwnedSliceSentinel(sentinel);
 }
 
 const AmPm = enum {
@@ -245,7 +245,7 @@ pub fn parse(comptime format_string: []const u8, value: []const u8) ParseError!P
 
 pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime, value: []const u8) ParseError!ParseResult {
     const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
-        @setEvalBranchQuota(100000);
+        @setEvalBranchQuota(200000);
         var count = 0;
         {
             var it: FormatTag.Tokenizer = .init(format_string);
@@ -461,9 +461,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                     },
                     .mm, .m => {
                         datetime.minute = minute: {
-                            log.warn("mm left: {s}", .{left});
                             const str = read.int(left, 2);
-                            log.warn("mm str: {s}", .{str});
                             if (str.len == 0) return error.ParseError;
                             if (tag == .mm and str.len != 2) return error.ParseError;
                             const minute = try std.fmt.parseInt(Minute, str, 10);
