@@ -2,7 +2,7 @@ const std = @import("std");
 
 /// The IANA release that `build.zig.zon` pins. Kept here so the generated
 /// data can record which release it came from.
-const tz_release = "2026a";
+const tz_release = "2026c";
 
 /// How zic should pack the embedded data.
 const Packing = enum { slim, fat };
