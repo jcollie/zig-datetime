@@ -54,48 +54,17 @@ pub fn fromMilliTimestamp(timestamp: i64) Instant {
     };
 }
 
-/// Converts this instant to a calendar `DateTime`. Asserts that the
-/// timestamp is non-negative; dates before 1970 are not supported yet.
+/// Converts this instant to a calendar `DateTime` in UTC. Timestamps
+/// before the Unix epoch are supported and produce dates before 1970.
 pub fn asDateTime(self: Instant) DateTime {
-    // this does not support negative timestamps yet
-    std.debug.assert(self.timestamp >= 0);
+    // Floor division throughout, so that a negative timestamp rounds
+    // towards the earlier date and leaves a non-negative remainder
+    // rather than a negative time of day.
+    const nanosecond: Nanosecond = @intCast(@mod(self.timestamp, std.time.ns_per_s));
+    const seconds = @divFloor(self.timestamp, std.time.ns_per_s);
 
-    const nanosecond: Nanosecond = @intCast(@mod(
-        self.timestamp,
-        std.time.ns_per_s,
-    ));
-    var seconds = @divTrunc(
-        self.timestamp,
-        std.time.ns_per_s,
-    );
-    const second: Second = @intCast(@mod(
-        seconds,
-        std.time.s_per_min,
-    ));
-    seconds -= second;
-
-    const minute: Minute = @intCast(@divTrunc(
-        @mod(
-            seconds,
-            std.time.s_per_hour,
-        ),
-        std.time.s_per_min,
-    ));
-    seconds -= @as(u32, minute) * std.time.s_per_min;
-
-    const hour: Hour = @intCast(@divTrunc(
-        @mod(
-            seconds,
-            std.time.s_per_day,
-        ),
-        std.time.s_per_hour,
-    ));
-    seconds -= @as(u32, hour) * std.time.s_per_hour;
-
-    const days: Date.DaysType = @intCast(@divTrunc(
-        seconds,
-        std.time.s_per_day,
-    ));
+    const days: Date.DaysType = @intCast(@divFloor(seconds, std.time.s_per_day));
+    const second_of_day: i64 = @intCast(@mod(seconds, std.time.s_per_day));
 
     const date = Date.fromDaysSinceStartOfEra(days);
 
@@ -103,11 +72,12 @@ pub fn asDateTime(self: Instant) DateTime {
         .year = date.year,
         .month = date.month,
         .day = date.day,
-        .hour = hour,
-        .minute = minute,
-        .second = second,
+        .hour = @intCast(@divTrunc(second_of_day, std.time.s_per_hour)),
+        .minute = @intCast(@divTrunc(@mod(second_of_day, std.time.s_per_hour), std.time.s_per_min)),
+        .second = @intCast(@mod(second_of_day, std.time.s_per_min)),
         .nanosecond = nanosecond,
         .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
+        .offset = 0,
     };
 }
 
@@ -132,22 +102,58 @@ test "instantTest" {
                 .weekday = .Thu,
             },
         },
-        // .{
-        //     .instant = .{
-        //         .timestamp = -1,
-        //         .timezone = .UTC,
-        //     },
-        //     .datetime = .{
-        //         .year = 1969,
-        //         .month = .Dec,
-        //         .day = 31,
-        //         .hour = 23,
-        //         .minute = 59,
-        //         .second = 59,
-        //         .nanosecond = 999999999,
-        //         .weekday = .Wed,
-        //     },
-        // },
+        .{
+            .instant = .{
+                .timestamp = -1,
+                .timezone = .UTC,
+            },
+            .datetime = .{
+                .year = 1969,
+                .month = .Dec,
+                .day = 31,
+                .hour = 23,
+                .minute = 59,
+                .second = 59,
+                .nanosecond = 999999999,
+                .weekday = .Wed,
+            },
+        },
+        // A whole day before the epoch, so the time of day is midnight
+        // rather than a borrow from the previous day.
+        .{
+            .instant = .{
+                .timestamp = -@as(i128, std.time.ns_per_day),
+                .timezone = .UTC,
+            },
+            .datetime = .{
+                .year = 1969,
+                .month = .Dec,
+                .day = 31,
+                .hour = 0,
+                .minute = 0,
+                .second = 0,
+                .nanosecond = 0,
+                .weekday = .Wed,
+            },
+        },
+        // Well before the epoch, in the range historical timezone data
+        // reaches into.
+        .{
+            .instant = .{
+                .timestamp = -2208988800 * @as(i128, std.time.ns_per_s),
+                .timezone = .UTC,
+            },
+            .datetime = .{
+                .year = 1900,
+                .month = .Jan,
+                .day = 1,
+                .hour = 0,
+                .minute = 0,
+                .second = 0,
+                .nanosecond = 0,
+                .weekday = .Mon,
+            },
+        },
         .{
             .instant = .{
                 .timestamp = 1697316872549526016,
