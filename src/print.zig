@@ -40,6 +40,9 @@ test "superscript" {
     try std.testing.expectEqual(10, superscripts.len);
 }
 
+/// Writes `num` followed by its English ordinal suffix ("1st", "2nd", "3rd",
+/// "4th", ...), using Unicode superscript suffixes when `superscript` is
+/// true. `num` must be an unsigned integer.
 pub fn ordinal(writer: anytype, num: anytype, superscript: bool) !void {
     const info = @typeInfo(@TypeOf(num));
     if (info != .int) @compileError("ordinal can only print integers");

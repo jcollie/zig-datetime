@@ -21,18 +21,26 @@ pub const DayOfWeek = enum(u3) {
         value: DayOfWeek,
     };
 
+    /// Parses a two-letter day name ("Su" ... "Sa") at the start of `left`,
+    /// case-insensitively.
     pub fn parseVeryShortStr(left: []const u8) ParseError!ParseStringResult {
         return parseWithMap(DayOfWeek.very_short_map, left);
     }
 
+    /// Parses a three-letter day name ("Sun" ... "Sat") at the start of
+    /// `left`, case-insensitively.
     pub fn parseShortStr(left: []const u8) ParseError!ParseStringResult {
         return parseWithMap(DayOfWeek.short_map, left);
     }
 
+    /// Parses a full day name ("Sunday" ... "Saturday") at the start of
+    /// `left`, case-insensitively.
     pub fn parseLongStr(left: []const u8) ParseError!ParseStringResult {
         return parseWithMap(DayOfWeek.long_map, left);
     }
 
+    /// Returns the shortest prefix of `left` found in `map` along with its
+    /// value, or `error.ParseError` if no prefix matches.
     fn parseWithMap(map: MapType, left: []const u8) ParseError!ParseStringResult {
         for (1..left.len + 1) |l| {
             if (map.get(left[0..l])) |dow| {
@@ -45,6 +53,7 @@ pub const DayOfWeek = enum(u3) {
         return error.ParseError;
     }
 
+    /// Returns the day after this one, wrapping from Saturday to Sunday.
     pub fn next(self: DayOfWeek) DayOfWeek {
         return switch (self) {
             .Sun => .Mon,
@@ -57,6 +66,7 @@ pub const DayOfWeek = enum(u3) {
         };
     }
 
+    /// Returns the day before this one, wrapping from Sunday to Saturday.
     pub fn prev(self: DayOfWeek) DayOfWeek {
         return switch (self) {
             .Sun => .Sat,
@@ -69,6 +79,7 @@ pub const DayOfWeek = enum(u3) {
         };
     }
 
+    /// Returns the two-letter English name ("Su" ... "Sa").
     pub fn veryShortName(self: DayOfWeek) []const u8 {
         return switch (self) {
             .Sun => "Su",
@@ -81,6 +92,7 @@ pub const DayOfWeek = enum(u3) {
         };
     }
 
+    /// Returns the three-letter English name ("Sun" ... "Sat").
     pub fn shortName(self: DayOfWeek) []const u8 {
         return switch (self) {
             .Sun => "Sun",
@@ -93,6 +105,7 @@ pub const DayOfWeek = enum(u3) {
         };
     }
 
+    /// Returns the full English name ("Sunday" ... "Saturday").
     pub fn longName(self: DayOfWeek) []const u8 {
         return switch (self) {
             .Sun => "Sunday",
@@ -105,14 +118,18 @@ pub const DayOfWeek = enum(u3) {
         };
     }
 
+    /// Returns the weekday number, Sunday = 0 through Saturday = 6.
     pub fn weekdayNumber(self: DayOfWeek) u3 {
         return @intFromEnum(self);
     }
 
+    /// Returns the ISO 8601 weekday number, Monday = 1 through Sunday = 7.
     pub fn isoWeekdayNumber(self: DayOfWeek) u3 {
         return if (self == .Sun) 7 else @intFromEnum(self);
     }
 
+    /// Returns the day of the week that falls `days` days after 1970-01-01
+    /// (which was a Thursday); negative values count backward.
     pub fn fromDaysSinceStartOfEra(days: Date.DaysType) DayOfWeek {
         const result = if (days >= -4)
             @rem(days + 4, 7)
@@ -153,7 +170,7 @@ pub const DayOfWeek = enum(u3) {
             .{ "sunday", .Sun },
             .{ "monday", .Mon },
             .{ "tuesday", .Tue },
-            .{ "wednday", .Wed },
+            .{ "wednesday", .Wed },
             .{ "thursday", .Thu },
             .{ "friday", .Fri },
             .{ "saturday", .Sat },
@@ -216,6 +233,7 @@ pub const DayOfWeek = enum(u3) {
     );
 };
 
+/// Returns the number of days (0-6) counting forward from `start` to `end`.
 pub fn weekdayDifference(start: DayOfWeek, end: DayOfWeek) u3 {
     const d = @as(i4, end.weekdayNumber()) - @as(i4, start.weekdayNumber());
     return if (d >= 0) @intCast(d) else @intCast(d + 7);

@@ -18,6 +18,8 @@ pub const Month = enum(u4) {
     Nov = 11,
     Dec = 12,
 
+    /// Returns the month number (1-12) as integer type `T`. `T` must have at
+    /// least 4 bits if unsigned, or 5 bits if signed.
     pub fn as(self: Month, comptime T: type) T {
         const info = @typeInfo(T);
         if (info != .int) @compileError("can't convert to anything but an int");
@@ -36,6 +38,7 @@ pub const Month = enum(u4) {
         IllegalCharacter,
     } || std.fmt.ParseIntError;
 
+    /// Parses a one- or two-digit month number ("1"-"12") into a `Month`.
     pub fn parseInt(str: []const u8) ParseError!Month {
         if (str.len == 0) return error.TooShort;
         if (str.len > 2) return error.TooLong;
@@ -54,6 +57,7 @@ pub const Month = enum(u4) {
         return std.enums.fromInt(Month, month) orelse unreachable;
     }
 
+    /// Returns the calendar month number, January = 1 through December = 12.
     pub fn monthNumber(self: Month) u4 {
         return switch (self) {
             .Jan => 1,
@@ -71,6 +75,7 @@ pub const Month = enum(u4) {
         };
     }
 
+    /// Returns the month after this one, wrapping from December to January.
     pub fn next(self: Month) Month {
         return switch (self) {
             .Jan => .Feb,
@@ -88,6 +93,7 @@ pub const Month = enum(u4) {
         };
     }
 
+    /// Returns the month before this one, wrapping from January to December.
     pub fn prev(self: Month) Month {
         return switch (self) {
             .Jan => .Dec,
@@ -105,6 +111,8 @@ pub const Month = enum(u4) {
         };
     }
 
+    /// Returns the number of the last day of this month (28-31) in `year`,
+    /// accounting for leap years.
     pub fn lastDay(self: Month, year: Year) Day {
         return switch (self) {
             .Jan => 31,
@@ -122,6 +130,7 @@ pub const Month = enum(u4) {
         };
     }
 
+    /// Returns the quarter of the year (1-4) containing this month.
     pub fn quarter(self: Month) u3 {
         return switch (self) {
             .Jan => 1,
@@ -139,6 +148,7 @@ pub const Month = enum(u4) {
         };
     }
 
+    /// Returns the three-letter English name ("Jan" ... "Dec").
     pub fn shortName(self: Month) []const u8 {
         return switch (self) {
             .Jan => "Jan",
@@ -156,10 +166,11 @@ pub const Month = enum(u4) {
         };
     }
 
+    /// Returns the full English name ("January" ... "December").
     pub fn longName(self: Month) []const u8 {
         return switch (self) {
             .Jan => "January",
-            .Feb => "Febuary",
+            .Feb => "February",
             .Mar => "March",
             .Apr => "April",
             .May => "May",
@@ -173,6 +184,8 @@ pub const Month = enum(u4) {
         };
     }
 
+    /// Returns the number of days in `year` that pass before the first of
+    /// this month, accounting for leap years.
     pub fn daysBefore(self: Month, year: Year) u9 {
         return switch (self) {
             .Jan => 0,
@@ -195,6 +208,7 @@ pub const Month = enum(u4) {
 
         pub const init: Iterator = .{ .index = .Jan };
 
+        /// Returns the next month, or null once December has been returned.
         pub fn next(self: *Iterator) ?Month {
             defer {
                 if (self.index) |i| {
@@ -209,6 +223,7 @@ pub const Month = enum(u4) {
         }
     };
 
+    /// Returns an iterator over the months January through December.
     pub fn iterator() Iterator {
         return .init;
     }

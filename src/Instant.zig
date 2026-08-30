@@ -14,6 +14,7 @@ const Timezone = @import("timezone.zig").Timezone;
 timestamp: i128,
 timezone: Timezone,
 
+/// Returns the current time read from the `.real` clock of `io`, in UTC.
 pub fn now(io: std.Io) Instant {
     return .{
         .timestamp = std.Io.Timestamp.now(io, .real).nanoseconds,
@@ -21,6 +22,7 @@ pub fn now(io: std.Io) Instant {
     };
 }
 
+/// Same as `now`: the current time read from the `.real` clock of `io`, in UTC.
 pub fn utc(io: std.Io) Instant {
     return .{
         .timestamp = std.Io.Timestamp.now(io, .real).nanoseconds,
@@ -28,6 +30,7 @@ pub fn utc(io: std.Io) Instant {
     };
 }
 
+/// Creates an `Instant` from a count of nanoseconds since the Unix epoch, in UTC.
 pub fn fromNanoTimeStamp(timestamp: i128) Instant {
     return .{
         .timestamp = timestamp,
@@ -35,6 +38,7 @@ pub fn fromNanoTimeStamp(timestamp: i128) Instant {
     };
 }
 
+/// Creates an `Instant` from a count of microseconds since the Unix epoch, in UTC.
 pub fn fromMicroTimeStamp(timestamp: i64) Instant {
     return .{
         .timestamp = timestamp * std.time.ns_per_us,
@@ -42,13 +46,16 @@ pub fn fromMicroTimeStamp(timestamp: i64) Instant {
     };
 }
 
+/// Creates an `Instant` from a count of milliseconds since the Unix epoch, in UTC.
 pub fn fromMilliTimestamp(timestamp: i64) Instant {
     return .{
-        .timestamp = timestamp * std.time.ns_per_us,
+        .timestamp = timestamp * std.time.ns_per_ms,
         .timezone = .UTC,
     };
 }
 
+/// Converts this instant to a calendar `DateTime`. Asserts that the
+/// timestamp is non-negative; dates before 1970 are not supported yet.
 pub fn asDateTime(self: Instant) DateTime {
     // this does not support negative timestamps yet
     std.debug.assert(self.timestamp >= 0);

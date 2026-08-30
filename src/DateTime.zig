@@ -39,19 +39,24 @@ pub const unix_epoch: DateTime = .{
     .weekday = .Thu,
 };
 
+/// Returns the current time in UTC, read from the `.real` clock of `io`.
 pub fn utc(io: std.Io) DateTime {
     return Instant.utc(io).asDateTime();
 }
 
+/// Writes the name at `index` in `names` to `writer`.
 fn printLongName(writer: anytype, index: u16, names: []const []const u8) !void {
     try writer.writeAll(names[index]);
 }
 
+/// Wraps `val` into the range `[1, at]`, mapping a remainder of 0 to `at`
+/// (e.g. hour 0 becomes 12 on a 12-hour clock).
 fn wrap(val: anytype, at: @TypeOf(val)) @TypeOf(val) {
     const tmp = val % at;
     return if (tmp == 0) at else tmp;
 }
 
+/// Recomputes the `weekday` field from the current `year`, `month`, and `day`.
 pub fn updateDayOfWeek(self: *DateTime) void {
     const date: Date = .{
         .year = self.year,
@@ -61,23 +66,38 @@ pub fn updateDayOfWeek(self: *DateTime) void {
     self.weekday = date.dayOfWeek();
 }
 
+/// Writes this date/time to `writer` according to `fmt`, a comptime format
+/// string made of `FormatTag` sequences (e.g. "YYYY-MM-DDTHH:mm:ss.SSS").
+/// The literal characters `,`, ` `, `:`, `-`, `.`, `T`, and `W` are copied
+/// through unchanged; any other character that is not part of a format
+/// sequence is a compile error. Flushes `writer` before returning.
 pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) !void {
     if (fmt.len == 0) @compileError("DateTime: format string can't be empty");
 
-    @setEvalBranchQuota(100000);
+    @setEvalBranchQuota(2000000);
 
-    comptime var start = 0;
-    comptime var end = 0;
-    comptime var next: ?FormatTag = null;
-    inline for (fmt, 0..) |c, i| {
-        end = i + 1;
-        if (comptime std.meta.stringToEnum(FormatTag, fmt[start..end])) |tag| {
-            next = tag;
-            if (i < fmt.len - 1) continue;
+    const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
+        var count = 0;
+        {
+            var it: FormatTag.Tokenizer = .init(fmt);
+            while (it.next()) |_| count += 1;
         }
+        var buf: [count]FormatTag.Tokenizer.Token = undefined;
+        var index = 0;
+        {
+            var it: FormatTag.Tokenizer = .init(fmt);
+            while (it.next()) |token| {
+                buf[index] = token;
+                index += 1;
+            }
+        }
+        const final = buf;
+        break :tokens &final;
+    };
 
-        if (next) |format_tag| {
-            switch (format_tag) {
+    inline for (tokens) |token| {
+        switch (token) {
+            .tag => |format_tag| switch (format_tag) {
                 .M => try writer.print("{}", .{@intFromEnum(self.month)}),
                 .Mo => try print.ordinal(writer, @intFromEnum(self.month), false),
                 .MO => try print.ordinal(writer, @intFromEnum(self.month), true),
@@ -123,8 +143,8 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                     try writer.print("{d:0>4}", .{@abs(self.year)});
                 },
 
-                .A => try writeTwelveHour(self.hour, .upper),
-                .a => try writeTwelveHour(self.hour, .lower),
+                .A => try writeTwelveHour(self.hour, .upper, writer),
+                .a => try writeTwelveHour(self.hour, .lower, writer),
 
                 .H => try writer.print("{}", .{self.hour}),
                 .HH => try writer.print("{:0>2}", .{self.hour}),
@@ -177,31 +197,29 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 //         break :brk;
                 //     }
                 // },
-            }
-            // .z => try writer.writeAll(@tagName(self.timezone)),
-            // .Z => try writer.writeAll("+00:00"),
-            // .ZZ => try writer.writeAll("+0000"),
 
-            // .x => try writer.print("{}", .{self.toUnixMilli()}),
-            // .X => try writer.print("{}", .{self.toUnix()}),
+                // .z => try writer.writeAll(@tagName(self.timezone)),
+                // .Z => try writer.writeAll("+00:00"),
+                // .ZZ => try writer.writeAll("+0000"),
 
-            next = null;
-            start = i;
-        }
-
-        switch (c) {
-            ',', ' ', ':', '-', '.', 'T', 'W' => {
-                try writer.writeAll(&.{c});
-                start = i + 1;
-                continue;
+                // .x => try writer.print("{}", .{self.toUnixMilli()}),
+                // .X => try writer.print("{}", .{self.toUnix()}),
             },
-            else => {},
+            .char => |c| switch (c) {
+                ',', ' ', ':', '-', '.', 'T', 'W' => try writer.writeAll(&.{c}),
+                else => @compileError(std.fmt.comptimePrint(
+                    "DateTime: unsupported literal character '{c}' in format string",
+                    .{c},
+                )),
+            },
         }
     }
 
     try writer.flush();
 }
 
+/// Like `format`, but returns the formatted string as a slice allocated
+/// with `alloc`. The caller owns the returned memory.
 pub fn formatAlloc(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []const u8) ![]const u8 {
     var buf: std.Io.Writer.Allocating = .init(alloc);
     errdefer buf.deinit();
@@ -210,6 +228,7 @@ pub fn formatAlloc(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []con
     return try buf.toOwnedSlice();
 }
 
+/// Like `formatAlloc`, but the returned slice is terminated with `sentinel`.
 pub fn formatAllocSentinel(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []const u8, comptime sentinel: u8) ![]const u8 {
     var buf: std.Io.Writer.Allocating = .init(alloc);
     errdefer buf.deinit();
@@ -234,15 +253,27 @@ pub const ParseError = error{
     Underflow,
 } || Month.ParseError || DayOfWeek.ParseError;
 
+/// The result of a successful parse: the prefix of the input that was
+/// consumed and the value it parsed to.
 pub const ParseResult = struct {
     str: []const u8,
     value: DateTime,
 };
 
+/// Parses `value` according to the comptime `format_string`, relative to the
+/// Unix epoch: date fields missing from the format string default to
+/// 1970-01-01 and time fields default to zero. See `parseRelativeTo`.
 pub fn parse(comptime format_string: []const u8, value: []const u8) ParseError!ParseResult {
     return parseRelativeTo(format_string, .unix_epoch, value);
 }
 
+/// Parses `value` according to the comptime `format_string`, a string of
+/// `FormatTag` sequences (e.g. "MMM D H:mm:ss"). Date fields missing from
+/// the format string are taken from `relative_to`; time-of-day fields
+/// always default to zero. A parsed day of the week is checked against the
+/// computed date and `error.ParseError` is returned on mismatch. The
+/// quarter (`Q`) and week-of-year (`w`) sequences cannot be parsed and
+/// cause `error.IllegalToken`.
 pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime, value: []const u8) ParseError!ParseResult {
     const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
         @setEvalBranchQuota(200000);
@@ -650,6 +681,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
     };
 }
 
+/// Returns the 1-based day of the year (1-366).
 pub fn dayOfThisYear(self: DateTime) u9 {
     return self.month.daysBefore(self.year) + self.day;
 }
@@ -1118,6 +1150,26 @@ test "formatTest" {
             .datetime = test_date,
             .fmt = "YYYY-MM-DDTHH:mm:ss.S",
             .result = "1970-01-01T00:00:00.1",
+        },
+        .{
+            .datetime = test_date,
+            .fmt = "h a",
+            .result = "12 am",
+        },
+        .{
+            .datetime = test_date,
+            .fmt = "h A",
+            .result = "12 AM",
+        },
+        .{
+            .datetime = test_date,
+            .fmt = "ha",
+            .result = "12am",
+        },
+        .{
+            .datetime = test_date,
+            .fmt = "HHmm",
+            .result = "0000",
         },
     };
 

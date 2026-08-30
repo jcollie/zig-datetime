@@ -29,10 +29,13 @@ pub const Prefix = enum(i8) {
     quecto = -30,
     _,
 
-    pub fn exponent(self: Prefix) i5 {
+    /// Returns the power of ten this prefix represents.
+    pub fn exponent(self: Prefix) i8 {
         return @intFromEnum(self);
     }
 
+    /// Returns the SI symbol for this prefix (e.g. "k" for kilo, "µ" for
+    /// micro). Asserts that this is one of the named SI prefixes.
     pub fn symbol(self: Prefix) []const u8 {
         return switch (self) {
             .quetta => "Q",
@@ -59,13 +62,16 @@ pub const Prefix = enum(i8) {
             .yocto => "y",
             .ronto => "r",
             .quecto => "q",
+            _ => unreachable,
         };
     }
 };
 
+/// Converts `value` from units of prefix `from` to units of prefix `to`.
+/// When converting to a larger unit the result is truncated and the leftover
+/// amount, in `from` units, is returned as `remainder`.
 pub fn convert(from: Prefix, to: Prefix, value: i128) struct { result: i128, remainder: i128 } {
-    const exponent = from - to;
-    if (exponent == 0) return .{ .result = value, .remainder = 0 };
+    const exponent = from.exponent() - to.exponent();
     if (exponent < 0) {
         const factor = std.math.pow(i128, 10, @abs(exponent));
         const remainder = @rem(value, factor);
@@ -76,12 +82,18 @@ pub fn convert(from: Prefix, to: Prefix, value: i128) struct { result: i128, rem
         const factor = std.math.pow(i128, 10, exponent);
         return .{ .result = factor * value, .remainder = 0 };
     }
+    return .{ .result = value, .remainder = 0 };
+}
+
+test "symbol" {
+    try std.testing.expectEqualStrings("k", Prefix.kilo.symbol());
+    try std.testing.expectEqualStrings("µ", Prefix.micro.symbol());
 }
 
 test "convert-1" {
     const result = convert(.milli, .micro, 1);
-    try std.testing.expectEqual(i128, result.result, 1000);
-    try std.testing.expectEqual(i128, result.remainder, 0);
+    try std.testing.expectEqual(@as(i128, 1000), result.result);
+    try std.testing.expectEqual(@as(i128, 0), result.remainder);
 }
 
 // pub fn conversionFactor(from: i8, to: i8) !i30 {

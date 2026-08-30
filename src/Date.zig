@@ -16,6 +16,7 @@ pub const init: Date = .{
     .day = 1,
 };
 
+/// Returns true if `day` is a valid day number for this month and year.
 pub fn isRegular(self: Date) bool {
     return self.day >= 1 and self.day <= self.month.lastDay(self.year);
 }
@@ -25,7 +26,8 @@ pub const DaysType = std.math.IntFittingRange(
     std.math.maxInt(Year) * 366,
 );
 
-/// Rerurn the date that is `days` since 1970-01-01
+/// Returns the date that is `days` days after 1970-01-01; negative values
+/// give dates before the epoch.
 pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
     const z = days + 719468;
 
@@ -103,7 +105,8 @@ test "civilFromDays" {
     }
 }
 
-/// Returns the number of days since 1970-01-01
+/// Returns the number of days from 1970-01-01 to this date; negative for
+/// dates before the epoch. Asserts that the date is valid (see `isRegular`).
 pub fn toDaysSinceStartOfEra(self: Date) DaysType {
     std.debug.assert(self.day >= 1 and self.day <= self.month.lastDay(self.year));
 
@@ -171,6 +174,7 @@ test "daysFromCivil" {
     }
 }
 
+/// Returns the day of the week this date falls on.
 pub fn dayOfWeek(self: Date) DayOfWeek {
     const days = self.toDaysSinceStartOfEra();
     return DayOfWeek.fromDaysSinceStartOfEra(days);

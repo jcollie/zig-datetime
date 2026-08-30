@@ -81,6 +81,9 @@ pub const FormatTag = enum {
     // x, // unix milli
     // X, // unix
 
+    /// Truncates a nanosecond value to the precision of this `S...` tag,
+    /// e.g. `.SSS` reduces it to milliseconds. `tag` must be one of the
+    /// fractional-second sequences.
     pub fn convertFractionalSeconds(comptime tag: FormatTag, value: u30) u30 {
         const name = comptime @tagName(tag);
         comptime var count: i8 = undefined;
@@ -112,6 +115,8 @@ pub const FormatTag = enum {
         }
     }
 
+    /// Splits a format string into `FormatTag` sequences and literal
+    /// characters, always taking the longest tag that matches.
     pub const Tokenizer = struct {
         index: usize,
         format_string: []const u8,
@@ -121,6 +126,7 @@ pub const FormatTag = enum {
             tag: FormatTag,
         };
 
+        /// Creates a tokenizer positioned at the start of `format_string`.
         pub fn init(format_string: []const u8) Tokenizer {
             return .{
                 .index = 0,
@@ -128,12 +134,19 @@ pub const FormatTag = enum {
             };
         }
 
+        /// Returns the next token, or null when the format string is
+        /// exhausted.
         pub fn next(self: *Tokenizer) ?Token {
             if (self.index >= self.format_string.len) return null;
             var tag_: ?FormatTag = null;
-            for (self.index + 1..self.format_string.len + 1) |end| {
-                if (std.meta.stringToEnum(FormatTag, self.format_string[self.index..end])) |tag| {
-                    tag_ = tag;
+            var tag_len: usize = 0;
+            inline for (@typeInfo(FormatTag).@"enum".fields) |field| {
+                if (field.name.len > tag_len and
+                    self.index + field.name.len <= self.format_string.len and
+                    std.mem.eql(u8, field.name, self.format_string[self.index..][0..field.name.len]))
+                {
+                    tag_ = @enumFromInt(field.value);
+                    tag_len = field.name.len;
                 }
             }
             if (tag_) |tag| {

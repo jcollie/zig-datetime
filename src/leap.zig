@@ -1,5 +1,6 @@
 const Year = @import("year.zig").Year;
 
+/// Returns true if `year` is a leap year in the proleptic Gregorian calendar.
 pub fn is(year: Year) bool {
     // taken from https://github.com/ziglang/zig/pull/18451
     //

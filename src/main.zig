@@ -4,13 +4,14 @@ pub const Year = @import("year.zig").Year;
 pub const Month = @import("month.zig").Month;
 pub const Day = @import("day.zig").Day;
 pub const Hour = @import("hour.zig").Hour;
-pub const Minute = @import("hour.zig").Hour;
+pub const Minute = @import("minute.zig").Minute;
 pub const Second = @import("second.zig").Second;
 pub const Nanosecond = @import("nanosecond.zig").Nanosecond;
 pub const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 pub const Date = @import("Date.zig");
 pub const DateTime = @import("DateTime.zig");
 pub const Instant = @import("Instant.zig");
+pub const si = @import("si.zig");
 
 // test "bigTest" {
 //     const year_start: Year = -1000000;
