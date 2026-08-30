@@ -11,6 +11,7 @@ pub const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 pub const Date = @import("Date.zig");
 pub const DateTime = @import("DateTime.zig");
 pub const Instant = @import("Instant.zig");
+pub const rfc822 = @import("rfc822.zig");
 pub const si = @import("si.zig");
 
 // test "bigTest" {
