@@ -60,7 +60,14 @@ jobs:
 
     steps:
       - name: Check out the repository
-        uses: actions/checkout@v4
+        # Pinned to a commit rather than a tag, so that what runs here
+        # cannot change under a moved tag. The trailing comment is the
+        # version that commit is, in the format pinact writes.
+        #
+        # The host is spelled out because a bare `actions/checkout`
+        # resolves against whatever default action URL the runner is
+        # configured with, which is not part of this repository.
+        uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The whole history, so the update can be committed onto the
           # default branch rather than a detached shallow one.
