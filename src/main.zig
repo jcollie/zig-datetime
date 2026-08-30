@@ -12,6 +12,10 @@ pub const Date = @import("Date.zig");
 pub const DateTime = @import("DateTime.zig");
 pub const Instant = @import("Instant.zig");
 pub const rfc822 = @import("rfc822.zig");
+pub const TimeZone = @import("TimeZone.zig");
+pub const tzdb = @import("tzdb.zig");
+pub const tzif = @import("tzif.zig");
+pub const posixtz = @import("posixtz.zig");
 pub const si = @import("si.zig");
 
 // test "bigTest" {

@@ -3,10 +3,30 @@
     .version = "0.0.1",
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0x93f3c6caefdaebeb,
-    .dependencies = .{},
+    .dependencies = .{
+        // The IANA timezone database, used only when the build asks for
+        // embedded timezone data with -Dembed-tzdata. Both halves are
+        // lazy, so an ordinary build neither fetches nor compiles them.
+        //
+        // These are the two gzip archives IANA publishes; together they
+        // hold exactly what tzdb-2026c.tar.lz holds, which Zig's package
+        // manager cannot read because it does not support lzip.
+        .tzcode = .{
+            .url = "https://data.iana.org/time-zones/releases/tzcode2026c.tar.gz",
+            .hash = "N-V-__8AACd5DwCVzz_8RDRfd3hfmj0Kmt3fUylmfdGyV1Pl",
+            .lazy = true,
+        },
+        .tzdata = .{
+            .url = "https://data.iana.org/time-zones/releases/tzdata2026c.tar.gz",
+            .hash = "N-V-__8AANpVFQC_1B4XtOlpRUfO6ZFsDlp3KppGU6Xal5yI",
+            .lazy = true,
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "README.md",
         "src",
+        "tools",
     },
 }
