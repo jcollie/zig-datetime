@@ -471,7 +471,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             }
                             const hour = try std.fmt.parseInt(Hour, str, 10);
                             switch (tag) {
-                                .HH, .H => if (hour <= 0 or hour >= 24) return error.ParseError,
+                                .HH, .H => if (hour >= 24) return error.ParseError,
                                 .hh, .h => if (hour <= 0 or hour > 12) return error.ParseError,
                                 else => unreachable,
                             }
@@ -1047,6 +1047,19 @@ test "parseTest" {
             .fmt = "ha",
             .expected = .{
                 .hour = 1,
+            },
+        },
+        // Midnight is a valid reading on a 24-hour clock.
+        .{
+            .value = "2024-03-15T00:30:00",
+            .fmt = "YYYY-MM-DDTHH:mm:ss",
+            .expected = .{
+                .year = 2024,
+                .month = .Mar,
+                .day = 15,
+                .hour = 0,
+                .minute = 30,
+                .weekday = .Fri,
             },
         },
     };
