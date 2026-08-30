@@ -45,6 +45,22 @@
             pkgs.git
             pkgs.jq
           ];
+
+          # Naming cacert above only puts it in the closure. Both curl and
+          # `zig fetch` still have to be told where the bundle is, and
+          # neither can fall back to a system store inside a container that
+          # has none. Without this the shell works on a developer's machine,
+          # which already has these set, and fails in CI with
+          # TlsInitializationFailed.
+          #
+          # This has to be the shellHook rather than a plain attribute:
+          # `nix develop` manages the certificate variables itself and
+          # overwrites an attribute of the same name, but the hook runs
+          # afterwards and wins.
+          shellHook = ''
+            export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            export NIX_SSL_CERT_FILE="$SSL_CERT_FILE"
+          '';
         };
         default = self.devShells.${pkgs.system}.zig_0_16;
       });

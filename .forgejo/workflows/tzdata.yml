@@ -64,7 +64,7 @@ jobs:
           set -eu
           # Prints the new version and edits the tree, or prints nothing
           # and leaves it alone when the pin is already current.
-          version="$(nix develop --command ./tools/update-tzdata.sh ${{ inputs.version }})"
+          version="$(nix develop --command ./tools/update-tzdata.sh ${{ github.event.inputs.version }})"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           if [ -n "$version" ]; then
             echo "A new release is available: ${version}" >> "$GITHUB_STEP_SUMMARY"
