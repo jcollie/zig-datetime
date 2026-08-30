@@ -70,6 +70,24 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_tests.step);
+
+    // Zig emits the API documentation as a side effect of compiling, so
+    // this builds the library purely to get at it. The result is a static
+    // site: index.html, the viewer's wasm and javascript, and the sources
+    // it reads from.
+    const docs_library = b.addLibrary(.{
+        .name = "datetime",
+        .root_module = module,
+    });
+
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs_library.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+
+    const docs_step = b.step("docs", "Build the API documentation into zig-out/docs");
+    docs_step.dependOn(&install_docs.step);
 }
 
 /// Builds the embedded timezone database and returns the path of the

@@ -44,6 +44,9 @@
             pkgs.curl
             pkgs.git
             pkgs.jq
+            # Publishes the API documentation to ocj.page; see
+            # .forgejo/workflows/test.yaml.
+            pkgs.git-pages-cli
           ];
 
           # Naming cacert above only puts it in the closure; curl still

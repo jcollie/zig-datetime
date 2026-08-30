@@ -2,6 +2,9 @@
 
 Dates, times, and timezones for Zig 0.16.
 
+API documentation: <https://jeff.ocj.page/zig-datetime/>, published from
+main by `.forgejo/workflows/test.yaml`.
+
 ## Adding it to a project
 
 ```sh
