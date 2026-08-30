@@ -269,10 +269,19 @@ IANA's version endpoint has been known to move first.
 `.forgejo/workflows/tzdata.yml` runs that daily. When a new release
 appears it rebuilds `zic` from the new sources, regenerates the embedded
 database, runs the suite against it, and only then opens a pull request.
-Everything lands on one branch, so a release that appears while an
-earlier pull request is still open force-pushes that branch and retitles
-the pull request rather than opening a second one. See the comments at
-the top of the workflow for the runner and token it needs.
+
+Each release gets its own branch, `tzdata-update-<version>`. If that
+branch already exists the release has been dealt with and the run stops
+before building anything, so a pull request left open for review is never
+disturbed. When a newer release turns up it arrives as its own branch and
+its own pull request, and the earlier one is closed as superseded with a
+comment pointing at its replacement. Nothing is force-pushed and no
+branch is reused, so a review stays attached to the release it was
+written about. Superseded branches are left in place as a record; only
+their pull requests are closed.
+
+See the comments at the top of the workflow for the runner and token it
+needs.
 
 ## Testing
 
