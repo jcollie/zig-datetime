@@ -244,6 +244,36 @@ durations.
 offsets are not whole minutes: America/Chicago's local mean time, which
 applies to any timestamp before 1883, is `-5:50:36`.
 
+## Keeping tzdata current
+
+The IANA database is re-cut several times a year, usually because a
+country has changed its rules at short notice, so the pin in
+`build.zig.zon` goes stale on its own schedule rather than yours.
+
+`tools/update-tzdata.sh` moves it. With no argument it takes the newest
+release IANA publishes; pass a version to pin a particular one:
+
+```sh
+tools/update-tzdata.sh          # newest published
+tools/update-tzdata.sh 2026c    # a specific release
+```
+
+The version lives in three places that have to agree — both dependency
+hashes in `build.zig.zon` and the `tz_release` constant in `build.zig`,
+which the generated data records as its own version — so the script
+rewrites all three together and verifies afterwards that no reference to
+the old release survived. It refuses to move backwards, and checks that
+both tarballs are actually published before touching anything, since
+IANA's version endpoint has been known to move first.
+
+`.forgejo/workflows/tzdata.yml` runs that daily. When a new release
+appears it rebuilds `zic` from the new sources, regenerates the embedded
+database, runs the suite against it, and only then opens a pull request.
+Everything lands on one branch, so a release that appears while an
+earlier pull request is still open force-pushes that branch and retitles
+the pull request rather than opening a second one. See the comments at
+the top of the workflow for the runner and token it needs.
+
 ## Testing
 
 ```sh

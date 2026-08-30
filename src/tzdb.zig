@@ -170,6 +170,38 @@ pub const system = struct {
     /// largest in the 2026c release is well under 32 KiB.
     const size_limit: std.Io.Limit = .limited(1 << 20);
 
+    /// Returns the release the tree in `directory` was compiled from,
+    /// such as "2026c", or null when the tree does not record one. The
+    /// caller owns the returned slice.
+    ///
+    /// A TZif file carries no version at all, so the only thing in a
+    /// zoneinfo tree that names the release is the first line of
+    /// `tzdata.zi`, the single file form of zic's own input, which most
+    /// distributions ship alongside the compiled zones. Systems that
+    /// leave it out cannot be asked.
+    pub fn version(
+        io: std.Io,
+        gpa: std.mem.Allocator,
+        directory: []const u8,
+    ) (std.mem.Allocator.Error || error{})!?[]const u8 {
+        const path = try std.fs.path.join(gpa, &.{ directory, "tzdata.zi" });
+        defer gpa.free(path);
+
+        // The whole file is read for the sake of its first line, which is
+        // wasteful but keeps this to one call; it is a hundred kilobytes
+        // or so and this is not on any hot path.
+        const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 24)) catch return null;
+        defer gpa.free(bytes);
+
+        const line = bytes[0 .. std.mem.indexOfScalar(u8, bytes, '\n') orelse bytes.len];
+        const prefix = "# version ";
+        if (!std.mem.startsWith(u8, line, prefix)) return null;
+
+        const found = std.mem.trim(u8, line[prefix.len..], " \t\r");
+        if (found.len == 0) return null;
+        return try gpa.dupe(u8, found);
+    }
+
     pub const LoadError = InvalidNameError ||
         std.Io.Dir.ReadFileAllocError ||
         TimeZone.Error ||
@@ -384,6 +416,20 @@ test "the embedded and system databases agree" {
         "/usr/share/lib/zoneinfo",
     };
 
+    // Only worth comparing when both sides are the same release. The two
+    // legitimately disagree otherwise, which is the normal state of
+    // affairs while a tzdata update is being prepared: the embedded copy
+    // is the new release and the machine's is whatever it had.
+    const matching = matching: {
+        for (directories) |directory| {
+            const found = (try system.version(testing.io, testing.allocator, directory)) orelse continue;
+            defer testing.allocator.free(found);
+            if (std.mem.eql(u8, found, embedded.version)) break :matching true;
+        }
+        break :matching false;
+    };
+    if (!matching) return error.SkipZigTest;
+
     const names = [_][]const u8{
         "America/Chicago",
         "Europe/Berlin",
@@ -496,4 +542,26 @@ test "TZ values are sorted into what they ask for" {
 fn posixtzTest(rule: []const u8) !void {
     const parsed = try @import("posixtz.zig").parse(rule);
     try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), parsed.std_offset);
+}
+
+test "the system database reports which release it was built from" {
+    const directories = [_][]const u8{
+        "/usr/share/zoneinfo",
+        "/etc/zoneinfo",
+        "/usr/lib/zoneinfo",
+        "/usr/share/lib/zoneinfo",
+    };
+
+    for (directories) |directory| {
+        const found = (try system.version(testing.io, testing.allocator, directory)) orelse continue;
+        defer testing.allocator.free(found);
+
+        // A release is four digits and a lower case letter, as in 2026c.
+        try testing.expectEqual(@as(usize, 5), found.len);
+        for (found[0..4]) |char| try testing.expect(std.ascii.isDigit(char));
+        try testing.expect(std.ascii.isLower(found[4]));
+        return;
+    }
+    // No tree on this machine records one, which is allowed.
+    return error.SkipZigTest;
 }

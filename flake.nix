@@ -33,10 +33,17 @@
     {
       devShells = forAllSystems (pkgs: {
         zig_0_16 = pkgs.mkShell {
-          name = "zig-jpeg-0.16";
+          name = "zig-datetime-0.16";
           nativeBuildInputs = [
             pkgs.zig_0_16
             pkgs.pinact
+            # Used by tools/update-tzdata.sh and by the Forgejo workflow
+            # that runs it. Named here rather than relied on from the
+            # ambient environment, so a CI runner gets the same set.
+            pkgs.cacert
+            pkgs.curl
+            pkgs.git
+            pkgs.jq
           ];
         };
         default = self.devShells.${pkgs.system}.zig_0_16;

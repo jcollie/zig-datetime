@@ -1,0 +1,171 @@
+# Watches for new IANA timezone database releases and opens a pull request
+# pinning each one.
+#
+# The database is re-cut several times a year, usually because a country
+# has changed its rules at short notice, so the pin in build.zig.zon goes
+# stale on its own schedule rather than ours. This checks daily, and only
+# opens a pull request once the new release has been compiled and the test
+# suite has passed against it, so a red pull request means the release
+# genuinely broke something rather than that nobody has looked yet.
+#
+# Everything lands on one branch, tzdata-update. If a pull request from it
+# is already open when a newer release appears, the branch is force-pushed
+# and that pull request is retitled, rather than a second one being opened
+# alongside it. Note that this does discard reviews on the older version,
+# which is the intended trade: a superseded release is not worth merging.
+#
+# Requirements:
+#
+#   * A runner offering the `nixos` label, with nix and flakes available.
+#     Every step that needs a tool goes through `nix develop`, so the
+#     toolchain is the one in flake.nix rather than whatever the runner
+#     happens to have. Nothing is installed into the runner itself.
+#   * Node on the runner, for `actions/checkout`. A runner in host mode
+#     needs this in its PATH; a container-based one gets it from the
+#     image.
+#   * Permission to open pull requests. The automatic token may not carry
+#     it depending on the Forgejo version and the repository's settings;
+#     if the "Open or update the pull request" step fails with 403, add a
+#     personal access token with read/write on `repository` and `issue` as
+#     an Actions secret named TZDATA_TOKEN and it will be preferred.
+
+name: Update tzdata
+
+on:
+  schedule:
+    # Daily, at a minute nobody else picked.
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'tzdb release to pin, such as 2026c. Blank means the newest published.'
+        required: false
+        default: ''
+
+env:
+  BRANCH: tzdata-update
+
+jobs:
+  update:
+    runs-on: nixos
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # The whole history, so the update can be committed onto the
+          # default branch rather than a detached shallow one.
+          fetch-depth: 0
+          token: ${{ secrets.TZDATA_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Look for a newer release
+        id: check
+        run: |
+          set -eu
+          # Prints the new version and edits the tree, or prints nothing
+          # and leaves it alone when the pin is already current.
+          version="$(nix develop --command ./tools/update-tzdata.sh ${{ inputs.version }})"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if [ -n "$version" ]; then
+            echo "A new release is available: ${version}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Already on the newest release." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build and test against the new release
+        if: steps.check.outputs.version != ''
+        run: |
+          set -eux
+          # Compiles zic from the new sources, regenerates the embedded
+          # database from it, and runs everything against the result. This
+          # is the check that makes the pull request worth trusting.
+          nix develop --command zig build test -Dembed-tzdata
+          nix develop --command zig build test
+
+      - name: Push the branch
+        if: steps.check.outputs.version != ''
+        run: |
+          set -eux
+          version="${{ steps.check.outputs.version }}"
+          git config user.name 'Forgejo Actions'
+          git config user.email 'actions@noreply.localhost'
+          git checkout -B "$BRANCH"
+          git add build.zig build.zig.zon
+          git commit --message "update to tzdata ${version}
+
+          Pins the ${version} release of the IANA timezone database: both
+          dependency hashes in build.zig.zon and the tz_release constant in
+          build.zig, which the generated data records as its own version.
+
+          Opened automatically after zic was rebuilt from the ${version}
+          sources, the embedded database regenerated from it, and the test
+          suite run against the result."
+          # Force, because this branch is rewritten each time a newer
+          # release supersedes the one it was holding.
+          git push --force origin "$BRANCH"
+
+      - name: Open or update the pull request
+        if: steps.check.outputs.version != ''
+        env:
+          TOKEN: ${{ secrets.TZDATA_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          version="${{ steps.check.outputs.version }}"
+          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          auth="Authorization: token ${TOKEN}"
+
+          base="$(nix develop --command sh -c \
+            "curl --fail --silent --header '$auth' '$api' | jq -r .default_branch")"
+
+          title="Update to tzdata ${version}"
+          body="$(printf '%s\n' \
+            "The IANA timezone database has been re-cut as \`${version}\`." \
+            "" \
+            "This updates both dependency hashes in \`build.zig.zon\` and the" \
+            "\`tz_release\` constant in \`build.zig\`, which the generated data" \
+            "records as its own version. The three have to agree, so they are" \
+            "rewritten together." \
+            "" \
+            "\`zic\` was rebuilt from the \`${version}\` sources, the embedded" \
+            "database regenerated from it, and the full suite run against the" \
+            "result before this was opened." \
+            "" \
+            "Raised by \`.forgejo/workflows/tzdata.yml\`. If a newer release" \
+            "appears before this is merged, the branch is force-pushed and this" \
+            "description is rewritten rather than a second pull request opened.")"
+
+          export TZ_API="$api" TZ_AUTH="$auth" TZ_BRANCH="$BRANCH"
+          export TZ_TITLE="$title" TZ_BODY="$body" TZ_BASE="$base"
+          export TZ_VERSION="$version" TZ_SUMMARY="$GITHUB_STEP_SUMMARY"
+          export TZ_SERVER="$GITHUB_SERVER_URL" TZ_REPO="$GITHUB_REPOSITORY"
+
+          nix develop --command sh -eu -c '
+            # Forgejo does not filter reliably on the head query
+            # parameter, so pick the branch out of the open pull requests
+            # here instead.
+            number="$(curl --fail --silent --header "$TZ_AUTH" \
+              "${TZ_API}/pulls?state=open&limit=50" \
+              | jq -r --arg branch "$TZ_BRANCH" \
+                "map(select(.head.ref == \$branch)) | .[0].number // empty")"
+
+            if [ -n "$number" ]; then
+              echo "Updating pull request #${number}"
+              jq --null-input --arg title "$TZ_TITLE" --arg body "$TZ_BODY" \
+                "{title: \$title, body: \$body}" \
+                | curl --fail --silent --show-error --request PATCH \
+                    --header "$TZ_AUTH" --header "Content-Type: application/json" \
+                    --data @- "${TZ_API}/pulls/${number}" >/dev/null
+              echo "Updated [#${number}](${TZ_SERVER}/${TZ_REPO}/pulls/${number}) to ${TZ_VERSION}." \
+                >> "$TZ_SUMMARY"
+            else
+              echo "Opening a pull request"
+              jq --null-input --arg title "$TZ_TITLE" --arg body "$TZ_BODY" \
+                --arg head "$TZ_BRANCH" --arg base "$TZ_BASE" \
+                "{title: \$title, body: \$body, head: \$head, base: \$base}" \
+                | curl --fail --silent --show-error --request POST \
+                    --header "$TZ_AUTH" --header "Content-Type: application/json" \
+                    --data @- "${TZ_API}/pulls" \
+                | jq -r "\"Opened #\(.number) for ${TZ_VERSION}.\"" \
+                >> "$TZ_SUMMARY"
+            fi
+          '
