@@ -112,11 +112,11 @@ test "print ordinal normal" {
     };
 
     inline for (cases) |case| {
-        var array: std.ArrayListUnmanaged(u8) = .empty;
-        defer array.deinit(std.testing.allocator);
+        var buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
+        defer buf.deinit();
 
-        try ordinal(array.writer(), case.number, false);
-        std.testing.expectEqualStrings(case.result, array.items);
+        try ordinal(&buf.writer, case.number, false);
+        try std.testing.expectEqualStrings(case.result, buf.written());
     }
 }
 
@@ -173,11 +173,10 @@ test "print ordinal superscript" {
     };
 
     inline for (cases) |case| {
-        var array: std.ArrayListUnmanaged(u8) = .empty;
-        defer array.deinit(std.testing.allocator);
-        const writer = array.writer(std.testing.allocator);
+        var buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
+        defer buf.deinit();
 
-        try ordinal(writer, case.number, true);
-        std.testing.expectEqualStrings(case.result, array.items);
+        try ordinal(&buf.writer, case.number, true);
+        try std.testing.expectEqualStrings(case.result, buf.written());
     }
 }
