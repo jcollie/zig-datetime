@@ -193,13 +193,50 @@ const text = try instant.asDateTime().formatAlloc(gpa, "YYYY-MM-DDTHH:mm:ssZ");
 const parsed = try datetime.DateTime.parse("YYYY-MM-DD HH:mm:ss", "2024-07-15 07:00:00");
 ```
 
-RFC 822 dates, as used by email, HTTP, and RSS, have their own parser
-because their grammar is too irregular for a format string:
+Two interchange formats have their own parsers, because the shape of
+their input is not known ahead of reading it and a format string cannot
+express that.
+
+**RFC 822**, as used by email, HTTP, and RSS:
 
 ```zig
 const result = try datetime.rfc822.parse("Fri, 21 Nov 1997 09:55:06 -0600");
 const utc = result.value.toUtc();
 ```
+
+**ISO 8601**, including the RFC 3339 subset that most internet protocols
+mean when they say ISO 8601:
+
+```zig
+const result = try datetime.iso8601.parse("2024-03-15T14:30:00.5+05:30");
+```
+
+It reads all three date forms, in the extended spelling with separators
+and the basic one without, at whatever precision the input stops at:
+
+| | extended | basic |
+| --- | --- | --- |
+| calendar | `2024-03-15`, `2024-03`, `2024` | `20240315` |
+| ordinal | `2024-075` | `2024075` |
+| week | `2024-W11-5`, `2024-W11` | `2024W115` |
+
+Times may stop at the hour, minute, or second, and any of those may carry
+a decimal fraction with either separator, so `T14.5` is half past two.
+`24:00` is the end of its date and comes back as midnight on the next
+one. Zones are `Z`, `±hh`, `±hh:mm`, or `±hhmm`.
+
+Two fields on the result carry what the string itself said. `has_offset`
+distinguishes a local time that named no zone from one that ended in `Z`,
+which `offset` alone cannot: both leave it zero. `precision` says which
+component the input stopped at, so a caller can tell `2024-03` from
+`2024-03-01`.
+
+ISO 8601 forbids mixing the basic and extended forms, and so does this:
+`2024-03-15T143000` is `error.MixedFormats`. The zone is the one
+deliberate exception, since `+0530` after an extended time is common in
+real data. Expanded years such as `+002024`, which ISO 8601 permits only
+by prior agreement, are not accepted, and neither are intervals or
+durations.
 
 ## A note on offsets
 
