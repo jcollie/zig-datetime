@@ -12,13 +12,13 @@
         // hold exactly what tzdb-2026c.tar.lz holds, which Zig's package
         // manager cannot read because it does not support lzip.
         .tzcode = .{
-            .url = "https://data.iana.org/time-zones/releases/tzcode2026c.tar.gz",
-            .hash = "N-V-__8AACd5DwCVzz_8RDRfd3hfmj0Kmt3fUylmfdGyV1Pl",
+            .url = "https://data.iana.org/time-zones/releases/tzcode2026a.tar.gz",
+            .hash = "N-V-__8AAM9bDwBBB4kC0Kruu8UrwrlteYjh_7AS-M4hn2Lu",
             .lazy = true,
         },
         .tzdata = .{
-            .url = "https://data.iana.org/time-zones/releases/tzdata2026c.tar.gz",
-            .hash = "N-V-__8AANpVFQC_1B4XtOlpRUfO6ZFsDlp3KppGU6Xal5yI",
+            .url = "https://data.iana.org/time-zones/releases/tzdata2026a.tar.gz",
+            .hash = "N-V-__8AAM02FQDFHZp0YshJkME_pftluB5ucG8F7eKzOC12",
             .lazy = true,
         },
     },
