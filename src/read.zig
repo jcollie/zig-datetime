@@ -8,11 +8,12 @@ const Nanosecond = @import("nanosecond.zig").Nanosecond;
 pub fn int(text: []const u8, maxlen: usize) []const u8 {
     if (text.len == 0) return text[0..0];
 
-    for (0..@min(text.len, maxlen)) |i| {
+    const len = @min(text.len, maxlen);
+    for (0..len) |i| {
         if (!std.ascii.isDigit(text[i])) return text[0..i];
     }
 
-    return text[0..maxlen];
+    return text[0..len];
 }
 
 /// Parses exactly `length` digits (1-9) at the start of `text` as a decimal
@@ -24,4 +25,14 @@ pub fn nanosecond(text: []const u8, length: usize) !Nanosecond {
     const v = int(text, length);
     if (v.len != length) return error.TooShort;
     return try std.fmt.parseInt(Nanosecond, v, 10) * try std.math.powi(Nanosecond, 10, 9 - @as(Nanosecond, @intCast(length)));
+}
+
+test "int" {
+    // A digit run that reaches the end of the input is returned in full
+    // even when it is shorter than maxlen.
+    try std.testing.expectEqualStrings("5", int("5", 2));
+    try std.testing.expectEqualStrings("", int("", 2));
+    try std.testing.expectEqualStrings("", int("x5", 2));
+    try std.testing.expectEqualStrings("12", int("123", 2));
+    try std.testing.expectEqualStrings("12", int("12:34", 4));
 }
