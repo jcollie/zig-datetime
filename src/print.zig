@@ -180,3 +180,47 @@ test "print ordinal superscript" {
         try std.testing.expectEqualStrings(case.result, buf.written());
     }
 }
+
+/// Writes a UTC offset given in `seconds` east of UTC in the form `+HH:MM`
+/// or `+HHMM`, depending on `separator`. The sign is always written, and
+/// zero is written as `+00:00` rather than as `Z`.
+///
+/// Neither RFC 822 nor ISO 8601 can express an offset finer than a minute,
+/// so an offset that is not a whole number of minutes is truncated towards
+/// zero. That only arises for the local mean time offsets that timezones
+/// used before standard time, such as America/Chicago's -5:50:36.
+pub fn offset(writer: anytype, seconds: i32, separator: enum { none, colon }) !void {
+    try writer.writeAll(if (seconds < 0) "-" else "+");
+
+    const magnitude = @abs(seconds);
+    try writer.print("{d:0>2}", .{magnitude / std.time.s_per_hour});
+    switch (separator) {
+        .none => {},
+        .colon => try writer.writeAll(":"),
+    }
+    try writer.print("{d:0>2}", .{magnitude % std.time.s_per_hour / std.time.s_per_min});
+}
+
+test "offset" {
+    const cases = [_]struct { seconds: i32, colon: []const u8, none: []const u8 }{
+        .{ .seconds = 0, .colon = "+00:00", .none = "+0000" },
+        .{ .seconds = -5 * std.time.s_per_hour, .colon = "-05:00", .none = "-0500" },
+        .{ .seconds = 5 * std.time.s_per_hour + 45 * std.time.s_per_min, .colon = "+05:45", .none = "+0545" },
+        .{ .seconds = -(3 * std.time.s_per_hour + 30 * std.time.s_per_min), .colon = "-03:30", .none = "-0330" },
+        .{ .seconds = 14 * std.time.s_per_hour, .colon = "+14:00", .none = "+1400" },
+        // America/Chicago's local mean time, truncated towards zero.
+        .{ .seconds = -21036, .colon = "-05:50", .none = "-0550" },
+    };
+
+    for (cases) |case| {
+        var buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
+        defer buf.deinit();
+
+        try offset(&buf.writer, case.seconds, .colon);
+        try std.testing.expectEqualStrings(case.colon, buf.written());
+
+        buf.clearRetainingCapacity();
+        try offset(&buf.writer, case.seconds, .none);
+        try std.testing.expectEqualStrings(case.none, buf.written());
+    }
+}

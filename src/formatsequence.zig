@@ -76,8 +76,12 @@ pub const FormatTag = enum {
     SSSSSSSS, // 00000000 000000000 ... 99999998 99999999 (tens of nanoseconds)
     SSSSSSSSS, // 000000000 000000000 ... 999999998 999999999 (nanoseconds)
     // z, // EST CST ... MST PST
-    // Z, // -07:00 -06:00 ... +06:00 +07:00
-    // ZZ, // -0700 -0600 ... +0600 +0700
+    /// -07:00 -06:00 ... +06:00 +07:00 (offset from UTC). Note that this
+    /// makes a bare `Z` in a format string an offset rather than the
+    /// literal Zulu marker of ISO 8601.
+    Z,
+    /// -0700 -0600 ... +0600 +0700 (offset from UTC, no separator)
+    ZZ,
     // x, // unix milli
     // X, // unix
 

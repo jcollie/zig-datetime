@@ -27,6 +27,11 @@ day: Day = 1, // [0-31]
 month: Month = .Jan, // [1-12]
 year: Year = 1970,
 weekday: DayOfWeek = .Thu,
+/// Offset of this local wall-clock time from UTC, in seconds east of UTC:
+/// -18000 for -05:00. Zero means the fields are already UTC. Seconds
+/// rather than minutes because historical local mean time offsets are not
+/// whole minutes: America/Chicago's is -5:50:36.
+offset: i32 = 0,
 
 pub const unix_epoch: DateTime = .{
     .nanosecond = 0,
@@ -37,6 +42,7 @@ pub const unix_epoch: DateTime = .{
     .month = .Jan,
     .year = 1970,
     .weekday = .Thu,
+    .offset = 0,
 };
 
 /// Returns the current time in UTC, read from the `.real` clock of `io`.
@@ -198,9 +204,10 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 //     }
                 // },
 
+                .Z => try print.offset(writer, self.offset, .colon),
+                .ZZ => try print.offset(writer, self.offset, .none),
+
                 // .z => try writer.writeAll(@tagName(self.timezone)),
-                // .Z => try writer.writeAll("+00:00"),
-                // .ZZ => try writer.writeAll("+0000"),
 
                 // .x => try writer.print("{}", .{self.toUnixMilli()}),
                 // .X => try writer.print("{}", .{self.toUnix()}),
@@ -625,6 +632,45 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             break :dow std.enums.fromInt(DayOfWeek, dow) orelse return error.ParseError;
                         };
                     },
+                    .Z, .ZZ => {
+                        datetime.offset = offset: {
+                            if (left.len == 0) return error.ParseError;
+
+                            // ISO 8601 writes a zero offset as "Z"; accept
+                            // that spelling as well as "+00:00".
+                            if (left[0] == 'Z' or left[0] == 'z') {
+                                left = left[1..];
+                                break :offset 0;
+                            }
+
+                            const sign: i32 = switch (left[0]) {
+                                '+' => 1,
+                                '-' => -1,
+                                else => return error.ParseError,
+                            };
+                            left = left[1..];
+
+                            const hours = read.int(left, 2);
+                            if (hours.len != 2) return error.ParseError;
+                            left = left[hours.len..];
+
+                            // The colon is what separates the two forms, so
+                            // it is required by Z and rejected by ZZ.
+                            if (tag == .Z) {
+                                if (left.len == 0 or left[0] != ':') return error.ParseError;
+                                left = left[1..];
+                            }
+
+                            const minutes = read.int(left, 2);
+                            if (minutes.len != 2) return error.ParseError;
+                            left = left[minutes.len..];
+
+                            const hour = try std.fmt.parseInt(i32, hours, 10);
+                            const minute = try std.fmt.parseInt(i32, minutes, 10);
+                            if (hour > 23 or minute > 59) return error.ParseError;
+                            break :offset sign * (hour * std.time.s_per_hour + minute * std.time.s_per_min);
+                        };
+                    },
                     .Q,
                     .Qo,
                     .QO,
@@ -684,6 +730,49 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
 /// Returns the 1-based day of the year (1-366).
 pub fn dayOfThisYear(self: DateTime) u9 {
     return self.month.daysBefore(self.year) + self.day;
+}
+
+/// Returns the same point in time expressed in UTC, that is with the
+/// fields shifted back by `offset` minutes and `offset` itself set to
+/// zero. The shift rolls over into the neighbouring day, month, and year
+/// as needed, and `weekday` is recomputed to match. Seconds and
+/// nanoseconds are carried through untouched, so a value holding a leap
+/// second keeps it.
+pub fn toUtc(self: DateTime) DateTime {
+    if (self.offset == 0) return self;
+
+    // A leap second is the 61st second of its minute and has no meaning
+    // once shifted, so it is held back and restored afterwards. Every zone
+    // offset that is not a whole number of minutes predates leap seconds
+    // by decades, so the two never actually meet.
+    const leap_second = self.second == 60;
+
+    const date: Date = .{
+        .year = self.year,
+        .month = self.month,
+        .day = self.day,
+    };
+    const second_of_day = @as(i32, self.hour) * std.time.s_per_hour +
+        @as(i32, self.minute) * std.time.s_per_min +
+        @as(i32, if (leap_second) 59 else self.second) -
+        self.offset;
+
+    const days = date.toDaysSinceStartOfEra() +
+        @as(Date.DaysType, @divFloor(second_of_day, std.time.s_per_day));
+    const remainder = @mod(second_of_day, std.time.s_per_day);
+
+    const utc_date = Date.fromDaysSinceStartOfEra(days);
+    return .{
+        .year = utc_date.year,
+        .month = utc_date.month,
+        .day = utc_date.day,
+        .hour = @intCast(@divTrunc(remainder, std.time.s_per_hour)),
+        .minute = @intCast(@divTrunc(@mod(remainder, std.time.s_per_hour), std.time.s_per_min)),
+        .second = if (leap_second) 60 else @intCast(@mod(remainder, std.time.s_per_min)),
+        .nanosecond = self.nanosecond,
+        .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
+        .offset = 0,
+    };
 }
 
 test "parseTest" {
@@ -1062,6 +1151,45 @@ test "parseTest" {
                 .weekday = .Fri,
             },
         },
+        .{
+            .value = "2024-03-15T08:30:00-04:00",
+            .fmt = "YYYY-MM-DDTHH:mm:ssZ",
+            .expected = .{
+                .year = 2024,
+                .month = .Mar,
+                .day = 15,
+                .hour = 8,
+                .minute = 30,
+                .weekday = .Fri,
+                .offset = -4 * std.time.s_per_hour,
+            },
+        },
+        .{
+            .value = "2024-03-15T08:30:00+0545",
+            .fmt = "YYYY-MM-DDTHH:mm:ssZZ",
+            .expected = .{
+                .year = 2024,
+                .month = .Mar,
+                .day = 15,
+                .hour = 8,
+                .minute = 30,
+                .weekday = .Fri,
+                .offset = 5 * std.time.s_per_hour + 45 * std.time.s_per_min,
+            },
+        },
+        .{
+            .value = "2024-03-15T08:30:00Z",
+            .fmt = "YYYY-MM-DDTHH:mm:ssZ",
+            .expected = .{
+                .year = 2024,
+                .month = .Mar,
+                .day = 15,
+                .hour = 8,
+                .minute = 30,
+                .weekday = .Fri,
+                .offset = 0,
+            },
+        },
     };
 
     inline for (cases) |case| {
@@ -1116,6 +1244,17 @@ test "formatTest" {
         .month = .Jan,
         .year = 1970,
         .weekday = .Fri,
+    };
+
+    const offset_date = DateTime{
+        .second = 6,
+        .minute = 55,
+        .hour = 9,
+        .day = 21,
+        .month = .Nov,
+        .year = 1997,
+        .weekday = .Fri,
+        .offset = -6 * std.time.s_per_hour,
     };
 
     const cases = [_]struct { datetime: DateTime, fmt: []const u8, result: []const u8 }{
@@ -1184,6 +1323,27 @@ test "formatTest" {
             .fmt = "HHmm",
             .result = "0000",
         },
+        .{
+            .datetime = test_date,
+            .fmt = "YYYY-MM-DDTHH:mm:ssZ",
+            .result = "1970-01-01T00:00:00+00:00",
+        },
+        .{
+            .datetime = offset_date,
+            .fmt = "YYYY-MM-DDTHH:mm:ssZ",
+            .result = "1997-11-21T09:55:06-06:00",
+        },
+        .{
+            .datetime = offset_date,
+            .fmt = "YYYY-MM-DDTHH:mm:ssZZ",
+            .result = "1997-11-21T09:55:06-0600",
+        },
+        // The RFC 822 form that `rfc822.parse` reads.
+        .{
+            .datetime = offset_date,
+            .fmt = "ddd, DD MMM YYYY HH:mm:ss ZZ",
+            .result = "Fri, 21 Nov 1997 09:55:06 -0600",
+        },
     };
 
     inline for (cases) |case| {
@@ -1193,5 +1353,149 @@ test "formatTest" {
         try case.datetime.format(case.fmt, &buf.writer);
 
         try std.testing.expectEqualStrings(case.result, buf.written());
+    }
+}
+
+test "toUtcTest" {
+    const cases = [_]struct { local: DateTime, expected: DateTime }{
+        // A whole number of hours, staying within the same day.
+        .{
+            .local = .{
+                .year = 1994,
+                .month = .Nov,
+                .day = 6,
+                .hour = 8,
+                .minute = 49,
+                .second = 37,
+                .weekday = .Sun,
+                .offset = -5 * std.time.s_per_hour,
+            },
+            .expected = .{
+                .year = 1994,
+                .month = .Nov,
+                .day = 6,
+                .hour = 13,
+                .minute = 49,
+                .second = 37,
+                .weekday = .Sun,
+                .offset = 0,
+            },
+        },
+        // A positive offset that rolls back over a year boundary.
+        .{
+            .local = .{
+                .year = 2024,
+                .month = .Jan,
+                .day = 1,
+                .hour = 0,
+                .minute = 30,
+                .weekday = .Mon,
+                .offset = 5 * std.time.s_per_hour + 45 * std.time.s_per_min,
+            },
+            .expected = .{
+                .year = 2023,
+                .month = .Dec,
+                .day = 31,
+                .hour = 18,
+                .minute = 45,
+                .weekday = .Sun,
+                .offset = 0,
+            },
+        },
+        // A negative offset that rolls forward over a year boundary.
+        .{
+            .local = .{
+                .year = 2023,
+                .month = .Dec,
+                .day = 31,
+                .hour = 23,
+                .minute = 0,
+                .weekday = .Sun,
+                .offset = -5 * std.time.s_per_hour,
+            },
+            .expected = .{
+                .year = 2024,
+                .month = .Jan,
+                .day = 1,
+                .hour = 4,
+                .minute = 0,
+                .weekday = .Mon,
+                .offset = 0,
+            },
+        },
+        // Leap days are crossed correctly.
+        .{
+            .local = .{
+                .year = 2024,
+                .month = .Mar,
+                .day = 1,
+                .hour = 1,
+                .minute = 0,
+                .weekday = .Fri,
+                .offset = 2 * std.time.s_per_hour,
+            },
+            .expected = .{
+                .year = 2024,
+                .month = .Feb,
+                .day = 29,
+                .hour = 23,
+                .minute = 0,
+                .weekday = .Thu,
+                .offset = 0,
+            },
+        },
+        // Seconds and nanoseconds are carried through, so a leap second
+        // survives the shift.
+        .{
+            .local = .{
+                .year = 2017,
+                .month = .Jan,
+                .day = 1,
+                .hour = 0,
+                .minute = 59,
+                .second = 60,
+                .nanosecond = 123456789,
+                .weekday = .Sun,
+                .offset = std.time.s_per_hour,
+            },
+            .expected = .{
+                .year = 2016,
+                .month = .Dec,
+                .day = 31,
+                .hour = 23,
+                .minute = 59,
+                .second = 60,
+                .nanosecond = 123456789,
+                .weekday = .Sat,
+                .offset = 0,
+            },
+        },
+        // A value that is already UTC is returned unchanged.
+        .{
+            .local = .{
+                .year = 2024,
+                .month = .Mar,
+                .day = 15,
+                .hour = 8,
+                .minute = 30,
+                .weekday = .Fri,
+                .offset = 0,
+            },
+            .expected = .{
+                .year = 2024,
+                .month = .Mar,
+                .day = 15,
+                .hour = 8,
+                .minute = 30,
+                .weekday = .Fri,
+                .offset = 0,
+            },
+        },
+    };
+
+    for (cases) |case| {
+        try std.testing.expectEqual(case.expected, case.local.toUtc());
+        // Converting an already-UTC value again is a no-op.
+        try std.testing.expectEqual(case.expected, case.local.toUtc().toUtc());
     }
 }
