@@ -72,10 +72,33 @@ note "updating $current -> $wanted"
 code_url="$RELEASES/tzcode$wanted.tar.gz"
 data_url="$RELEASES/tzdata$wanted.tar.gz"
 
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+
+# Download with curl and hash the file, rather than handing the URL to
+# `zig fetch` and letting it do both.
+#
+# `zig fetch` uses Zig's own TLS, whose trust store is a hardcoded list of
+# system certificate paths with no environment variable to override it, so
+# it cannot reach the network at all from a container that ships none of
+# them. That is what it looks like when it happens:
+#
+#     error: unable to connect to server: TlsInitializationFailed
+#
+# curl has no such trouble. The hash of a local archive is identical to
+# the hash of the same archive fetched over the network, so nothing is
+# lost by splitting the two steps apart.
+hash_of() {
+    url="$1"
+    file="$scratch/${url##*/}"
+    curl --fail --silent --show-error --location --output "$file" "$url"
+    zig fetch "$file"
+}
+
 note "hashing $code_url"
-code_hash="$(zig fetch "$code_url")"
+code_hash="$(hash_of "$code_url")"
 note "hashing $data_url"
-data_hash="$(zig fetch "$data_url")"
+data_hash="$(hash_of "$data_url")"
 
 [ -n "$code_hash" ] && [ -n "$data_hash" ] || die "zig fetch produced no hash"
 

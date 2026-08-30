@@ -46,14 +46,16 @@
             pkgs.jq
           ];
 
-          # Naming cacert above only puts it in the closure. Both curl and
-          # `zig fetch` still have to be told where the bundle is, and
-          # neither can fall back to a system store inside a container that
-          # has none. Without this the shell works on a developer's machine,
-          # which already has these set, and fails in CI with
-          # TlsInitializationFailed.
+          # Naming cacert above only puts it in the closure; curl still
+          # has to be told where the bundle is, so that the shell does not
+          # depend on the surrounding system having said so.
           #
-          # This has to be the shellHook rather than a plain attribute:
+          # This does nothing for `zig fetch`, whose trust store is a
+          # hardcoded list of system paths that no environment variable
+          # can redirect. tools/update-tzdata.sh works around that by
+          # downloading with curl and hashing the local file.
+          #
+          # It has to be the shellHook rather than a plain attribute:
           # `nix develop` manages the certificate variables itself and
           # overwrites an attribute of the same name, but the hook runs
           # afterwards and wins.
