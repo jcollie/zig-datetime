@@ -14,16 +14,16 @@ const Timezone = @import("timezone.zig").Timezone;
 timestamp: i128,
 timezone: Timezone,
 
-pub fn now() Instant {
+pub fn now(io: std.Io) Instant {
     return .{
-        .timestamp = std.time.nanoTimestamp(),
+        .timestamp = std.Io.Timestamp.now(io, .real).nanoseconds,
         .timezone = .UTC,
     };
 }
 
-pub fn utc() Instant {
+pub fn utc(io: std.Io) Instant {
     return .{
-        .timestamp = std.time.nanoTimestamp(),
+        .timestamp = std.Io.Timestamp.now(io, .real).nanoseconds,
         .timezone = .UTC,
     };
 }
@@ -166,5 +166,5 @@ test "instantTest" {
 }
 
 test "asDateTime" {
-    _ = Instant.utc().asDateTime();
+    _ = Instant.utc(std.testing.io).asDateTime();
 }

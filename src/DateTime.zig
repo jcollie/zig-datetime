@@ -39,8 +39,8 @@ pub const unix_epoch: DateTime = .{
     .weekday = .Thu,
 };
 
-pub fn utc() DateTime {
-    return Instant.utc().asDateTime();
+pub fn utc(io: std.Io) DateTime {
+    return Instant.utc(io).asDateTime();
 }
 
 fn printLongName(writer: anytype, index: u16, names: []const []const u8) !void {
@@ -591,7 +591,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                                 .d, .e, .E => {},
                                 else => unreachable,
                             }
-                            break :dow std.meta.intToEnum(DayOfWeek, dow) catch return error.ParseError;
+                            break :dow std.enums.fromInt(DayOfWeek, dow) orelse return error.ParseError;
                         };
                     },
                     .Q,

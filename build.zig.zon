@@ -1,6 +1,7 @@
 .{
     .name = .datetime,
     .version = "0.0.1",
+    .minimum_zig_version = "0.16.0",
     .fingerprint = 0x93f3c6caefdaebeb,
     .dependencies = .{},
     .paths = .{

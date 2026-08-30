@@ -32,21 +32,14 @@
     in
     {
       devShells = forAllSystems (pkgs: {
-        zig_0_14 = pkgs.mkShell {
-          name = "zig-jpeg-0.14";
+        zig_0_16 = pkgs.mkShell {
+          name = "zig-jpeg-0.16";
           nativeBuildInputs = [
-            pkgs.zig_0_14
+            pkgs.zig_0_16
             pkgs.pinact
           ];
         };
-        zig_0_15 = pkgs.mkShell {
-          name = "zig-jpeg-0.15";
-          nativeBuildInputs = [
-            pkgs.zig_0_15
-            pkgs.pinact
-          ];
-        };
-        default = self.devShells.${pkgs.system}.zig_0_15;
+        default = self.devShells.${pkgs.system}.zig_0_16;
       });
     };
 }

@@ -53,5 +53,5 @@ pub const Instant = @import("Instant.zig");
 // }
 
 test {
-    std.testing.refAllDeclsRecursive(@This());
+    std.testing.refAllDecls(@This());
 }

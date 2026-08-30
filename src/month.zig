@@ -51,7 +51,7 @@ pub const Month = enum(u4) {
         if (month < 1) return error.Underflow;
         if (month > 12) return error.Overflow;
 
-        return std.meta.intToEnum(Month, month) catch unreachable;
+        return std.enums.fromInt(Month, month) orelse unreachable;
     }
 
     pub fn monthNumber(self: Month) u4 {
