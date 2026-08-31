@@ -67,10 +67,17 @@ pub fn fromOwnedBytes(name: []const u8, bytes: []const u8) Error!TimeZone {
 test fromOwnedBytes {
     // The zone takes the bytes over, so `deinit` is what frees them. This
     // is the shape `tzdb.system` uses, having just read a file.
-    var zone = try fromOwnedBytes(
-        try testing.allocator.dupe(u8, "America/Chicago"),
-        try bytesForTest("America/Chicago"),
-    );
+    //
+    // The bytes are taken first because `bytesForTest` skips the test on
+    // a machine with no database, and anything allocated ahead of that
+    // would be lost when the skip propagates out.
+    const bytes = try bytesForTest("America/Chicago");
+    errdefer testing.allocator.free(bytes);
+
+    const name = try testing.allocator.dupe(u8, "America/Chicago");
+    errdefer testing.allocator.free(name);
+
+    var zone = try fromOwnedBytes(name, bytes);
     defer zone.deinit(testing.allocator);
 
     try testing.expectEqualStrings("America/Chicago", zone.name);
@@ -117,10 +124,7 @@ pub fn deinit(self: *TimeZone, gpa: std.mem.Allocator) void {
 test deinit {
     // An owned zone frees its bytes and its name; the testing allocator
     // is what checks that this happened.
-    var owned = try fromOwnedBytes(
-        try testing.allocator.dupe(u8, "America/Chicago"),
-        try bytesForTest("America/Chicago"),
-    );
+    var owned = try loadForTest("America/Chicago");
     owned.deinit(testing.allocator);
 
     // A borrowed one frees nothing, so its bytes outlive it.
@@ -461,7 +465,10 @@ fn loadForTest(name: []const u8) !TimeZone {
     const bytes = try bytesForTest(name);
     errdefer testing.allocator.free(bytes);
 
-    return fromOwnedBytes(try testing.allocator.dupe(u8, name), bytes);
+    const owned_name = try testing.allocator.dupe(u8, name);
+    errdefer testing.allocator.free(owned_name);
+
+    return fromOwnedBytes(owned_name, bytes);
 }
 
 test spanAt {
