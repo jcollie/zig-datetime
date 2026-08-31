@@ -74,25 +74,53 @@ test fromNanoTimeStamp {
 /// Creates an `Instant` from a count of microseconds since the Unix epoch, in UTC.
 pub fn fromMicroTimeStamp(timestamp: i64) Instant {
     return .{
-        .timestamp = timestamp * std.time.ns_per_us,
+        // Widened before multiplying: the field is an `i128` but the
+        // argument is an `i64`, so the product was computed in the
+        // narrower type and overflowed for a timestamp far from the
+        // epoch -- around 1900 in microseconds is fine, a year before the
+        // common era is not.
+        .timestamp = @as(i128, timestamp) * std.time.ns_per_us,
     };
 }
 
 test fromMicroTimeStamp {
     const instant: Instant = .fromMicroTimeStamp(1_500_000);
     try std.testing.expectEqual(@as(i128, 1_500_000_000), instant.timestamp);
+
+    // Far enough from the epoch that the product leaves an `i64`, which
+    // it used to be computed in.
+    try std.testing.expectEqual(
+        @as(i128, std.math.maxInt(i64)) * std.time.ns_per_us,
+        (Instant.fromMicroTimeStamp(std.math.maxInt(i64))).timestamp,
+    );
 }
 
 /// Creates an `Instant` from a count of milliseconds since the Unix epoch, in UTC.
 pub fn fromMilliTimestamp(timestamp: i64) Instant {
     return .{
-        .timestamp = timestamp * std.time.ns_per_ms,
+        // Widened before multiplying: the field is an `i128` but the
+        // argument is an `i64`, so the product was computed in the
+        // narrower type and overflowed for a timestamp far from the
+        // epoch -- around 1900 in milliseconds is fine, a year before the
+        // common era is not.
+        .timestamp = @as(i128, timestamp) * std.time.ns_per_ms,
     };
 }
 
 test fromMilliTimestamp {
     const instant: Instant = .fromMilliTimestamp(1_500);
     try std.testing.expectEqual(@as(i128, 1_500_000_000), instant.timestamp);
+
+    // A year before the common era in milliseconds, which used to
+    // overflow on the way in.
+    try std.testing.expectEqual(
+        @as(i128, -63500000000000) * std.time.ns_per_ms,
+        (Instant.fromMilliTimestamp(-63500000000000)).timestamp,
+    );
+    try std.testing.expectEqual(
+        @as(i128, std.math.minInt(i64)) * std.time.ns_per_ms,
+        (Instant.fromMilliTimestamp(std.math.minInt(i64))).timestamp,
+    );
 }
 
 /// Converts this instant to a calendar `DateTime` in UTC. Timestamps

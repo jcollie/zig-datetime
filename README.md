@@ -281,6 +281,36 @@ The locale is `en`, which is moment's default and the only one here, so
 the localized sequences `L`, `LL`, `LT` and the rest expand to their
 English forms.
 
+### Go's time layouts
+
+`golayout` is the other way of saying it, taken from Go, where the format
+string is one particular time written the way you want yours written:
+
+```zig
+const text = try std.fmt.allocPrint(...);  // or straight to a writer
+try datetime.golayout.format(value, "2006-01-02T15:04:05Z07:00", writer);
+
+const value = try datetime.golayout.parse("Jan _2 3:04PM", "Mar 15 2:30PM");
+```
+
+Go picked `Mon Jan 2 15:04:05 MST 2006` as that time, so that every
+component has a different number: month 1, day 2, hour 3 on the twelve
+hour clock and 15 on the twenty-four hour one, minute 4, second 5, year 6,
+and a zone seven hours west. Nothing is a code to look up; the layout is
+an example. The layouts Go's own package names are here under the names it
+gives them, so `golayout.layout.rfc3339` and `golayout.layout.kitchen`
+mean what they do there.
+
+Go's behaviour is the specification and `zig build oracle-go` checks it
+against Go's own `time` package, formatting and parsing both. That
+includes following Go where it is unhelpful: `2006` writes a year before
+the common era with a leading minus and then will not read one back, and
+`MST` writes a numeric offset when a reading has no zone name and then
+will not read that back either, because Go takes the digits after a sign
+as one number of hours and `+0545` is not a count of hours. Both are
+Go's, and a layout that means one thing there should not mean another
+here.
+
 Two interchange formats have their own parsers, because the shape of
 their input is not known ahead of reading it and a format string cannot
 express that.
@@ -379,11 +409,15 @@ zig build test -Dembed-tzdata      # everything, including embedded-vs-system ag
 zig build test -Dno-system-tzdata  # as though the machine had no database
 zig build oracle                   # formatting against moment.js
 zig build oracle-parse             # parsing against moment.js, in both modes
+zig build oracle-go                # Go's time layouts against Go itself
 zig build bench                    # always ReleaseFast, whatever -Doptimize says
 ```
 
-The two oracles are part of `zig build test`, so an ordinary run needs
-`node` and fetches moment the first time.
+All three oracles are part of `zig build test`, so an ordinary run needs
+`node` and `go`, and fetches moment the first time. moment is pinned in
+`build.zig.zon`; Go is not, because the layouts are part of its standard
+library rather than something to fetch, and the oracle prints the version
+it ran against.
 
 `src/fuzz.zig` holds a property per parser: nothing crashes on input
 nobody chose, whatever comes back holds together, and anything with an

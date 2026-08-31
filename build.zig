@@ -21,6 +21,11 @@
 //! is the `node` named in `flake.nix`. It is part of `zig build test`,
 //! because the two agree.
 //!
+//! `zig build oracle-go` checks `golayout` against Go's own `time`
+//! package, the same way and for the same reason. Go comes from the dev
+//! shell rather than from a pin, because the layouts are part of its
+//! standard library; the oracle prints the version it ran against.
+//!
 //! `zig build oracle-parse` does the same for parsing. `DateTime.Mode` has
 //! the same two settings moment's strict flag chooses between, and each is
 //! held to the matching mode of moment. It carries a short list of known
@@ -292,6 +297,39 @@ pub fn build(b: *std.Build) void {
         parse_step.dependOn(&run_parse_oracle.step);
         test_step.dependOn(&run_parse_oracle.step);
     }
+
+    // And the same again for Go's time layouts, against Go's own package.
+    // No pinned dependency here: the layouts are part of the standard
+    // library rather than something to fetch, so the version is whichever
+    // `go` the dev shell carries, and the oracle prints it.
+    const go_dump = b.addExecutable(.{
+        .name = "oracle-go-dump",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/oracle_go_dump.zig"),
+            .target = b.graph.host,
+            .imports = &.{
+                .{ .name = "datetime", .module = module },
+            },
+        }),
+    });
+
+    const run_go_dump = b.addRunArtifact(go_dump);
+
+    const run_go_oracle = b.addSystemCommand(&.{ "go", "run" });
+    run_go_oracle.addFileArg(b.path("tools/oracle_go.go"));
+    run_go_oracle.addFileArg(run_go_dump.captureStdOut(.{ .basename = "go.tsv" }));
+    run_go_oracle.stdio = .inherit;
+
+    // `go run` writes its build cache somewhere, and refuses to run at all
+    // without a writable one. The Zig cache directory is already the
+    // build's scratch space, so it goes there rather than in $HOME.
+    run_go_oracle.setEnvironmentVariable("GOCACHE", b.pathFromRoot(".zig-cache/go"));
+    run_go_oracle.setEnvironmentVariable("GOFLAGS", "-mod=mod");
+    run_go_oracle.setEnvironmentVariable("TZ", "UTC");
+
+    const go_step = b.step("oracle-go", "Check the Go layouts against Go's time package");
+    go_step.dependOn(&run_go_oracle.step);
+    test_step.dependOn(&run_go_oracle.step);
 }
 
 /// Builds the embedded timezone database and returns the path of the

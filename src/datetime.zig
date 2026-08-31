@@ -50,6 +50,9 @@ pub const Instant = @import("Instant.zig");
 pub const iso8601 = @import("iso8601.zig");
 /// Parsing of the RFC 822 date and time syntax used by mail and HTTP.
 pub const rfc822 = @import("rfc822.zig");
+/// Formatting and parsing with Go's time layouts, where the format string
+/// is one particular time written the way you want yours written.
+pub const golayout = @import("golayout.zig");
 /// A timezone, and the lookups that apply it to an instant.
 pub const TimeZone = @import("TimeZone.zig");
 /// Where timezone data comes from: the system's copy or an embedded one.

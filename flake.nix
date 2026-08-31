@@ -55,6 +55,10 @@
               # pinned in build.zig.zon rather than taken from here, so
               # that the version the tests compare against is fixed.
               pkgs.nodejs
+              # The same job for Go's time layouts: `go` is both the
+              # oracle for src/golayout.zig and where the reference
+              # behaviour is read from. See tools/oracle_go.go.
+              pkgs.go
             ];
           };
         }
