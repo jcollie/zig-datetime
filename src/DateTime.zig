@@ -33,7 +33,8 @@ const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Date = @import("Date.zig");
 const Instant = @import("Instant.zig");
-const FormatTag = @import("formatsequence.zig").FormatTag;
+const formatsequence = @import("formatsequence.zig");
+const FormatTag = formatsequence.FormatTag;
 const writeTwelveHour = @import("hour.zig").writeTwelveHour;
 const ordinal = @import("ordinal.zig");
 const print = @import("print.zig");
@@ -122,6 +123,21 @@ test printYear {
     try std.testing.expectEqualStrings("-0044", bce.buffered());
 }
 
+/// Writes `year` zero padded to `width` digits, with a leading minus for
+/// a year before the common era. `printYear` is this at four digits.
+fn printPaddedYear(writer: *std.Io.Writer, year: Year, comptime width: usize) !void {
+    if (year < 0) try writer.writeAll("-");
+    try writer.print("{d:0>[1]}", .{ @abs(year), width });
+}
+
+test printPaddedYear {
+    var buf: [16]u8 = undefined;
+
+    var five = std.Io.Writer.fixed(&buf);
+    try printPaddedYear(&five, 2024, 5);
+    try std.testing.expectEqualStrings("02024", five.buffered());
+}
+
 /// Wraps `val` into the range `[1, at]`, mapping a remainder of 0 to `at`
 /// (e.g. hour 0 becomes 12 on a 12-hour clock).
 fn wrap(val: anytype, at: @TypeOf(val)) @TypeOf(val) {
@@ -169,16 +185,20 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
 
     @setEvalBranchQuota(2000000);
 
+    // The localized sequences stand for other sequences rather than for a
+    // value, so they are replaced before anything is tokenized.
+    const expanded = comptime formatsequence.expandLocalized(fmt);
+
     const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
         var count = 0;
         {
-            var it: FormatTag.Tokenizer = .init(fmt);
+            var it: FormatTag.Tokenizer = .init(expanded);
             while (it.next()) |_| count += 1;
         }
         var buf: [count]FormatTag.Tokenizer.Token = undefined;
         var index = 0;
         {
-            var it: FormatTag.Tokenizer = .init(fmt);
+            var it: FormatTag.Tokenizer = .init(expanded);
             while (it.next()) |token| {
                 buf[index] = token;
                 index += 1;
@@ -230,8 +250,10 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 .WW => try writer.print("{:0>2}", .{self.isoWeek().week}),
                 .gg => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.localeWeek().year, 100)))}),
                 .gggg => try printYear(writer, self.localeWeek().year),
+                .ggggg => try printPaddedYear(writer, self.localeWeek().year, 5),
                 .GG => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.isoWeek().year, 100)))}),
                 .GGGG => try printYear(writer, self.isoWeek().year),
+                .GGGGG => try printPaddedYear(writer, self.isoWeek().year, 5),
 
                 // @mod rather than @rem, so a year either side of the
                 // epoch lands in 0-99 rather than going negative, and the
@@ -239,8 +261,21 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 // is the inverse of the parse side, which reads two
                 // digits as 2000-2099.
                 .YY => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.year, 100)))}),
-                .YYY => try writer.print("{d}", .{self.year}),
+                .Y, .y, .yy, .yyy, .yyyy => try writer.print("{d}", .{self.year}),
+                .yo => try print.ordinal(writer, @as(u32, @intCast(@max(self.year, 0)))),
                 .YYYY => try printYear(writer, self.year),
+                .YYYYY => try printPaddedYear(writer, self.year, 5),
+                .YYYYYY => {
+                    // Always signed, which is what makes it the expanded
+                    // form rather than a wider `YYYY`.
+                    try writer.writeAll(if (self.year < 0) "-" else "+");
+                    try writer.print("{d:0>6}", .{@abs(self.year)});
+                },
+
+                // Every spelling but the longest abbreviates, which is
+                // moment.js's arrangement and not an oversight.
+                .N, .NN, .NNN, .NNNNN => try writer.writeAll(if (self.year < 1) "BC" else "AD"),
+                .NNNN => try writer.writeAll(if (self.year < 1) "Before Christ" else "Anno Domini"),
 
                 .A => try writeTwelveHour(self.hour, .upper, writer),
                 .a => try writeTwelveHour(self.hour, .lower, writer),
@@ -300,16 +335,20 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 .Z => try print.offset(writer, self.offset, .colon),
                 .ZZ => try print.offset(writer, self.offset, .none),
 
-                // .x => try writer.print("{}", .{self.toUnixMilli()}),
-                // .X => try writer.print("{}", .{self.toUnix()}),
+                // The hour is unpadded and everything after it is, so
+                // these are not the same as writing the parts separately.
+                .Hmm => try writer.print("{d}{d:0>2}", .{ self.hour, self.minute }),
+                .Hmmss => try writer.print("{d}{d:0>2}{d:0>2}", .{ self.hour, self.minute, self.second }),
+                .hmm => try writer.print("{d}{d:0>2}", .{ wrap(self.hour, 12), self.minute }),
+                .hmmss => try writer.print("{d}{d:0>2}{d:0>2}", .{ wrap(self.hour, 12), self.minute, self.second }),
+
+                .X => try writer.print("{d}", .{@divFloor(self.toInstant().timestamp, std.time.ns_per_s)}),
+                .x => try writer.print("{d}", .{@divFloor(self.toInstant().timestamp, std.time.ns_per_ms)}),
             },
-            .char => |c| switch (c) {
-                ',', ' ', ':', '-', '.', 'T', 'W' => try writer.writeAll(&.{c}),
-                else => @compileError(std.fmt.comptimePrint(
-                    "DateTime: unsupported literal character '{c}' in format string",
-                    .{c},
-                )),
-            },
+            // Anything that is not a sequence is copied through, which
+            // is what moment.js does and what makes `YYYY/MM/DD` and
+            // `[today is] dddd` mean what they look like.
+            .literal => |text| try writer.writeAll(text),
         }
     }
 
@@ -425,16 +464,34 @@ test parse {
 /// `error.IllegalToken` it raises there surfaces as a compile error and
 /// never reaches a caller.
 pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime, value: []const u8) ParseError!ParseResult {
+    const expanded = comptime formatsequence.expandLocalized(format_string);
+
     const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
         @setEvalBranchQuota(200000);
         var count = 0;
         {
-            var it: FormatTag.Tokenizer = .init(format_string);
+            var it: FormatTag.Tokenizer = .init(expanded);
             while (it.next()) |token| {
                 switch (token) {
                     .tag => |tag| switch (tag) {
                         .Q,
                         .Qo,
+                        .yo,
+                        .N,
+                        .NN,
+                        .NNN,
+                        .NNNN,
+                        .NNNNN,
+                        .YYYYY,
+                        .YYYYYY,
+                        .Hmm,
+                        .Hmmss,
+                        .hmm,
+                        .hmmss,
+                        .X,
+                        .x,
+                        .ggggg,
+                        .GGGGG,
                         .w,
                         .wo,
                         .ww,
@@ -448,7 +505,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         => return error.IllegalToken,
                         else => {},
                     },
-                    .char => {},
+                    .literal => {},
                 }
                 count += 1;
             }
@@ -456,7 +513,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
         var tokens: [count]FormatTag.Tokenizer.Token = undefined;
         var index = 0;
         {
-            var it: FormatTag.Tokenizer = .init(format_string);
+            var it: FormatTag.Tokenizer = .init(expanded);
             while (it.next()) |token| {
                 tokens[index] = token;
                 index += 1;
@@ -490,7 +547,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         datetime.year = @as(Year, @intCast(read.digits(year))) + 2000;
                         left = left[year.len..];
                     },
-                    .YYYY, .YYY => {
+                    .YYYY, .Y, .y, .yy, .yyy, .yyyy => {
                         datetime.year = year: {
                             const str = read.int(left, 4);
                             if (str.len == 0) return error.ParseError;
@@ -803,6 +860,22 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                     },
                     .Q,
                     .Qo,
+                    .yo,
+                    .N,
+                    .NN,
+                    .NNN,
+                    .NNNN,
+                    .NNNNN,
+                    .YYYYY,
+                    .YYYYYY,
+                    .Hmm,
+                    .Hmmss,
+                    .hmm,
+                    .hmmss,
+                    .X,
+                    .x,
+                    .ggggg,
+                    .GGGGG,
                     .w,
                     .wo,
                     .ww,
@@ -819,21 +892,13 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                     // else => {},
                 }
             },
-            .char => |char| {
-                switch (char) {
-                    ',',
-                    ' ',
-                    ':',
-                    '-',
-                    '.',
-                    'T',
-                    'W',
-                    => {
-                        if (left[0] != char) return error.ParseError;
-                        left = left[1..];
-                    },
-                    else => return error.ParseError,
-                }
+            // A literal has to be there, exactly, and is then stepped
+            // over. Nothing is skipped on its behalf: a format string
+            // that says a space means a space.
+            .literal => |text| {
+                if (left.len < text.len) return error.ParseError;
+                if (!std.mem.eql(u8, left[0..text.len], text)) return error.ParseError;
+                left = left[text.len..];
             },
         }
     }
@@ -898,6 +963,44 @@ test asDate {
         Date{ .year = 2024, .month = .Mar, .day = 15 },
         datetime.asDate(),
     );
+}
+
+/// Returns the instant this reading names, by taking its offset off it.
+///
+/// This is the inverse of `Instant.asDateTime`, and is what the `X` and
+/// `x` sequences are written from. A wall-clock reading plus an offset
+/// names exactly one instant, so unlike `TimeZone.resolve` there is
+/// nothing here that can be ambiguous or missing.
+pub fn toInstant(self: DateTime) Instant {
+    const seconds = @as(i64, self.asDate().toDaysSinceStartOfEra()) * std.time.s_per_day +
+        @as(i64, self.hour) * std.time.s_per_hour +
+        @as(i64, self.minute) * std.time.s_per_min +
+        @as(i64, self.second) -
+        self.offset;
+
+    return .{
+        .timestamp = @as(i128, seconds) * std.time.ns_per_s + self.nanosecond,
+    };
+}
+
+test toInstant {
+    // The epoch, and the same instant written against a zone five hours
+    // behind it.
+    const utc_epoch: DateTime = .{ .year = 1970, .month = .Jan, .day = 1 };
+    try std.testing.expectEqual(@as(i128, 0), utc_epoch.toInstant().timestamp);
+
+    const shifted: DateTime = .{
+        .year = 1969,
+        .month = .Dec,
+        .day = 31,
+        .hour = 19,
+        .offset = -5 * std.time.s_per_hour,
+    };
+    try std.testing.expectEqual(@as(i128, 0), shifted.toInstant().timestamp);
+
+    // It undoes `Instant.asDateTime`.
+    const instant: Instant = .fromNanoTimeStamp(1710513005123456789);
+    try std.testing.expectEqual(instant.timestamp, instant.asDateTime().toInstant().timestamp);
 }
 
 /// Returns the ISO 8601 week this date falls in, and the year that week
@@ -1592,7 +1695,10 @@ test "the sequences that differ only in padding" {
         // old day-of-year-over-seven arithmetic got wrong: it gave 0.
         .{ .fmt = "w-ww", .expected = "1-01" },
         .{ .fmt = "DDD-DDDD", .expected = "3-003" },
-        .{ .fmt = "YY-YYY-YYYY", .expected = "24-2024-2024" },
+        .{ .fmt = "YY-YYYY", .expected = "24-2024" },
+        // `YYY` is not a sequence: it reads as `YY` and then `Y`, which
+        // is what moment.js makes of it too.
+        .{ .fmt = "YYY", .expected = "242024" },
     };
 
     inline for (cases) |case| {

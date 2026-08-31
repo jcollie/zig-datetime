@@ -16,6 +16,115 @@ const std = @import("std");
 
 /// One sequence of a format string. The field names are the sequences
 /// themselves, which is what `Tokenizer` matches against.
+/// The localized format sequences, which stand for a whole format string
+/// rather than for one value, paired with what each stands for.
+///
+/// These are the `en` locale's, which is the only locale there is here and
+/// is moment.js's default. The lower-case spellings are the upper-case
+/// ones with the padding taken off the month, day and weekday, which is
+/// how moment derives them rather than listing them.
+///
+/// Longest first, because `LLLL` has to be recognized before `LLL`.
+const localized = [_]struct { sequence: []const u8, expansion: []const u8 }{
+    .{ .sequence = "LTS", .expansion = "h:mm:ss A" },
+    .{ .sequence = "LT", .expansion = "h:mm A" },
+    .{ .sequence = "LLLL", .expansion = "dddd, MMMM D, YYYY h:mm A" },
+    .{ .sequence = "LLL", .expansion = "MMMM D, YYYY h:mm A" },
+    .{ .sequence = "LL", .expansion = "MMMM D, YYYY" },
+    .{ .sequence = "L", .expansion = "MM/DD/YYYY" },
+    .{ .sequence = "llll", .expansion = "ddd, MMM D, YYYY h:mm A" },
+    .{ .sequence = "lll", .expansion = "MMM D, YYYY h:mm A" },
+    .{ .sequence = "ll", .expansion = "MMM D, YYYY" },
+    .{ .sequence = "l", .expansion = "M/D/YYYY" },
+};
+
+/// Replaces every localized sequence in `format_string` with what it
+/// stands for, leaving everything else alone.
+///
+/// This runs before tokenizing because a localized sequence is not a value
+/// but a shorthand for other sequences, so `LT` has to become `h:mm A`
+/// before anything tries to read an `L`. Bracketed text and anything after
+/// a backslash are stepped over rather than expanded, so `[LT]` stays the
+/// two letters it looks like.
+///
+/// The replacement runs until nothing changes, bounded so that a locale
+/// whose expansion contained its own sequence could not spin. moment.js
+/// bounds it the same way and for the same reason.
+pub fn expandLocalized(comptime format_string: []const u8) []const u8 {
+    comptime {
+        // Every character of every pass is a backwards branch, and the
+        // default allowance is a thousand. Set here rather than left to
+        // the caller so that this is usable on its own.
+        @setEvalBranchQuota(100000);
+
+        var current: []const u8 = format_string;
+
+        for (0..6) |_| {
+            var out: []const u8 = "";
+            var index: usize = 0;
+            var changed = false;
+
+            scan: while (index < current.len) {
+                const rest = current[index..];
+
+                if (rest[0] == '[') {
+                    if (std.mem.indexOfAny(u8, rest[1..], "[]")) |offset| {
+                        if (rest[1 + offset] == ']') {
+                            out = out ++ rest[0 .. offset + 2];
+                            index += offset + 2;
+                            continue :scan;
+                        }
+                    }
+                }
+
+                if (rest[0] == '\\' and rest.len > 1) {
+                    out = out ++ rest[0..2];
+                    index += 2;
+                    continue :scan;
+                }
+
+                for (localized) |entry| {
+                    if (std.mem.startsWith(u8, rest, entry.sequence)) {
+                        out = out ++ entry.expansion;
+                        index += entry.sequence.len;
+                        changed = true;
+                        continue :scan;
+                    }
+                }
+
+                out = out ++ rest[0..1];
+                index += 1;
+            }
+
+            if (!changed) return current;
+            current = out;
+        }
+
+        return current;
+    }
+}
+
+test expandLocalized {
+    try std.testing.expectEqualStrings("MM/DD/YYYY", comptime expandLocalized("L"));
+    try std.testing.expectEqualStrings("h:mm A", comptime expandLocalized("LT"));
+    try std.testing.expectEqualStrings("M/D/YYYY", comptime expandLocalized("l"));
+
+    // The longest spelling wins, so five Ls are the four letter one and
+    // then the one letter one.
+    try std.testing.expectEqualStrings(
+        "dddd, MMMM D, YYYY h:mm AMM/DD/YYYY",
+        comptime expandLocalized("LLLLL"),
+    );
+
+    // Bracketed text is not a sequence, and neither is anything a
+    // backslash claimed.
+    try std.testing.expectEqualStrings("[LT]", comptime expandLocalized("[LT]"));
+    try std.testing.expectEqualStrings("\\LT", comptime expandLocalized("\\LT"));
+
+    // Anything with no localized sequence in it comes back unchanged.
+    try std.testing.expectEqualStrings("YYYY-MM-DD", comptime expandLocalized("YYYY-MM-DD"));
+}
+
 pub const FormatTag = enum {
     /// 1 2 ... 11 12 (month, numeric)
     M,
@@ -72,15 +181,58 @@ pub const FormatTag = enum {
     gg,
     /// 1970 1971 ... 2029 2030 (week-numbering year)
     gggg,
+    /// 02024 (week-numbering year, zero padded to five digits)
+    ggggg,
     /// 70 71 ... 29 30 (ISO week-numbering year, last two digits)
     ///
     /// The year the week written by `W` belongs to.
     GG,
     /// 1970 1971 ... 2029 2030 (ISO week-numbering year)
     GGGG,
-    YY, // 70 71 ... 29 30 (year, last two digits only)
-    YYY, // 1 2 ... 1970 1971 ... 2029 2030 (year)
-    YYYY, // 0001 0002 ... 1970 1971 ... 2029 2030 (year, zero padded to 4 digits)
+    /// 02024 (ISO week-numbering year, zero padded to five digits)
+    GGGGG,
+    /// 70 71 ... 29 30 (year, last two digits only)
+    YY,
+    /// 0001 0002 ... 1970 1971 ... 2029 2030 (year, zero padded to four
+    /// digits, with a leading minus before the common era)
+    YYYY,
+    /// 02024 (year, zero padded to five digits)
+    YYYYY,
+    /// +002024 (year, always signed, zero padded to six digits)
+    ///
+    /// This is ISO 8601's expanded year, which the standard allows only by
+    /// prior agreement between the parties exchanging the data; `iso8601`
+    /// deliberately does not parse it.
+    YYYYYY,
+    /// 1 2 ... 1970 1971 ... 2029 2030 (year, unpadded)
+    ///
+    /// Note that `YYY` is not a sequence: it reads as `YY` followed by
+    /// this, which is what moment.js makes of it too.
+    Y,
+    /// 1 2 ... 1970 1971 ... 2029 2030 (era year, unpadded)
+    ///
+    /// The year counted within its era, which for the common era is the
+    /// year itself. `yy`, `yyy` and `yyyy` all mean the same thing, as
+    /// they do in moment.js.
+    y,
+    /// 1st 2nd ... 2029th 2030th (era year, ordinal)
+    yo,
+    /// Same as `y`.
+    yy,
+    /// Same as `y`.
+    yyy,
+    /// Same as `y`.
+    yyyy,
+    /// AD (era, abbreviated)
+    N,
+    /// Same as `N`.
+    NN,
+    /// Same as `N`.
+    NNN,
+    /// Anno Domini (era, in full)
+    NNNN,
+    /// Same as `N`.
+    NNNNN,
     // @"±YYYY",
     // /// BCE/CE (BC and AD will be accepted for parsing, but not emitted on
     // /// formatting).
@@ -117,6 +269,21 @@ pub const FormatTag = enum {
     SSSSSSS, // 0000000 00000000 ... 9999998 9999999 (hundreds of nanoseconds)
     SSSSSSSS, // 00000000 000000000 ... 99999998 99999999 (tens of nanoseconds)
     SSSSSSSSS, // 000000000 000000000 ... 999999998 999999999 (nanoseconds)
+    /// 1430 (hour and minute, run together, hour unpadded)
+    ///
+    /// One sequence rather than `H` beside `mm`, which is what moment.js
+    /// makes of these four spellings too.
+    Hmm,
+    /// 143005 (hour, minute and second, run together)
+    Hmmss,
+    /// 230 (hour on the 12 hour clock and minute, run together)
+    hmm,
+    /// 23005 (hour on the 12 hour clock, minute and second)
+    hmmss,
+    /// 1710513005 (seconds since the Unix epoch)
+    X,
+    /// 1710513005000 (milliseconds since the Unix epoch)
+    x,
     // z, // EST CST ... MST PST
     /// -07:00 -06:00 ... +06:00 +07:00 (offset from UTC). Note that this
     /// makes a bare `Z` in a format string an offset rather than the
@@ -168,9 +335,13 @@ pub const FormatTag = enum {
         format_string: []const u8,
 
         /// What the tokenizer produces: either a recognized sequence or a
-        /// literal character to be copied through as-is.
+        /// run of characters to be copied through as-is.
+        ///
+        /// A literal is a slice rather than a byte because bracketed text
+        /// arrives all at once, and because an escape can produce nothing
+        /// at all; see `next`.
         pub const Token = union(enum) {
-            char: u8,
+            literal: []const u8,
             tag: FormatTag,
         };
 
@@ -188,31 +359,83 @@ pub const FormatTag = enum {
             try std.testing.expectEqual(@as(?Token, null), it.next());
         }
 
-        /// Returns the next token, or null when the format string is
-        /// exhausted.
-        pub fn next(self: *Tokenizer) ?Token {
-            if (self.index >= self.format_string.len) return null;
-            var tag_: ?FormatTag = null;
-            var tag_len: usize = 0;
+        /// Returns the length of the sequence beginning at `index`, or
+        /// null when nothing there is one.
+        fn tagAt(self: Tokenizer, index: usize) ?FormatTag {
+            var found: ?FormatTag = null;
+            var length: usize = 0;
             inline for (@typeInfo(FormatTag).@"enum".fields) |field| {
-                if (field.name.len > tag_len and
-                    self.index + field.name.len <= self.format_string.len and
-                    std.mem.eql(u8, field.name, self.format_string[self.index..][0..field.name.len]))
+                if (field.name.len > length and
+                    index + field.name.len <= self.format_string.len and
+                    std.mem.eql(u8, field.name, self.format_string[index..][0..field.name.len]))
                 {
-                    tag_ = @enumFromInt(field.value);
-                    tag_len = field.name.len;
+                    found = @enumFromInt(field.value);
+                    length = field.name.len;
                 }
             }
-            if (tag_) |tag| {
-                defer self.index += @tagName(tag).len;
-                return .{
-                    .tag = tag,
-                };
+            return found;
+        }
+
+        /// Returns the next token, or null when the format string is
+        /// exhausted.
+        ///
+        /// Three things can appear. Text in square brackets is a literal,
+        /// which is how a format string writes something that would
+        /// otherwise be read as a sequence. A backslash makes a literal of
+        /// whatever follows it, sequence or single character. Anything
+        /// else is the longest sequence that matches, or one character
+        /// passed through when none does.
+        ///
+        /// The corners are moment.js's, and are followed deliberately
+        /// rather than tidied. A `[` with no `]` after it is a literal
+        /// bracket rather than an error, and so is a `[` that would have
+        /// to nest. A backslash before another backslash yields nothing
+        /// at all, because moment strips every backslash out of the run it
+        /// matched, and a trailing backslash likewise. See
+        /// `tools/oracle.js`, which checks all of it.
+        pub fn next(self: *Tokenizer) ?Token {
+            if (self.index >= self.format_string.len) return null;
+
+            const rest = self.format_string[self.index..];
+
+            if (rest[0] == '[') {
+                // The closing bracket has to come before any second
+                // opening one, which is what makes `[a[b]` a literal
+                // bracket followed by `a` and then the literal `b`.
+                if (std.mem.indexOfAny(u8, rest[1..], "[]")) |offset| {
+                    if (rest[1 + offset] == ']') {
+                        defer self.index += offset + 2;
+                        return .{ .literal = rest[1..][0..offset] };
+                    }
+                }
+                defer self.index += 1;
+                return .{ .literal = rest[0..1] };
             }
+
+            if (rest[0] == '\\') {
+                // A backslash with nothing after it, and a backslash
+                // before another backslash, both come to nothing.
+                if (rest.len == 1) {
+                    defer self.index += 1;
+                    return .{ .literal = rest[0..0] };
+                }
+                if (rest[1] == '\\') {
+                    defer self.index += 2;
+                    return .{ .literal = rest[0..0] };
+                }
+
+                const length = if (self.tagAt(self.index + 1)) |tag| @tagName(tag).len else 1;
+                defer self.index += 1 + length;
+                return .{ .literal = rest[1..][0..length] };
+            }
+
+            if (self.tagAt(self.index)) |tag| {
+                defer self.index += @tagName(tag).len;
+                return .{ .tag = tag };
+            }
+
             defer self.index += 1;
-            return .{
-                .char = self.format_string[self.index],
-            };
+            return .{ .literal = rest[0..1] };
         }
 
         test next {
@@ -221,9 +444,26 @@ pub const FormatTag = enum {
             // back as a literal.
             var it: Tokenizer = .init("MM-D");
             try std.testing.expectEqual(FormatTag.MM, it.next().?.tag);
-            try std.testing.expectEqual(@as(u8, '-'), it.next().?.char);
+            try std.testing.expectEqualStrings("-", it.next().?.literal);
             try std.testing.expectEqual(FormatTag.D, it.next().?.tag);
             try std.testing.expectEqual(@as(?Token, null), it.next());
+
+            // Brackets make a literal of what would otherwise be read as
+            // a sequence.
+            var bracketed: Tokenizer = .init("[Y]YYYY");
+            try std.testing.expectEqualStrings("Y", bracketed.next().?.literal);
+            try std.testing.expectEqual(FormatTag.YYYY, bracketed.next().?.tag);
+
+            // A bracket that never closes is just a bracket.
+            var unclosed: Tokenizer = .init("[MM");
+            try std.testing.expectEqualStrings("[", unclosed.next().?.literal);
+            try std.testing.expectEqual(FormatTag.MM, unclosed.next().?.tag);
+
+            // A backslash takes the whole sequence after it, not one
+            // character of it.
+            var escaped: Tokenizer = .init("\\MMD");
+            try std.testing.expectEqualStrings("MM", escaped.next().?.literal);
+            try std.testing.expectEqual(FormatTag.D, escaped.next().?.tag);
         }
     };
 };

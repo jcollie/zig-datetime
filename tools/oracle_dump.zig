@@ -57,23 +57,46 @@ const sweep_step = std.time.ms_per_day;
 /// actually writes.
 const formats = [_][]const u8{
     // Every sequence on its own.
-    "M",       "Mo",                   "MM",                           "MMM",
-    "MMMM",    "Q",                    "Qo",                           "D",
-    "Do",      "DD",                   "DDD",                          "DDDo",
-    "DDDD",    "d",                    "do",                           "dd",
-    "ddd",     "dddd",                 "e",                            "E",
-    "w",       "wo",                   "ww",                           "W",
-    "Wo",      "WW",                   "gg",                           "gggg",
-    "GG",      "GGGG",                 "YY",                           "YYYY",
-    "A",       "a",                    "H",                            "HH",
-    "h",       "hh",                   "k",                            "kk",
-    "m",       "mm",                   "s",                            "ss",
-    "S",       "SS",                   "SSS",                          "Z",
-    "ZZ",
+    "M",                            "Mo",           "MM",              "MMM",
+    "MMMM",                         "Q",            "Qo",              "D",
+    "Do",                           "DD",           "DDD",             "DDDo",
+    "DDDD",                         "d",            "do",              "dd",
+    "ddd",                          "dddd",         "e",               "E",
+    "w",                            "wo",           "ww",              "W",
+    "Wo",                           "WW",           "gg",              "gggg",
+    "ggggg",                        "GG",           "GGGG",            "GGGGG",
+    "Y",                            "YY",           "YYYY",            "YYYYY",
+    "YYYYYY",                       "y",            "yo",              "yy",
+    "yyy",                          "yyyy",         "N",               "NN",
+    "NNN",                          "NNNN",         "NNNNN",           "A",
+    "a",                            "H",            "HH",              "h",
+    "hh",                           "k",            "kk",              "m",
+    "mm",                           "s",            "ss",              "S",
+    "SS",                           "SSS",          "Z",               "ZZ",
+    "X",                            "x",            "Hmm",             "Hmmss",
+    "hmm",                          "hmmss",
+    // Sequences that only differ from their parts when run together.
+           "YYY",             "H mm",
+    "h mm ss",
+    // Literals, escaping, and the corners of both.
+                         "YYYY/MM/DD",   "[abc]",           "[Y]YYYY",
+    "a[bc]d",                       "[]",           "[[]",             "[abc",
+    "abc]",                         "[a[b]",        "q",               "%",
+    "#$@!",                         "YYYY[T]HH",    "[today is] dddd",
     // The shapes a caller writes.
-         "YYYY-MM-DD",           "YYYY-MM-DDTHH:mm:ss",          "HH:mm",
-    "h:mm a",  "dddd, D MMMM YYYY",    "ddd, DD MMM YYYY HH:mm:ss ZZ", "MMM D",
-    "Do MMMM", "YYYY-MM-DDTHH:mm:ssZ", "GGGG-WW-E",                    "gggg-ww-e",
+    "YYYY-MM-DD",
+    "YYYY-MM-DDTHH:mm:ss",          "HH:mm",        "h:mm a",          "dddd, D MMMM YYYY",
+    "ddd, DD MMM YYYY HH:mm:ss ZZ", "MMM D",        "Do MMMM",         "YYYY-MM-DDTHH:mm:ssZ",
+    "GGGG-[W]WW-E",                 "gggg-[W]ww-e",
+    // The localized sequences, which stand for a whole format string.
+    "L",               "LL",
+    "LLL",                          "LLLL",         "LT",              "LTS",
+    "l",                            "ll",           "lll",             "llll",
+    "LLLLL",                        "L LT",         "[L] L",           "hello",
+    // Backslash escaping, including the corners where moment drops the
+    // whole run it matched.
+    "\\Y",                          "\\\\Y",        "YYYY\\-MM",       "\\[abc\\]",
+    "\\MMD",                        "\\",
 };
 
 pub fn main(init: std.process.Init) !void {
