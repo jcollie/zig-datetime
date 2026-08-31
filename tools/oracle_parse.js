@@ -92,23 +92,12 @@ for (const line of lines) {
 
 const show = (r) => (r.ok ? `${r.value} (${r.consumed} used)` : `refused${r.error ? ' ' + r.error : ''}`);
 
-// The one thing lenient parsing does not follow moment on.
-//
-// moment's lenient mode does not read a format string left to right
-// against the input: for each sequence it searches the rest of the input
-// for something that sequence's pattern matches, skips whatever came
-// before, and skips the sequence entirely when nothing matches. So a
-// separator that does not match is stepped over, and an input that runs
-// out is padded with whatever the sequences would have defaulted to.
-//
-// This library reads left to right in both modes and refuses instead.
-// These are the cases in the corpus where that shows. Anything else is a
-// regression, and fails the build.
-const KNOWN = [
-    ['YYYY-MM-DD', '2024/03/15', 'lenient'],
-    ['YYYY-MM-DD', '2024-03', 'lenient'],
-    ['HH:mm', '14', 'lenient'],
-];
+// Divergences that are deliberate and are going to stay. Empty, and worth
+// keeping so that adding one is a visible decision rather than a quiet
+// loosening of the check: anything not named here fails the build, and the
+// count below reports a listed case that has stopped diverging so the list
+// cannot rot.
+const KNOWN = [];
 
 const isKnown = (r) => KNOWN.some(([f, i, m]) => r.format === f && r.input === i && r.mode === m);
 

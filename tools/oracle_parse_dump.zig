@@ -228,5 +228,5 @@ fn reportOne(
     var writer = std.Io.Writer.fixed(&rendered);
     try result.value.format(canonical, &writer);
 
-    try out.print("{s}\t{s}\t{t}\tok\t{d} {s}\n", .{ fmt, input, mode, result.str.len, writer.buffered() });
+    try out.print("{s}\t{s}\t{t}\tok\t{d} {s}\n", .{ fmt, input, mode, result.str.len - result.skipped, writer.buffered() });
 }

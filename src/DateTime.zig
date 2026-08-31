@@ -484,10 +484,17 @@ pub const ParseError = error{
     Underflow,
 } || Month.ParseError || DayOfWeek.ParseError;
 
-/// The result of a successful parse: the prefix of the input that was
-/// consumed and the value it parsed to.
+/// The result of a successful parse.
 pub const ParseResult = struct {
+    /// The prefix of the input that was consumed, so that a caller can
+    /// carry on from `value[str.len..]`.
     str: []const u8,
+    /// How many bytes inside `str` were stepped over rather than read.
+    ///
+    /// Only lenient parsing steps over anything, and only where a sequence
+    /// or a literal was found further along than it stood. `str.len` minus
+    /// this is what moment reports as the length it used.
+    skipped: usize = 0,
     value: DateTime,
 };
 
@@ -518,6 +525,537 @@ pub const Options = struct {
     /// How closely the input has to match. See `Mode`.
     mode: Mode = .lenient,
 };
+
+/// What a sequence failing to read says.
+///
+/// `NoMatch` means the input is not shaped like this sequence, which is
+/// what a lenient scan is allowed to step past and try again after.
+/// Anything else means the sequence read something and the something was
+/// wrong -- a month of 13, an hour of 25 -- which is an error wherever it
+/// is found, and not something to go looking for a second opinion about.
+///
+/// moment draws the same line, though it draws it elsewhere: its regexes
+/// match the shape and its overflow checks run afterwards over what they
+/// collected. Keeping the two apart is what stops a scan from stepping
+/// over a bad value and matching the next thing that looks plausible.
+const MatchError = ParseError || error{NoMatch};
+
+/// What one pass over the tokens is building up, so that a sequence can be
+/// tried at more than one place without leaving anything behind when it
+/// does not match. Every field is a value, so a snapshot is a copy.
+const ParseState = struct {
+    datetime: DateTime,
+    am_pm: AmPm = .none,
+    day_of_week: ?DayOfWeek = null,
+    day_of_year: ?u16 = null,
+    week: Week = .{},
+};
+
+/// Reads whatever `tag` names from the front of `left.*`, advancing it and
+/// writing what it found into `state`.
+///
+/// `left.*` is only advanced when the whole sequence matched, so a caller
+/// that means to try again somewhere else can do so without unwinding it.
+/// `state` may have been written to either way, which is why the caller
+/// snapshots it.
+fn matchTag(
+    comptime tag: FormatTag,
+    left: *[]const u8,
+    state: *ParseState,
+    options: Options,
+) MatchError!void {
+    var rest = left.*;
+
+    switch (tag) {
+        .YY => {
+            const str = read.int(rest, 2);
+            if (options.mode == .strict and str.len != 2) return error.NoMatch;
+
+            // moment's window: 69 through 99 are the twentieth
+            // century and 00 through 68 are this one, which is
+            // the POSIX rule and puts the break at 1969.
+            const value_ = @as(Year, @intCast(read.digits(str)));
+            state.datetime.year = value_ + (if (value_ > 68) @as(Year, 1900) else 2000);
+            rest = rest[str.len..];
+        },
+        .YYYY, .Y, .y, .yy, .yyy, .yyyy => {
+            state.datetime.year = year: {
+                const str = read.int(rest, 4);
+                if (str.len == 0) return error.NoMatch;
+                if (options.mode == .strict and tag == .YYYY and str.len != 4) return error.NoMatch;
+                const digits = @as(Year, @intCast(read.digits(str)));
+                rest = rest[str.len..];
+
+                // Two characters against `YYYY` are a two
+                // digit year and are windowed like one, which
+                // is moment's rule and only reachable
+                // leniently, since strict wants four.
+                break :year if (tag == .YYYY and str.len == 2)
+                    digits + (if (digits > 68) @as(Year, 1900) else 2000)
+                else
+                    digits;
+            };
+        },
+        .MMMM => {
+            // A word that is not a month is a wrong month rather
+            // than no month at all, which is what stops a scan
+            // stepping over it to find the next thing that looks
+            // like one. moment matches any word here and judges it
+            // afterwards, to the same effect.
+            if (rest.len == 0 or !std.ascii.isAlphabetic(rest[0])) return error.ParseError;
+
+            state.datetime.month = month: {
+                for (1..rest.len + 1) |l| {
+                    if (Month.long_map.get(rest[0..l])) |m| {
+                        rest = rest[l..];
+                        break :month m;
+                    }
+                }
+                // And a short name where a long one was asked
+                // for, which moment also takes leniently.
+                if (options.mode == .lenient) {
+                    for (1..rest.len + 1) |l| {
+                        if (Month.short_map.get(rest[0..l])) |m| {
+                            rest = rest[l..];
+                            break :month m;
+                        }
+                    }
+                }
+                return error.ParseError;
+            };
+        },
+        .MMM => {
+            // A word that is not a month is a wrong month rather
+            // than no month at all, which is what stops a scan
+            // stepping over it to find the next thing that looks
+            // like one. moment matches any word here and judges it
+            // afterwards, to the same effect.
+            if (rest.len == 0 or !std.ascii.isAlphabetic(rest[0])) return error.ParseError;
+
+            state.datetime.month = month: {
+                // Leniently a full name is taken too, longest
+                // first so that "March" is not read as "Mar"
+                // with "ch" rest over.
+                if (options.mode == .lenient) {
+                    for (1..rest.len + 1) |l| {
+                        if (Month.long_map.get(rest[0..l])) |m| {
+                            rest = rest[l..];
+                            break :month m;
+                        }
+                    }
+                }
+                for (1..rest.len + 1) |l| {
+                    if (Month.short_map.get(rest[0..l])) |m| {
+                        rest = rest[l..];
+                        break :month m;
+                    }
+                }
+                return error.ParseError;
+            };
+        },
+        .MM, .M => {
+            state.datetime.month = month: {
+                const str = read.int(rest, 2);
+                if (str.len == 0) return error.NoMatch;
+                if (options.mode == .strict and tag == .MM and str.len != 2) return error.NoMatch;
+                defer rest = rest[str.len..];
+                break :month try Month.parseInt(str);
+            };
+        },
+        .Mo => {
+            const map = ordinal.map;
+            state.datetime.month = month: {
+                const str = read.int(rest, 2);
+                if (str.len == 0) return error.NoMatch;
+                const month = try Month.parseInt(str);
+                rest = rest[str.len..];
+                for (1..rest.len + 1) |l| {
+                    if (map.get(rest[0..l])) |_| {
+                        rest = rest[l..];
+                        break :month month;
+                    }
+                }
+                return error.NoMatch;
+            };
+        },
+        .DD, .D => {
+            state.datetime.day = day: {
+                const str = read.int(rest, 2);
+                if (str.len == 0) return error.NoMatch;
+                if (options.mode == .strict and tag == .DD and str.len != 2) return error.NoMatch;
+                const day = read.digits(str);
+                if (day < 1 or day > 31) return error.ParseError;
+                rest = rest[str.len..];
+                break :day @intCast(day);
+            };
+        },
+        .Do => {
+            const map = ordinal.map;
+            state.datetime.day = day: {
+                const str = read.int(rest, 3);
+                if (str.len == 0) return error.NoMatch;
+                const day = read.digits(str);
+                if (day < 1 or day > 31) return error.ParseError;
+                rest = rest[str.len..];
+                for (1..rest.len + 1) |l| {
+                    if (map.get(rest[0..l])) |_| {
+                        rest = rest[l..];
+                        break :day @intCast(day);
+                    }
+                }
+                return error.NoMatch;
+            };
+        },
+        .DDDD, .DDD, .DDDo => {
+            state.day_of_year = doy: {
+                const str = read.int(rest, 3);
+                if (str.len == 0) return error.NoMatch;
+                if (options.mode == .strict and tag == .DDDD and str.len != 3) return error.NoMatch;
+                const doy = read.digits(str);
+                if (doy < 1 or doy > 366) return error.ParseError;
+                rest = rest[str.len..];
+                switch (tag) {
+                    .DDDo => ordinal: {
+                        const map = ordinal.map;
+                        for (1..rest.len + 1) |l| {
+                            if (map.get(rest[0..l])) |_| {
+                                rest = rest[l..];
+                                break :ordinal;
+                            }
+                        }
+                        return error.NoMatch;
+                    },
+                    .DDDD, .DDD => {},
+                    else => unreachable,
+                }
+                break :doy @intCast(doy);
+            };
+        },
+        .HH, .H, .hh, .h => {
+            state.datetime.hour = hour: {
+                const str = read.int(rest, 2);
+                if (str.len == 0) return error.NoMatch;
+                switch (tag) {
+                    .HH, .hh => if (options.mode == .strict and str.len != 2) return error.NoMatch,
+                    .H, .h => {},
+                    else => unreachable,
+                }
+                const hour = read.digits(str);
+                switch (tag) {
+                    // 24 is allowed, and means the end of the
+                    // day rather than an hour in it. It is
+                    // carried into the next day below, once
+                    // the minutes and seconds are known to be
+                    // zero, which is moment's rule.
+                    .HH, .H => if (hour > 24) return error.ParseError,
+                    // Strictly this is a twelve hour clock and
+                    // has to read like one. Leniently moment
+                    // bounds it no more tightly than `H` and
+                    // lets the meridiem make what it can of
+                    // the result, so "13:30 pm" is 13:30.
+                    .hh, .h => switch (options.mode) {
+                        .strict => if (hour < 1 or hour > 12) return error.ParseError,
+                        .lenient => if (hour > 24) return error.ParseError,
+                    },
+                    else => unreachable,
+                }
+                rest = rest[str.len..];
+                break :hour @intCast(hour);
+            };
+        },
+        .kk, .k => {
+            state.datetime.hour = hour: {
+                const str = read.int(rest, 2);
+                if (str.len == 0) return error.NoMatch;
+                if (options.mode == .strict and tag == .kk and str.len != 2) return error.NoMatch;
+                var hour = read.digits(str);
+                if (hour > 24) return error.ParseError;
+                if (hour == 24) hour = 0;
+                rest = rest[str.len..];
+                break :hour @intCast(hour);
+            };
+        },
+        .mm, .m => {
+            state.datetime.minute = minute: {
+                const str = read.int(rest, 2);
+                if (str.len == 0) return error.NoMatch;
+                if (options.mode == .strict and tag == .mm and str.len != 2) return error.NoMatch;
+                const minute = read.digits(str);
+                if (minute > 59) return error.ParseError;
+                rest = rest[str.len..];
+                break :minute @intCast(minute);
+            };
+        },
+        .ss, .s => {
+            state.datetime.second = second: {
+                const str = read.int(rest, 2);
+                if (str.len == 0) return error.NoMatch;
+                if (options.mode == .strict and tag == .ss and str.len != 2) return error.NoMatch;
+                const second = read.digits(str);
+                if (second > 60) return error.ParseError;
+                rest = rest[str.len..];
+                break :second @intCast(second);
+            };
+        },
+        .SSSSSSSSS,
+        .SSSSSSSS,
+        .SSSSSSS,
+        .SSSSSS,
+        .SSSSS,
+        .SSSS,
+        .SSS,
+        .SS,
+        .S,
+        => {
+            const len = @tagName(tag).len;
+            state.datetime.nanosecond = try read.nanosecond(rest, len);
+            rest = rest[len..];
+        },
+        // .NN => {
+        //     const map = std.StaticStringMapWithEql(i2, std.ascii.eqlIgnoreCase).initComptime(.{
+        //         .{ "Before Christ", -1 },
+        //         .{ "Anno Domini", 1 },
+        //         .{ "Before Common Era", -1 },
+        //         .{ "Common Era", 1 },
+        //     });
+        //     year_sign = sign: {
+        //         for (1..rest.len + 1) |l| {
+        //             if (map.get(rest[0..l])) |sign| {
+        //                 rest = rest[l..];
+        //                 break :sign sign;
+        //             }
+        //         }
+        //         return error.ParseError;
+        //     };
+        // },
+        // .N => {
+        //     const map = std.StaticStringMapWithEql(i2, std.ascii.eqlIgnoreCase).initComptime(.{
+        //         .{ "BC", -1 },
+        //         .{ "AD", 1 },
+        //         .{ "BCE", -1 },
+        //         .{ "CE", 1 },
+        //     });
+        //     year_sign = sign: {
+        //         for (1..rest.len + 1) |l| {
+        //             if (map.get(rest[0..l])) |sign| {
+        //                 rest = rest[l..];
+        //                 break :sign sign;
+        //             }
+        //         }
+        //         return error.ParseError;
+        //     };
+        // },
+        .A, .a => {
+            const map = std.StaticStringMapWithEql(AmPm, std.ascii.eqlIgnoreCase).initComptime(.{
+                .{ "AM", .am },
+                .{ "PM", .pm },
+            });
+            state.am_pm = am_pm: {
+                for (1..rest.len + 1) |l| {
+                    if (map.get(rest[0..l])) |sign| {
+                        rest = rest[l..];
+                        break :am_pm sign;
+                    }
+                }
+                return error.NoMatch;
+            };
+        },
+        .dddd,
+        .ddd,
+        .dd,
+        => {
+            // Leniently any of the three lengths is taken
+            // whichever was asked for, longest first so that
+            // "Sunday" is not read as "Sun" with "day" over.
+            if (rest.len == 0 or !std.ascii.isAlphabetic(rest[0])) return error.NoMatch;
+
+            const result = (if (options.mode == .lenient)
+                DayOfWeek.parseLongStr(rest) catch
+                    DayOfWeek.parseShortStr(rest) catch
+                    DayOfWeek.parseVeryShortStr(rest)
+            else switch (tag) {
+                .dddd => DayOfWeek.parseLongStr(rest),
+                .ddd => DayOfWeek.parseShortStr(rest),
+                .dd => DayOfWeek.parseVeryShortStr(rest),
+                else => unreachable,
+            }) catch return error.ParseError;
+            rest = rest[result.str.len..];
+            state.day_of_week = result.value;
+            state.week.weekday = result.value;
+        },
+        .w, .ww, .wo, .W, .WW, .Wo => {
+            const parsed = number: {
+                const str = read.int(rest, 2);
+                if (str.len == 0) return error.NoMatch;
+                switch (tag) {
+                    .ww, .WW => if (options.mode == .strict and str.len != 2) return error.NoMatch,
+                    else => {},
+                }
+                rest = rest[str.len..];
+                break :number read.digits(str);
+            };
+
+            switch (tag) {
+                .wo, .Wo => {
+                    for (1..rest.len + 1) |l| {
+                        if (ordinal.map.get(rest[0..l])) |_| {
+                            rest = rest[l..];
+                            break;
+                        }
+                    } else return error.NoMatch;
+                },
+                else => {},
+            }
+
+            switch (tag) {
+                .w, .ww, .wo => state.week.week = @intCast(parsed),
+                .W, .WW, .Wo => state.week.iso_week = @intCast(parsed),
+                else => unreachable,
+            }
+        },
+        .gg, .gggg, .GG, .GGGG => {
+            const width: usize = switch (tag) {
+                .gg, .GG => 2,
+                else => 4,
+            };
+
+            const str = read.int(rest, width);
+            if (str.len == 0) return error.NoMatch;
+            if (options.mode == .strict and str.len != width) return error.NoMatch;
+            rest = rest[str.len..];
+
+            const parsed = @as(Year, @intCast(read.digits(str)));
+            const year = switch (tag) {
+                // Two digits are windowed the same way `YY` is.
+                .gg, .GG => parsed + (if (parsed > 68) @as(Year, 1900) else 2000),
+                else => parsed,
+            };
+
+            switch (tag) {
+                .gg, .gggg => state.week.year = year,
+                .GG, .GGGG => state.week.iso_year = year,
+                else => unreachable,
+            }
+        },
+        .d, .e, .E, .do => {
+            state.day_of_week = dow: {
+                const str = read.int(rest, 1);
+                if (str.len != 1) return error.NoMatch;
+                var dow = read.digits(str);
+                switch (tag) {
+                    .E => {
+                        // ISO numbers the week Monday 1 to
+                        // Sunday 7, and `DayOfWeek` numbers it
+                        // Sunday 0 to Saturday 6, so only
+                        // Sunday moves. Subtracting one, which
+                        // is what this used to do, turned every
+                        // day into the one before it.
+                        if (dow < 1 or dow > 7) return error.ParseError;
+                        if (dow == 7) dow = 0;
+                    },
+                    .d, .e, .do => {
+                        if (dow > 6) return error.ParseError;
+                    },
+                    else => unreachable,
+                }
+                rest = rest[str.len..];
+                switch (tag) {
+                    .do => ordinal: {
+                        const map = ordinal.map;
+                        for (1..rest.len + 1) |l| {
+                            if (map.get(rest[0..l])) |_| {
+                                rest = rest[l..];
+                                break :ordinal;
+                            }
+                        }
+                        return error.NoMatch;
+                    },
+                    .d, .e, .E => {},
+                    else => unreachable,
+                }
+                const parsed = std.enums.fromInt(DayOfWeek, @as(u3, @intCast(dow))) orelse
+                    return error.NoMatch;
+
+                // `E` counts the ISO way and the others the
+                // locale way, which decides both the default
+                // week and the default week-numbering year if
+                // the date has to be built from them.
+                switch (tag) {
+                    .E => state.week.iso_weekday = parsed,
+                    .e => state.week.local_weekday = parsed,
+                    .d, .do => state.week.weekday = parsed,
+                    else => unreachable,
+                }
+
+                break :dow parsed;
+            };
+        },
+        .Z, .ZZ => {
+            state.datetime.offset = offset: {
+                if (rest.len == 0) return error.NoMatch;
+
+                // ISO 8601 writes a zero offset as "Z"; accept
+                // that spelling as well as "+00:00".
+                if (rest[0] == 'Z' or rest[0] == 'z') {
+                    rest = rest[1..];
+                    break :offset 0;
+                }
+
+                const sign: i32 = switch (rest[0]) {
+                    '+' => 1,
+                    '-' => -1,
+                    else => return error.NoMatch,
+                };
+                rest = rest[1..];
+
+                const hours = read.int(rest, 2);
+                if (hours.len != 2) return error.NoMatch;
+                rest = rest[hours.len..];
+
+                // Both sequences take either spelling and the
+                // minutes at all, which is moment's rule:
+                // +05, +0500 and +05:00 all read the same, for
+                // Z and for ZZ alike.
+                if (rest.len > 0 and rest[0] == ':') rest = rest[1..];
+
+                const minutes = read.int(rest, 2);
+                if (minutes.len != 0 and minutes.len != 2) return error.NoMatch;
+                rest = rest[minutes.len..];
+
+                const hour: i32 = @intCast(read.digits(hours));
+                const minute: i32 = @intCast(read.digits(minutes));
+                if (hour > 23 or minute > 59) return error.ParseError;
+                break :offset sign * (hour * std.time.s_per_hour + minute * std.time.s_per_min);
+            };
+        },
+        .Q,
+        .Qo,
+        .yo,
+        .N,
+        .NN,
+        .NNN,
+        .NNNN,
+        .NNNNN,
+        .YYYYY,
+        .YYYYYY,
+        .Hmm,
+        .Hmmss,
+        .hmm,
+        .hmmss,
+        .X,
+        .x,
+        .z,
+        .zz,
+        .ggggg,
+        .GGGGG,
+        => {
+            return error.IllegalToken;
+        },
+        // else => {},
+    }
+
+    left.* = rest;
+}
 
 /// Parses `value` according to the comptime `format_string`, leniently and
 /// relative to the Unix epoch. See `parseWith`.
@@ -642,58 +1180,38 @@ pub fn parseWith(
         break :tokens &final;
     };
 
-    // Which of the date fields the format string speaks for. A day of the
-    // year names a month and a day between them, so it counts as both.
-    const mentions = comptime mentions: {
-        var year = false;
-        var month = false;
-        var day = false;
-        for (tokens) |token| switch (token) {
-            .tag => |tag| switch (tag) {
-                .YYYY, .YY, .Y, .y, .yy, .yyy, .yyyy => year = true,
-                .MMMM, .MMM, .MM, .M, .Mo => month = true,
-                .DD, .D, .Do => day = true,
-                .DDDD, .DDD, .DDDo => {
-                    month = true;
-                    day = true;
-                },
-                else => {},
-            },
-            .literal => {},
-        };
-        break :mentions .{ .year = year, .month = month, .day = day };
-    };
-
     var datetime: DateTime = relative_to;
     datetime.hour = 0;
     datetime.minute = 0;
     datetime.second = 0;
     datetime.nanosecond = 0;
 
-    // moment fills the date fields the format string left out by walking
-    // year, month, day in that order: the ones before the first field the
-    // string does speak for come from the reference, and everything after
-    // it takes its lowest value instead. So "2024" against `YYYY` is the
-    // first of January and not the reference's month and day, while a
-    // string naming only a time keeps the whole reference date.
-    if (mentions.year) {
-        if (!mentions.month) datetime.month = .Jan;
-        if (!mentions.day) datetime.day = 1;
-    } else if (mentions.month) {
-        if (!mentions.day) datetime.day = 1;
-    }
+    // Which of the date fields actually got a value. Not which ones the
+    // format string names: leniently a sequence can match nowhere and be
+    // passed over, and then its field was never set at all.
+    var set_year = false;
+    var set_month = false;
+    var set_day = false;
 
-    var am_pm: AmPm = .none;
-    var day_of_week: ?DayOfWeek = null;
-    var day_of_year: ?u16 = null;
-
-    // The week sequences, kept apart by family: `w`, `gg` and `d` count
+    // Held together so that a sequence can be tried in more than one
+    // place and anything a failed attempt wrote can be thrown away. The
+    // week fields inside are kept apart by family: `w`, `gg` and `d` count
     // weeks the English-language way and `W`, `GG` and `E` the ISO way,
     // and the two default what they are not told differently. See
     // `resolveWeek`.
-    var week: Week = .{};
+    var state: ParseState = .{ .datetime = datetime };
 
     var left = value;
+
+    // How much of `left` was stepped over rather than read, which only
+    // happens leniently. `ParseResult.str` still runs to the end of what
+    // was used, so this is what says how much of it counted.
+    var skipped: usize = 0;
+
+    // Whether any sequence read anything. An input that matched nothing
+    // at all is not a date, however many sequences were passed over on
+    // the way: moment calls that `empty` and refuses it, and so does this.
+    var matched_any = false;
 
     // Unrolled, as `format` does with the same token list. The tokens are
     // comptime known, so this turns a switch over every sequence in the
@@ -702,548 +1220,151 @@ pub fn parseWith(
     inline for (tokens) |token| {
         switch (token) {
             .tag => |tag| {
-                switch (tag) {
-                    .YY => {
-                        const str = read.int(left, 2);
-                        if (options.mode == .strict and str.len != 2) return error.ParseError;
+                // Leniently a sequence is looked for rather than
+                // required where it stands: moment searches the rest of
+                // the input for something the sequence matches, steps over
+                // whatever came before, and passes over the sequence
+                // altogether when nothing does. Strictly it has to be
+                // right here.
+                //
+                // Trying the same match at successive places is what does
+                // the searching, so every sequence gets the behaviour
+                // without any of them knowing about it.
+                const limit = if (options.mode == .strict) 0 else left.len;
 
-                        // moment's window: 69 through 99 are the twentieth
-                        // century and 00 through 68 are this one, which is
-                        // the POSIX rule and puts the break at 1969.
-                        const value_ = @as(Year, @intCast(read.digits(str)));
-                        datetime.year = value_ + (if (value_ > 68) @as(Year, 1900) else 2000);
-                        left = left[str.len..];
-                    },
-                    .YYYY, .Y, .y, .yy, .yyy, .yyyy => {
-                        datetime.year = year: {
-                            const str = read.int(left, 4);
-                            if (str.len == 0) return error.ParseError;
-                            if (options.mode == .strict and tag == .YYYY and str.len != 4) return error.ParseError;
-                            const digits = @as(Year, @intCast(read.digits(str)));
-                            left = left[str.len..];
+                var at: usize = 0;
+                const matched = while (at <= limit) : (at += 1) {
+                    var attempt = left[at..];
+                    var candidate = state;
+                    if (matchTag(tag, &attempt, &candidate, options)) |_| {
+                        skipped += at;
+                        state = candidate;
+                        left = attempt;
+                        break true;
+                    } else |err| switch (err) {
+                        // Not shaped like this sequence here; try further
+                        // along, and leave `state` as it was.
+                        error.NoMatch => {},
+                        // Shaped like it and wrong, which no amount of
+                        // looking elsewhere will improve.
+                        else => |fatal| return fatal,
+                    }
+                } else false;
 
-                            // Two characters against `YYYY` are a two
-                            // digit year and are windowed like one, which
-                            // is moment's rule and only reachable
-                            // leniently, since strict wants four.
-                            break :year if (tag == .YYYY and str.len == 2)
-                                digits + (if (digits > 68) @as(Year, 1900) else 2000)
-                            else
-                                digits;
-                        };
-                    },
-                    .MMMM => {
-                        datetime.month = month: {
-                            for (1..left.len + 1) |l| {
-                                if (Month.long_map.get(left[0..l])) |m| {
-                                    left = left[l..];
-                                    break :month m;
-                                }
-                            }
-                            // And a short name where a long one was asked
-                            // for, which moment also takes leniently.
-                            if (options.mode == .lenient) {
-                                for (1..left.len + 1) |l| {
-                                    if (Month.short_map.get(left[0..l])) |m| {
-                                        left = left[l..];
-                                        break :month m;
-                                    }
-                                }
-                            }
-                            return error.ParseError;
-                        };
-                    },
-                    .MMM => {
-                        datetime.month = month: {
-                            // Leniently a full name is taken too, longest
-                            // first so that "March" is not read as "Mar"
-                            // with "ch" left over.
-                            if (options.mode == .lenient) {
-                                for (1..left.len + 1) |l| {
-                                    if (Month.long_map.get(left[0..l])) |m| {
-                                        left = left[l..];
-                                        break :month m;
-                                    }
-                                }
-                            }
-                            for (1..left.len + 1) |l| {
-                                if (Month.short_map.get(left[0..l])) |m| {
-                                    left = left[l..];
-                                    break :month m;
-                                }
-                            }
-                            return error.ParseError;
-                        };
-                    },
-                    .MM, .M => {
-                        datetime.month = month: {
-                            const str = read.int(left, 2);
-                            if (str.len == 0) return error.ParseError;
-                            if (options.mode == .strict and tag == .MM and str.len != 2) return error.ParseError;
-                            defer left = left[str.len..];
-                            break :month try Month.parseInt(str);
-                        };
-                    },
-                    .Mo => {
-                        const map = ordinal.map;
-                        datetime.month = month: {
-                            const str = read.int(left, 2);
-                            if (str.len == 0) return error.ParseError;
-                            const month = try Month.parseInt(str);
-                            left = left[str.len..];
-                            for (1..left.len + 1) |l| {
-                                if (map.get(left[0..l])) |_| {
-                                    left = left[l..];
-                                    break :month month;
-                                }
-                            }
-                            return error.ParseError;
-                        };
-                    },
-                    .DD, .D => {
-                        datetime.day = day: {
-                            const str = read.int(left, 2);
-                            if (str.len == 0) return error.ParseError;
-                            if (options.mode == .strict and tag == .DD and str.len != 2) return error.ParseError;
-                            const day = read.digits(str);
-                            if (day < 1 or day > 31) return error.ParseError;
-                            left = left[str.len..];
-                            break :day @intCast(day);
-                        };
-                    },
-                    .Do => {
-                        const map = ordinal.map;
-                        datetime.day = day: {
-                            const str = read.int(left, 3);
-                            if (str.len == 0) return error.ParseError;
-                            const day = read.digits(str);
-                            if (day < 1 or day > 31) return error.ParseError;
-                            left = left[str.len..];
-                            for (1..left.len + 1) |l| {
-                                if (map.get(left[0..l])) |_| {
-                                    left = left[l..];
-                                    break :day @intCast(day);
-                                }
-                            }
-                            return error.ParseError;
-                        };
-                    },
-                    .DDDD, .DDD, .DDDo => {
-                        day_of_year = doy: {
-                            const str = read.int(left, 3);
-                            if (str.len == 0) return error.ParseError;
-                            if (options.mode == .strict and tag == .DDDD and str.len != 3) return error.ParseError;
-                            const doy = read.digits(str);
-                            if (doy < 1 or doy > 366) return error.ParseError;
-                            left = left[str.len..];
-                            switch (tag) {
-                                .DDDo => ordinal: {
-                                    const map = ordinal.map;
-                                    for (1..left.len + 1) |l| {
-                                        if (map.get(left[0..l])) |_| {
-                                            left = left[l..];
-                                            break :ordinal;
-                                        }
-                                    }
-                                    return error.ParseError;
-                                },
-                                .DDDD, .DDD => {},
-                                else => unreachable,
-                            }
-                            break :doy @intCast(doy);
-                        };
-                    },
-                    .HH, .H, .hh, .h => {
-                        datetime.hour = hour: {
-                            const str = read.int(left, 2);
-                            if (str.len == 0) return error.ParseError;
-                            switch (tag) {
-                                .HH, .hh => if (options.mode == .strict and str.len != 2) return error.ParseError,
-                                .H, .h => {},
-                                else => unreachable,
-                            }
-                            const hour = read.digits(str);
-                            switch (tag) {
-                                // 24 is allowed, and means the end of the
-                                // day rather than an hour in it. It is
-                                // carried into the next day below, once
-                                // the minutes and seconds are known to be
-                                // zero, which is moment's rule.
-                                .HH, .H => if (hour > 24) return error.ParseError,
-                                // Strictly this is a twelve hour clock and
-                                // has to read like one. Leniently moment
-                                // bounds it no more tightly than `H` and
-                                // lets the meridiem make what it can of
-                                // the result, so "13:30 pm" is 13:30.
-                                .hh, .h => switch (options.mode) {
-                                    .strict => if (hour < 1 or hour > 12) return error.ParseError,
-                                    .lenient => if (hour > 24) return error.ParseError,
-                                },
-                                else => unreachable,
-                            }
-                            left = left[str.len..];
-                            break :hour @intCast(hour);
-                        };
-                    },
-                    .kk, .k => {
-                        datetime.hour = hour: {
-                            const str = read.int(left, 2);
-                            if (str.len == 0) return error.ParseError;
-                            if (options.mode == .strict and tag == .kk and str.len != 2) return error.ParseError;
-                            var hour = read.digits(str);
-                            if (hour > 24) return error.ParseError;
-                            if (hour == 24) hour = 0;
-                            left = left[str.len..];
-                            break :hour @intCast(hour);
-                        };
-                    },
-                    .mm, .m => {
-                        datetime.minute = minute: {
-                            const str = read.int(left, 2);
-                            if (str.len == 0) return error.ParseError;
-                            if (options.mode == .strict and tag == .mm and str.len != 2) return error.ParseError;
-                            const minute = read.digits(str);
-                            if (minute > 59) return error.ParseError;
-                            left = left[str.len..];
-                            break :minute @intCast(minute);
-                        };
-                    },
-                    .ss, .s => {
-                        datetime.second = second: {
-                            const str = read.int(left, 2);
-                            if (str.len == 0) return error.ParseError;
-                            if (options.mode == .strict and tag == .ss and str.len != 2) return error.ParseError;
-                            const second = read.digits(str);
-                            if (second > 60) return error.ParseError;
-                            left = left[str.len..];
-                            break :second @intCast(second);
-                        };
-                    },
-                    .SSSSSSSSS,
-                    .SSSSSSSS,
-                    .SSSSSSS,
-                    .SSSSSS,
-                    .SSSSS,
-                    .SSSS,
-                    .SSS,
-                    .SS,
-                    .S,
-                    => {
-                        const len = @tagName(tag).len;
-                        datetime.nanosecond = try read.nanosecond(left, len);
-                        left = left[len..];
-                    },
-                    // .NN => {
-                    //     const map = std.StaticStringMapWithEql(i2, std.ascii.eqlIgnoreCase).initComptime(.{
-                    //         .{ "Before Christ", -1 },
-                    //         .{ "Anno Domini", 1 },
-                    //         .{ "Before Common Era", -1 },
-                    //         .{ "Common Era", 1 },
-                    //     });
-                    //     year_sign = sign: {
-                    //         for (1..left.len + 1) |l| {
-                    //             if (map.get(left[0..l])) |sign| {
-                    //                 left = left[l..];
-                    //                 break :sign sign;
-                    //             }
-                    //         }
-                    //         return error.ParseError;
-                    //     };
-                    // },
-                    // .N => {
-                    //     const map = std.StaticStringMapWithEql(i2, std.ascii.eqlIgnoreCase).initComptime(.{
-                    //         .{ "BC", -1 },
-                    //         .{ "AD", 1 },
-                    //         .{ "BCE", -1 },
-                    //         .{ "CE", 1 },
-                    //     });
-                    //     year_sign = sign: {
-                    //         for (1..left.len + 1) |l| {
-                    //             if (map.get(left[0..l])) |sign| {
-                    //                 left = left[l..];
-                    //                 break :sign sign;
-                    //             }
-                    //         }
-                    //         return error.ParseError;
-                    //     };
-                    // },
-                    .A, .a => {
-                        const map = std.StaticStringMapWithEql(AmPm, std.ascii.eqlIgnoreCase).initComptime(.{
-                            .{ "AM", .am },
-                            .{ "PM", .pm },
-                        });
-                        am_pm = am_pm: {
-                            for (1..left.len + 1) |l| {
-                                if (map.get(left[0..l])) |sign| {
-                                    left = left[l..];
-                                    break :am_pm sign;
-                                }
-                            }
-                            return error.ParseError;
-                        };
-                    },
-                    .dddd,
-                    .ddd,
-                    .dd,
-                    => {
-                        // Leniently any of the three lengths is taken
-                        // whichever was asked for, longest first so that
-                        // "Sunday" is not read as "Sun" with "day" over.
-                        const result = if (options.mode == .lenient)
-                            DayOfWeek.parseLongStr(left) catch
-                                DayOfWeek.parseShortStr(left) catch
-                                try DayOfWeek.parseVeryShortStr(left)
-                        else switch (tag) {
-                            .dddd => try DayOfWeek.parseLongStr(left),
-                            .ddd => try DayOfWeek.parseShortStr(left),
-                            .dd => try DayOfWeek.parseVeryShortStr(left),
-                            else => unreachable,
-                        };
-                        left = left[result.str.len..];
-                        day_of_week = result.value;
-                        week.weekday = result.value;
-                    },
-                    .w, .ww, .wo, .W, .WW, .Wo => {
-                        const parsed = number: {
-                            const str = read.int(left, 2);
-                            if (str.len == 0) return error.ParseError;
-                            switch (tag) {
-                                .ww, .WW => if (options.mode == .strict and str.len != 2) return error.ParseError,
-                                else => {},
-                            }
-                            left = left[str.len..];
-                            break :number read.digits(str);
-                        };
-
-                        switch (tag) {
-                            .wo, .Wo => {
-                                for (1..left.len + 1) |l| {
-                                    if (ordinal.map.get(left[0..l])) |_| {
-                                        left = left[l..];
-                                        break;
-                                    }
-                                } else return error.ParseError;
-                            },
-                            else => {},
-                        }
-
-                        switch (tag) {
-                            .w, .ww, .wo => week.week = @intCast(parsed),
-                            .W, .WW, .Wo => week.iso_week = @intCast(parsed),
-                            else => unreachable,
-                        }
-                    },
-                    .gg, .gggg, .GG, .GGGG => {
-                        const width: usize = switch (tag) {
-                            .gg, .GG => 2,
-                            else => 4,
-                        };
-
-                        const str = read.int(left, width);
-                        if (str.len == 0) return error.ParseError;
-                        if (options.mode == .strict and str.len != width) return error.ParseError;
-                        left = left[str.len..];
-
-                        const parsed = @as(Year, @intCast(read.digits(str)));
-                        const year = switch (tag) {
-                            // Two digits are windowed the same way `YY` is.
-                            .gg, .GG => parsed + (if (parsed > 68) @as(Year, 1900) else 2000),
-                            else => parsed,
-                        };
-
-                        switch (tag) {
-                            .gg, .gggg => week.year = year,
-                            .GG, .GGGG => week.iso_year = year,
-                            else => unreachable,
-                        }
-                    },
-                    .d, .e, .E, .do => {
-                        day_of_week = dow: {
-                            const str = read.int(left, 1);
-                            if (str.len != 1) return error.ParseError;
-                            var dow = read.digits(str);
-                            switch (tag) {
-                                .E => {
-                                    // ISO numbers the week Monday 1 to
-                                    // Sunday 7, and `DayOfWeek` numbers it
-                                    // Sunday 0 to Saturday 6, so only
-                                    // Sunday moves. Subtracting one, which
-                                    // is what this used to do, turned every
-                                    // day into the one before it.
-                                    if (dow < 1 or dow > 7) return error.ParseError;
-                                    if (dow == 7) dow = 0;
-                                },
-                                .d, .e, .do => {
-                                    if (dow > 6) return error.ParseError;
-                                },
-                                else => unreachable,
-                            }
-                            left = left[str.len..];
-                            switch (tag) {
-                                .do => ordinal: {
-                                    const map = ordinal.map;
-                                    for (1..left.len + 1) |l| {
-                                        if (map.get(left[0..l])) |_| {
-                                            left = left[l..];
-                                            break :ordinal;
-                                        }
-                                    }
-                                    return error.ParseError;
-                                },
-                                .d, .e, .E => {},
-                                else => unreachable,
-                            }
-                            const parsed = std.enums.fromInt(DayOfWeek, @as(u3, @intCast(dow))) orelse
-                                return error.ParseError;
-
-                            // `E` counts the ISO way and the others the
-                            // locale way, which decides both the default
-                            // week and the default week-numbering year if
-                            // the date has to be built from them.
-                            switch (tag) {
-                                .E => week.iso_weekday = parsed,
-                                .e => week.local_weekday = parsed,
-                                .d, .do => week.weekday = parsed,
-                                else => unreachable,
-                            }
-
-                            break :dow parsed;
-                        };
-                    },
-                    .Z, .ZZ => {
-                        datetime.offset = offset: {
-                            if (left.len == 0) return error.ParseError;
-
-                            // ISO 8601 writes a zero offset as "Z"; accept
-                            // that spelling as well as "+00:00".
-                            if (left[0] == 'Z' or left[0] == 'z') {
-                                left = left[1..];
-                                break :offset 0;
-                            }
-
-                            const sign: i32 = switch (left[0]) {
-                                '+' => 1,
-                                '-' => -1,
-                                else => return error.ParseError,
-                            };
-                            left = left[1..];
-
-                            const hours = read.int(left, 2);
-                            if (hours.len != 2) return error.ParseError;
-                            left = left[hours.len..];
-
-                            // Both sequences take either spelling and the
-                            // minutes at all, which is moment's rule:
-                            // +05, +0500 and +05:00 all read the same, for
-                            // Z and for ZZ alike.
-                            if (left.len > 0 and left[0] == ':') left = left[1..];
-
-                            const minutes = read.int(left, 2);
-                            if (minutes.len != 0 and minutes.len != 2) return error.ParseError;
-                            left = left[minutes.len..];
-
-                            const hour: i32 = @intCast(read.digits(hours));
-                            const minute: i32 = @intCast(read.digits(minutes));
-                            if (hour > 23 or minute > 59) return error.ParseError;
-                            break :offset sign * (hour * std.time.s_per_hour + minute * std.time.s_per_min);
-                        };
-                    },
-                    .Q,
-                    .Qo,
-                    .yo,
-                    .N,
-                    .NN,
-                    .NNN,
-                    .NNNN,
-                    .NNNNN,
-                    .YYYYY,
-                    .YYYYYY,
-                    .Hmm,
-                    .Hmmss,
-                    .hmm,
-                    .hmmss,
-                    .X,
-                    .x,
-                    .z,
-                    .zz,
-                    .ggggg,
-                    .GGGGG,
-                    => {
-                        return error.IllegalToken;
-                    },
-                    // else => {},
+                // A sequence that matched nowhere is simply not there.
+                // Strictly that is an error; leniently the field keeps
+                // whatever it was going to default to.
+                if (!matched and options.mode == .strict) return error.ParseError;
+                if (matched) {
+                    matched_any = true;
+                    switch (tag) {
+                        .YYYY, .YY, .Y, .y, .yy, .yyy, .yyyy => set_year = true,
+                        .MMMM, .MMM, .MM, .M, .Mo => set_month = true,
+                        .DD, .D, .Do => set_day = true,
+                        // A day of the year names a month and a day
+                        // between them.
+                        .DDDD, .DDD, .DDDo => {
+                            set_month = true;
+                            set_day = true;
+                        },
+                        else => {},
+                    }
                 }
             },
-            // A literal has to be there, exactly, and is then stepped
-            // over. Nothing is skipped on its behalf: a format string
-            // that says a space means a space.
+            // A literal is looked for the same way a sequence is, so a
+            // separator that does not match is stepped over leniently
+            // rather than refused, and one that is nowhere in what is left
+            // is passed over. Strictly it has to be right here.
             .literal => |text| {
-                if (left.len < text.len) return error.ParseError;
-                if (!std.mem.eql(u8, left[0..text.len], text)) return error.ParseError;
-                left = left[text.len..];
+                if (options.mode == .strict) {
+                    if (left.len < text.len) return error.ParseError;
+                    if (!std.mem.eql(u8, left[0..text.len], text)) return error.ParseError;
+                    left = left[text.len..];
+                } else if (std.mem.indexOf(u8, left, text)) |at| {
+                    skipped += at;
+                    left = left[at + text.len ..];
+                }
             },
         }
     }
 
-    switch (am_pm) {
+    switch (state.am_pm) {
         .none => {},
         // An hour outside the twelve only arrives here leniently, and is
         // left as it is rather than refused: a zero reads as the twelve it
         // would have been written as, so "0:30 pm" is half past noon, and
         // "13:30 pm" is simply half past one.
-        .am => if (datetime.hour == 12) {
-            datetime.hour = 0;
+        .am => if (state.datetime.hour == 12) {
+            state.datetime.hour = 0;
         },
-        .pm => if (datetime.hour < 12) {
-            datetime.hour += 12;
+        .pm => if (state.datetime.hour < 12) {
+            state.datetime.hour += 12;
         },
     }
 
-    // A week names a date, so it is only used when the format string named
+    // A state.week names a date, so it is only used when the format string named
     // neither a month nor a day. With a full date already in hand a
     // weekday is a claim to check instead, which is what happens below.
-    if (week.any() and !mentions.month and !mentions.day) {
+    if (state.week.any() and !set_month and !set_day) {
         const from_week = try resolveWeek(
-            week,
-            if (mentions.year) datetime.year else null,
+            state.week,
+            if (set_year) state.datetime.year else null,
             relative_to.asDate(),
         );
-        datetime.year = from_week.year;
-        datetime.month = from_week.month;
-        datetime.day = from_week.day;
+        state.datetime.year = from_week.year;
+        state.datetime.month = from_week.month;
+        state.datetime.day = from_week.day;
+        set_year = true;
+        set_month = true;
+        set_day = true;
     }
 
-    if (day_of_year) |doy| {
+    if (state.day_of_year) |doy| {
         // A day of the year names a complete date by itself, so it
         // replaces whatever month and day were set, and is checked
         // against the length of the year it landed in.
-        const length: u16 = if (Month.Feb.lastDay(datetime.year) == 29) 366 else 365;
+        const length: u16 = if (Month.Feb.lastDay(state.datetime.year) == 29) 366 else 365;
         if (doy > length) return error.ParseError;
 
         var month: Month = .Jan;
         var remaining = doy;
-        while (remaining > month.lastDay(datetime.year)) {
-            remaining -= month.lastDay(datetime.year);
+        while (remaining > month.lastDay(state.datetime.year)) {
+            remaining -= month.lastDay(state.datetime.year);
             month = month.next();
         }
-        datetime.month = month;
-        datetime.day = @intCast(remaining);
+        state.datetime.month = month;
+        state.datetime.day = @intCast(remaining);
+        set_month = true;
+        set_day = true;
+    }
+
+    // moment fills what is still unset by walking year, month, day in
+    // order: the fields before the first one that got a value keep the
+    // reference's, which they already hold, and everything after it drops
+    // to its lowest. So "2024" against `YYYY` is the first of January and
+    // not the reference's month and day, while a string naming only a
+    // time keeps the whole reference date.
+    if (set_year) {
+        if (!set_month) state.datetime.month = .Jan;
+        if (!set_day) state.datetime.day = 1;
+    } else if (set_month) {
+        if (!set_day) state.datetime.day = 1;
     }
 
     // An hour of 24 is the end of the day rather than an hour in it, and
     // only when nothing smaller was named: moment reads 24:00 as the
     // following midnight and rejects 24:00:01. The date has to move, so
     // this happens before the day is checked and the weekday recomputed.
-    if (datetime.hour == 24) {
-        if (datetime.minute != 0 or datetime.second != 0 or datetime.nanosecond != 0) {
+    if (state.datetime.hour == 24) {
+        if (state.datetime.minute != 0 or state.datetime.second != 0 or state.datetime.nanosecond != 0) {
             return error.ParseError;
         }
-        datetime.hour = 0;
+        state.datetime.hour = 0;
 
-        const next = Date.fromDaysSinceStartOfEra(datetime.asDate().toDaysSinceStartOfEra() + 1);
-        datetime.year = next.year;
-        datetime.month = next.month;
-        datetime.day = next.day;
+        const next = Date.fromDaysSinceStartOfEra(state.datetime.asDate().toDaysSinceStartOfEra() + 1);
+        state.datetime.year = next.year;
+        state.datetime.month = next.month;
+        state.datetime.day = next.day;
     }
 
     // A day number is checked against 31 as it is read, because the month
@@ -1251,18 +1372,20 @@ pub fn parseWith(
     // against that month once everything is in. Without this, a date like
     // 2024-02-31 reaches `updateDayOfWeek` and trips the assertion in
     // `Date.toDaysSinceStartOfEra`.
-    if (!datetime.asDate().isRegular()) return error.ParseError;
+    if (!state.datetime.asDate().isRegular()) return error.ParseError;
 
     // Every sequence that moves the date leaves the weekday stale, so it
     // is recomputed once here rather than after each of them.
-    datetime.updateDayOfWeek();
+    state.datetime.updateDayOfWeek();
 
     // The weekday is a check rather than a source when the date was named
-    // outright; when the date was built from a week it came from this in
+    // outright; when the date was built from a state.week it came from this in
     // the first place and agrees by construction.
-    if (day_of_week) |dow| {
-        if (datetime.weekday != dow) return error.ParseError;
+    if (state.day_of_week) |dow| {
+        if (state.datetime.weekday != dow) return error.ParseError;
     }
+
+    if (!matched_any) return error.ParseError;
 
     // Strict takes the whole input or none of it. Lenient leaves whatever
     // it did not need, and says how much that was, which is what lets a
@@ -1271,7 +1394,8 @@ pub fn parseWith(
 
     return .{
         .str = value[0 .. value.len - left.len],
-        .value = datetime,
+        .skipped = skipped,
+        .value = state.datetime,
     };
 }
 
@@ -1330,15 +1454,15 @@ test toInstant {
     try std.testing.expectEqual(instant.timestamp, instant.asDateTime().toInstant().timestamp);
 }
 
-/// Returns the ISO 8601 week this date falls in, and the year that week
+/// Returns the ISO 8601 state.week this date falls in, and the year that state.week
 /// belongs to. See `Date.isoWeek`, which this defers to. The `W` and `GG`
 /// format sequences write these.
 pub fn isoWeek(self: DateTime) Date.Week {
     return self.asDate().isoWeek();
 }
 
-/// Returns the week this date falls in under the English-language
-/// convention, and the year that week belongs to. See `Date.localeWeek`.
+/// Returns the state.week this date falls in under the English-language
+/// convention, and the year that state.week belongs to. See `Date.localeWeek`.
 /// The `w` and `gg` format sequences write these.
 pub fn localeWeek(self: DateTime) Date.Week {
     return self.asDate().localeWeek();
@@ -1356,7 +1480,7 @@ test localeWeek {
 
 test isoWeek {
     // The `w` sequences format this, and it is not the calendar year that
-    // belongs beside it: 2027 opens inside 2026's week 53.
+    // belongs beside it: 2027 opens inside 2026's state.week 53.
     const newyear: DateTime = .{ .year = 2027, .month = .Jan, .day = 1 };
     try std.testing.expectEqual(@as(Year, 2026), newyear.isoWeek().year);
     try std.testing.expectEqual(@as(u8, 53), newyear.isoWeek().week);
@@ -1476,6 +1600,8 @@ test "the ISO weekday sequence numbers the week from Monday" {
         (try parseRelativeTo("E", reference, "7")).value.asDate(),
     );
 
+    // Out of range, which is an error rather than something to go looking
+    // for further along the input.
     try std.testing.expectError(error.ParseError, parseRelativeTo("E", reference, "0"));
     try std.testing.expectError(error.ParseError, parseRelativeTo("E", reference, "8"));
 }
@@ -1627,7 +1753,9 @@ test "the ordinal day of the month parses" {
     try std.testing.expectEqual(@as(Day, 22), (try parse("Do", "22nd")).value.day);
 
     // The suffix is required, though which one it is does not matter.
-    try std.testing.expectError(error.ParseError, parse("Do", "15"));
+    // Leniently a sequence that matches nowhere is passed over rather than
+    // refused, so it takes strict mode to see that.
+    try std.testing.expectError(error.ParseError, parseStrict("Do", "15"));
 }
 
 test "parseTest" {
