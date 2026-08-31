@@ -24,6 +24,19 @@
             .hash = "N-V-__8AANpVFQC_1B4XtOlpRUfO6ZFsDlp3KppGU6Xal5yI",
             .lazy = true,
         },
+        // moment.js, used only by `zig build oracle`, which checks this
+        // library's formatting and parsing against moment itself rather
+        // than against what someone remembered of it.
+        //
+        // Pinned to a version rather than taken from the dev shell,
+        // because moment is the specification being tested against and a
+        // different release would silently move the target. Lazy, so an
+        // ordinary build neither fetches nor unpacks it.
+        .moment = .{
+            .url = "https://registry.npmjs.org/moment/-/moment-2.30.1.tgz",
+            .hash = "N-V-__8AAHNhQgCiWfjOCo_LQgx55jnHBr2Z61ZAqPU9n5Uo",
+            .lazy = true,
+        },
     },
     .paths = .{
         "build.zig",

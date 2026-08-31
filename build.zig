@@ -15,6 +15,11 @@
 //! Without that option the `tzdata` module resolves to `src/tzdata/stub.zig`
 //! instead, which has the same shape and no data.
 //!
+//! `zig build oracle` checks the format strings against moment.js, which
+//! they are modelled on, by running both over the same corpus and diffing.
+//! moment is pinned in `build.zig.zon` and fetched lazily, and the runner
+//! is the `node` named in `flake.nix`.
+//!
 //! `-Dno-system-tzdata` is a testing knob rather than a build variant. The
 //! tests that read the operating system's copy of the database skip when
 //! there is none, and those skips are where a mistake can hide on a
@@ -171,6 +176,7 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseFast,
     });
     bench_datetime.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+    bench_datetime.addImport("build_options", options.createModule());
 
     const bench_exe = b.addExecutable(.{
         .name = "bench",
@@ -191,6 +197,50 @@ pub fn build(b: *std.Build) void {
 
     const bench_step = b.step("bench", "Run the benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // The format strings are modelled on moment.js, so moment is what
+    // says whether they behave. `tools/oracle_dump.zig` formats a corpus
+    // and `tools/oracle.js` asks moment the same questions and reports
+    // every answer that differs.
+    //
+    // This is deliberately not part of `zig build test`. The two do not
+    // agree yet, so wiring it in would leave the suite red on a known and
+    // catalogued difference rather than on a regression.
+    const oracle_step = b.step(
+        "oracle",
+        "Check formatting against moment.js (needs the network on first run)",
+    );
+
+    if (b.lazyDependency("moment", .{})) |moment| {
+        const oracle_dump = b.addExecutable(.{
+            .name = "oracle-dump",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tools/oracle_dump.zig"),
+                // Built for the host: it runs here, now, as part of the
+                // check, and never ships anywhere.
+                .target = b.graph.host,
+                .imports = &.{
+                    .{ .name = "datetime", .module = module },
+                },
+            }),
+        });
+
+        const run_dump = b.addRunArtifact(oracle_dump);
+
+        const run_oracle = b.addSystemCommand(&.{"node"});
+        run_oracle.addFileArg(b.path("tools/oracle.js"));
+        run_oracle.addFileArg(moment.path("moment.js"));
+        run_oracle.addFileArg(run_dump.captureStdOut(.{ .basename = "corpus.tsv" }));
+
+        // The report is the point of running this, so it goes to the
+        // terminal rather than into the build runner's capture. Inheriting
+        // stdio settles the exit code check too, which is why there is no
+        // `expectExitCode` here: the two are mutually exclusive, and a
+        // non-zero exit still fails the step.
+        run_oracle.stdio = .inherit;
+
+        oracle_step.dependOn(&run_oracle.step);
+    }
 }
 
 /// Builds the embedded timezone database and returns the path of the

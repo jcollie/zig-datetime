@@ -50,6 +50,11 @@
               pkgs.git-pages-cli
               # Checks the SPDX headers; see REUSE.toml.
               pkgs.reuse
+              # Runs moment.js as the oracle the format and parse tests
+              # are checked against; see tools/oracle.js. moment itself is
+              # pinned in build.zig.zon rather than taken from here, so
+              # that the version the tests compare against is fixed.
+              pkgs.nodejs
             ];
           };
         }
