@@ -123,6 +123,82 @@ pub const Posix = struct {
     /// Null when the zone has no daylight saving time, as in `<-03>3`.
     dst: ?Dst,
 
+    /// A stretch of time over which one local time type applies. The
+    /// same shape as `tzif.Tzif.Span`, so that a caller can treat a
+    /// stored transition and a rule-derived one alike.
+    pub const Span = struct {
+        local_type: Type,
+        start: i64,
+        end: i64,
+    };
+
+    /// Returns the span around `timestamp`.
+    ///
+    /// The bounds come from the switches either side of it, which may
+    /// belong to the neighbouring years, so the switches for three years
+    /// are computed and the pair bracketing `timestamp` is taken.
+    pub fn spanAt(self: Posix, timestamp: i64) Span {
+        const dst = self.dst orelse return .{
+            .local_type = .{
+                .offset = self.std_offset,
+                .is_dst = false,
+                .designation = self.std_designation,
+            },
+            .start = std.math.minInt(i64),
+            .end = std.math.maxInt(i64),
+        };
+
+        // Which year's rules apply is decided in local standard time,
+        // which is what POSIX means by the rules being "local".
+        const local = timestamp + self.std_offset;
+        const year = Date.fromDaysSinceStartOfEra(@intCast(@divFloor(local, std.time.s_per_day))).year;
+
+        // Each switch is expressed in the time that is in effect just
+        // before it happens: standard time going in, daylight time coming
+        // back out.
+        var switches: [6]i64 = undefined;
+        var count: usize = 0;
+        for ([_]Year{ year - 1, year, year + 1 }) |each| {
+            switches[count] = dst.start.timestamp(each, self.std_offset);
+            count += 1;
+            switches[count] = dst.end.timestamp(each, dst.offset);
+            count += 1;
+        }
+        std.mem.sort(i64, switches[0..count], {}, std.sort.asc(i64));
+
+        var start: i64 = std.math.minInt(i64);
+        var end: i64 = std.math.maxInt(i64);
+        for (switches[0..count]) |at| {
+            if (at <= timestamp) start = at else {
+                end = at;
+                break;
+            }
+        }
+
+        // Whether this span is the daylight one follows from which switch
+        // opened it: the span after a start switch is daylight, the span
+        // after an end switch is standard.
+        const in_dst = start != std.math.minInt(i64) and
+            start == dst.start.timestamp(
+                Date.fromDaysSinceStartOfEra(@intCast(@divFloor(start + self.std_offset, std.time.s_per_day))).year,
+                self.std_offset,
+            );
+
+        return .{
+            .local_type = if (in_dst) .{
+                .offset = dst.offset,
+                .is_dst = true,
+                .designation = dst.designation,
+            } else .{
+                .offset = self.std_offset,
+                .is_dst = false,
+                .designation = self.std_designation,
+            },
+            .start = start,
+            .end = end,
+        };
+    }
+
     /// Returns the local time type in effect at `timestamp`.
     pub fn typeAt(self: Posix, timestamp: i64) Type {
         const dst = self.dst orelse return .{

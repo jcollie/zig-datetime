@@ -127,17 +127,58 @@ pub const Tzif = struct {
         return self.typeAt(0);
     }
 
-    /// Returns the local time type in effect at `timestamp`, a Unix time in
-    /// seconds, or null if `timestamp` falls after the last transition. In
-    /// that case the caller must consult `footer`, because a file compiled
+    /// A stretch of time over which one local time type applies, and that
+    /// type. The bounds let a caller tell whether some other instant is
+    /// still governed by the same type without searching again.
+    pub const Span = struct {
+        local_type: Type,
+        /// Inclusive. `minInt` when nothing precedes this type.
+        start: i64,
+        /// Exclusive.
+        end: i64,
+    };
+
+    /// Returns the span around `timestamp`, a Unix time in seconds, or
+    /// null if `timestamp` falls at or after the last transition. In that
+    /// case the caller must consult `footer`, because a file compiled
     /// with `zic -b slim` relies on it for all future times.
+    pub fn spanAtTimestamp(self: Tzif, timestamp: i64) ?Span {
+        const count = self.transitionCount();
+        if (count == 0) return null;
+        if (timestamp < self.transitionAt(0)) return .{
+            .local_type = self.defaultType(),
+            .start = std.math.minInt(i64),
+            .end = self.transitionAt(0),
+        };
+        if (timestamp >= self.transitionAt(count - 1)) return null;
+
+        // The index of the last transition that is not after `timestamp`.
+        var low: usize = 0;
+        var high: usize = count - 1;
+        while (low < high) {
+            const mid = low + (high - low + 1) / 2;
+            if (self.transitionAt(mid) <= timestamp) low = mid else high = mid - 1;
+        }
+        return .{
+            .local_type = self.typeAt(self.transition_types[low]),
+            .start = self.transitionAt(low),
+            .end = self.transitionAt(low + 1),
+        };
+    }
+
+    /// Returns the local time type in effect at `timestamp`, or null under
+    /// the same condition as `spanAtTimestamp`.
+    ///
+    /// This repeats that function's search rather than calling it and
+    /// taking the type, because it is the hot path: reading the upper
+    /// bound costs another decode of a big-endian field, and returning
+    /// the wider value costs again, for something callers here discard.
     pub fn typeAtTimestamp(self: Tzif, timestamp: i64) ?Type {
         const count = self.transitionCount();
         if (count == 0) return null;
         if (timestamp < self.transitionAt(0)) return self.defaultType();
         if (timestamp >= self.transitionAt(count - 1)) return null;
 
-        // The index of the last transition that is not after `timestamp`.
         var low: usize = 0;
         var high: usize = count - 1;
         while (low < high) {

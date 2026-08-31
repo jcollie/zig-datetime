@@ -84,6 +84,53 @@ pub fn offsetAt(self: TimeZone, timestamp: i64) i32 {
     return self.typeAt(timestamp).offset;
 }
 
+/// A stretch of time over which one local time type applies.
+pub const Span = struct {
+    local_type: Type,
+    /// Inclusive.
+    start: i64,
+    /// Exclusive.
+    end: i64,
+};
+
+/// Returns the span around `timestamp`.
+///
+/// This costs a little more than `typeAt` does, since the rule in a
+/// footer has to work out the switches either side rather than just
+/// which side of them it is on. It is worth it wherever the bounds save
+/// a second lookup, which is what `resolve` uses them for.
+pub fn spanAt(self: TimeZone, timestamp: i64) Span {
+    if (self.data.spanAtTimestamp(timestamp)) |span| return .{
+        .local_type = span.local_type,
+        .start = span.start,
+        .end = span.end,
+    };
+
+    // Past the last stored transition the footer takes over, and it does
+    // not govern anything before that, so a span it reports cannot reach
+    // back past the handover.
+    const count = self.data.transitionCount();
+    const takeover: i64 = if (count == 0)
+        std.math.minInt(i64)
+    else
+        self.data.transitionAt(count - 1);
+
+    if (self.rule) |rule| {
+        const span = rule.spanAt(timestamp);
+        return .{
+            .local_type = span.local_type,
+            .start = @max(span.start, takeover),
+            .end = span.end,
+        };
+    }
+
+    return .{
+        .local_type = self.data.lastType(),
+        .start = takeover,
+        .end = std.math.maxInt(i64),
+    };
+}
+
 /// Converts an instant to the local wall-clock time in this zone, with
 /// `DateTime.offset` set to the offset that was in effect.
 pub fn atInstant(self: TimeZone, instant: Instant) DateTime {
@@ -151,41 +198,56 @@ pub const Resolved = union(enum) {
 pub fn resolve(self: TimeZone, local: DateTime) Resolved {
     const reading = localSeconds(local);
 
-    // A candidate instant is `reading` minus some offset, and it is real
-    // only if the zone really does use that offset there. Probing a day
-    // either side is more than enough, since no transition moves a clock
-    // by anything close to that.
-    var candidates: [3]i64 = undefined;
+    // A span running from `start` to `end` with offset `o` covers local
+    // readings from `start + o` to `end + o`, so it holds a match for
+    // this reading exactly when the reading falls in that range, and the
+    // match is `reading - o`. The span's own bounds settle that, which is
+    // why this walks spans rather than probing instants and then looking
+    // each one up again to see whether it stuck.
+    //
+    // An offset is less than a day, so only the spans covering the day
+    // either side of the reading can hold a match. Usually that is one
+    // span and one lookup; a reading near a switch takes two.
+    const window = std.time.s_per_day;
+    const last = reading +| window;
+
+    var candidates: [2]i64 = undefined;
     var count: usize = 0;
-    for ([_]i64{
-        reading - std.time.s_per_day,
-        reading,
-        reading + std.time.s_per_day,
-    }) |probe| {
-        const offset = self.offsetAt(probe);
-        const candidate = reading - offset;
-        if (self.offsetAt(candidate) != offset) continue;
-        for (candidates[0..count]) |seen| {
-            if (seen == candidate) break;
-        } else {
-            candidates[count] = candidate;
-            count += 1;
+    var before: i32 = 0;
+    var after: i32 = 0;
+
+    var probe = reading -| window;
+    var first = true;
+    while (true) {
+        const span = self.spanAt(probe);
+        if (first) {
+            before = span.local_type.offset;
+            first = false;
         }
+        after = span.local_type.offset;
+
+        const at = reading - span.local_type.offset;
+        if (at >= span.start and at < span.end and (count == 0 or candidates[0] != at)) {
+            candidates[count] = at;
+            count += 1;
+            if (count == candidates.len) break;
+        }
+
+        // `end` is exclusive and above `probe`, so this always advances.
+        if (span.end > last) break;
+        probe = span.end;
     }
 
     switch (count) {
         1 => return .{ .unique = candidates[0] },
-        2 => {
-            const earlier = @min(candidates[0], candidates[1]);
-            const later = @max(candidates[0], candidates[1]);
-            return .{ .ambiguous = .{ .earlier = earlier, .later = later } };
-        },
+        2 => return .{ .ambiguous = .{
+            .earlier = @min(candidates[0], candidates[1]),
+            .later = @max(candidates[0], candidates[1]),
+        } },
         else => {
             // Nothing matched, so the reading is inside a gap. Report the
             // transition that skipped it, which is where a clock set to
             // this reading would land.
-            const before = self.offsetAt(reading - std.time.s_per_day);
-            const after = self.offsetAt(reading + std.time.s_per_day);
             return .{ .gap = .{
                 .at = reading - before,
                 .before = before,
