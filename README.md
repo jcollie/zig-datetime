@@ -193,13 +193,83 @@ care which.
 
 ## Formatting and parsing
 
-Format strings are sequences of tags in the style of moment.js, checked at
+Format strings are sequences of tags taken from moment.js, tokenized at
 compile time:
 
 ```zig
 const text = try instant.asDateTime().formatAlloc(gpa, "YYYY-MM-DDTHH:mm:ssZ");
 const parsed = try datetime.DateTime.parse("YYYY-MM-DD HH:mm:ss", "2024-07-15 07:00:00");
 ```
+
+Anything that is not a sequence is copied through, so `YYYY/MM/DD` means
+what it looks like. Square brackets make a literal of text that would
+otherwise be read as sequences, and a backslash does the same for whatever
+follows it: `GGGG-[W]WW-E` writes an ISO week date.
+
+Parsing has moment's two modes. `parse` is the lenient one and `parseWith`
+takes both the mode and the reference the unnamed fields come from:
+
+```zig
+// Lenient: a padded sequence takes one digit as well as two, a name
+// sequence takes any of its lengths, and trailing text is left alone.
+const loose = try datetime.DateTime.parse("MMM D YYYY", "March 5 2024 (approx)");
+
+// Strict: exact widths, and the whole input has to be used.
+const tight = try datetime.DateTime.parseStrict("MMM D YYYY", "Mar 05 2024");
+
+const relative = try datetime.DateTime.parseWith("MMM D", "Mar 15", .{
+    .relative_to = base,
+    .mode = .strict,
+});
+```
+
+`ParseResult.str` is the prefix that was consumed, so a caller can carry
+on from `value[str.len..]`; `skipped` says how much inside it was stepped
+over rather than read, which only lenient parsing does.
+
+### Compatibility with moment.js
+
+The vocabulary is moment's, and that is checked rather than claimed.
+`zig build oracle` runs moment itself over the same corpus and diffs every
+answer: every sequence on its own, the shapes callers actually write,
+escaping and its corners, and a day-by-day sweep from 2015 to 2032 read at
+five offsets including a quarter-hour one.
+
+```
+796200 comparisons against moment 2.30.1, no divergence
+```
+
+`zig build oracle-parse` does the same for parsing, in both modes, holding
+each to the matching mode of moment. moment is pinned in `build.zig.zon`
+and fetched lazily, the way tzcode and tzdata are, because it is the
+specification being tested against and a floating version would move the
+target. Both run as part of `zig build test`.
+
+Following moment means following it where it is surprising. Leniently a
+sequence is searched for rather than required where it stands, so
+`2024/03/15` reads against `YYYY-MM-DD` and `14` against `HH:mm` is two
+o'clock; `w` is the week starting Sunday that holds January 1st while `W`
+is the ISO week, and each has its own week-numbering year in `gg` and
+`GG`; `YY` of `70` is 1970 and of `68` is 2068; `Hmm` is one sequence and
+not an hour beside a minute; and `YYY` is `YY` followed by `Y`.
+
+Two places it does not follow moment, both deliberate:
+
+- **Fractional seconds keep their precision.** moment holds milliseconds
+  and pads `SSSS` onwards with zeros. This holds nanoseconds and prints
+  them, so `SSSS` of `.123456789` is `1234` rather than `1230`. For any
+  input moment can represent the two agree; beyond that the library is
+  not going to lie about a value it has.
+
+- **`z` and `zz` are constant**, `UTC` and `Coordinated Universal Time`,
+  whatever the offset. That is moment's own behaviour rather than a gap:
+  it has no zone names at all, and real abbreviations come from
+  moment-timezone, a separate package. For a real one, read the
+  designation off `TimeZone.typeAt`.
+
+The locale is `en`, which is moment's default and the only one here, so
+the localized sequences `L`, `LL`, `LT` and the rest expand to their
+English forms.
 
 Two interchange formats have their own parsers, because the shape of
 their input is not known ahead of reading it and a format string cannot
@@ -294,10 +364,23 @@ needs.
 ## Testing
 
 ```sh
-zig build test                  # system data only; embedded tests skip
-zig build test -Dembed-tzdata   # everything, including embedded-vs-system agreement
-zig build bench                 # always ReleaseFast, whatever -Doptimize says
+zig build test                     # system data only; embedded tests skip
+zig build test -Dembed-tzdata      # everything, including embedded-vs-system agreement
+zig build test -Dno-system-tzdata  # as though the machine had no database
+zig build oracle                   # formatting against moment.js
+zig build oracle-parse             # parsing against moment.js, in both modes
+zig build bench                    # always ReleaseFast, whatever -Doptimize says
 ```
+
+The two oracles are part of `zig build test`, so an ordinary run needs
+`node` and fetches moment the first time.
+
+`-Dno-system-tzdata` empties the directories the tests look in, which
+makes a machine that has a timezone database behave like one that has
+not. The tests that read it skip either way; the option is what makes the
+skipped half reachable from either kind of machine, and it is a testing
+knob rather than a build variant — the library behaves the same with and
+without it.
 
 ## Reading the docs locally
 
