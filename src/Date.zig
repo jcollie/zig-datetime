@@ -16,6 +16,7 @@ const Year = @import("year.zig").Year;
 const Month = @import("month.zig").Month;
 const Day = @import("day.zig").Day;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
+const leap = @import("leap.zig");
 
 year: Year,
 month: Month,
@@ -235,45 +236,96 @@ pub fn dayOfWeek(self: Date) DayOfWeek {
     return DayOfWeek.fromDaysSinceStartOfEra(days);
 }
 
-/// An ISO 8601 week date's week and the year that week belongs to.
-pub const IsoWeek = struct {
+/// A week of some year, and the year that week belongs to.
+pub const Week = struct {
     /// The week-numbering year, which is not always the calendar year:
-    /// see `isoWeek`.
+    /// see `weekOfYear`.
     year: Year,
-    /// The week within that year, 1 through 52 or 53.
+    /// The week within that year, 1 through 52, 53 or 54.
     week: u8,
 };
 
-/// Returns the ISO 8601 week number of this date, and the year that week
-/// belongs to.
+/// Returns the week of the year this date falls in, and the year that
+/// week belongs to, under a week rule given by its two parameters.
 ///
-/// ISO 8601 weeks run Monday to Sunday and week 1 is the one containing
+/// A week rule needs exactly two things: which weekday a week begins on,
+/// and which day of January is always in week 1. ISO 8601 says Monday and
+/// the 4th; the English-language convention, which is what moment.js uses
+/// by default, says Sunday and the 1st. Everything else follows.
+///
+/// Because a week belongs wholly to one year, the days at either end of a
+/// calendar year may fall in a week of its neighbour, which is why the
+/// year is returned alongside the week and why formatting a week beside
+/// the calendar year would be wrong.
+///
+/// The offset of week 1 from the start of the year is found from the
+/// weekday of the anchoring January day, the day of the year is measured
+/// against it, and a result that falls off either end is carried into the
+/// neighbouring year. This is moment.js's formulation, followed
+/// deliberately so that the two cannot disagree; see `tools/oracle.js`.
+pub fn weekOfYear(
+    self: Date,
+    /// The weekday a week begins on: Monday for ISO 8601.
+    week_starts_on: DayOfWeek,
+    /// The day of January that is always in week 1: the 4th for ISO 8601.
+    january_day_in_first_week: u4,
+) Week {
+    const offset = firstWeekOffset(self.year, week_starts_on, january_day_in_first_week);
+    const day_of_year = @as(i32, self.month.daysBefore(self.year)) + self.day;
+    const week = @divFloor(day_of_year - offset - 1, 7) + 1;
+
+    if (week < 1) {
+        const previous = self.year - 1;
+        return .{
+            .year = previous,
+            .week = @intCast(week + weeksInYear(previous, week_starts_on, january_day_in_first_week)),
+        };
+    }
+
+    const in_year = weeksInYear(self.year, week_starts_on, january_day_in_first_week);
+    if (week > in_year) return .{ .year = self.year + 1, .week = @intCast(week - in_year) };
+
+    return .{ .year = self.year, .week = @intCast(week) };
+}
+
+/// How far week 1 of `year` starts from January 1st, as a day-of-year
+/// offset that may be negative when week 1 begins in the previous year.
+fn firstWeekOffset(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: u4) i32 {
+    const anchor: Date = .{ .year = year, .month = .Jan, .day = january_day_in_first_week };
+
+    // Where the anchoring day sits within its own week, counting from the
+    // day the week begins on rather than from Sunday.
+    const within_week = @mod(
+        @as(i32, anchor.dayOfWeek().weekdayNumber()) - @as(i32, week_starts_on.weekdayNumber()),
+        7,
+    );
+
+    return @as(i32, january_day_in_first_week) - 1 - within_week;
+}
+
+/// The number of weeks in `year` under this rule, which is 52 or 53, and
+/// is what a week falling off either end of a year is carried across.
+fn weeksInYear(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: u4) i32 {
+    const offset = firstWeekOffset(year, week_starts_on, january_day_in_first_week);
+    const next = firstWeekOffset(year + 1, week_starts_on, january_day_in_first_week);
+    const days: i32 = if (leap.is(year)) 366 else 365;
+    return @divTrunc(days - offset + next, 7);
+}
+
+test weekOfYear {
+    // The two rules disagree about 2024-01-07: ISO weeks begin on Monday,
+    // so it is still week 1, while a week beginning on Sunday has already
+    // turned over into week 2.
+    const january: Date = .{ .year = 2024, .month = .Jan, .day = 7 };
+    try std.testing.expectEqual(@as(u8, 1), january.weekOfYear(.Mon, 4).week);
+    try std.testing.expectEqual(@as(u8, 2), january.weekOfYear(.Sun, 1).week);
+}
+
+/// Returns the ISO 8601 week of this date, and the year that week belongs
+/// to. Weeks run Monday to Sunday and week 1 is the one containing
 /// January 4th, equivalently the one holding the year's first Thursday.
-/// A week therefore cannot be split across two years, and the days at
-/// either end of a calendar year may belong to a week of its neighbour:
-/// 2027-01-01 is week 53 of 2026, and 2029-12-31 is week 1 of 2030. That
-/// is why the year is returned alongside the week, and why formatting a
-/// week date with the calendar year would be wrong.
-///
-/// The week is found by walking back to this date's Monday, taking the
-/// Thursday of that week to settle which year the week belongs to, and
-/// counting whole weeks from the Monday of that year's week 1.
-pub fn isoWeek(self: Date) IsoWeek {
-    const monday = self.toDaysSinceStartOfEra() -
-        (@as(DaysType, self.dayOfWeek().isoWeekdayNumber()) - 1);
-
-    // Every week has its Thursday in the year the week is numbered
-    // against, which is what makes this the whole of the year rule.
-    const year = fromDaysSinceStartOfEra(monday + 3).year;
-
-    const anchor: Date = .{ .year = year, .month = .Jan, .day = 4 };
-    const first_monday = anchor.toDaysSinceStartOfEra() -
-        (@as(DaysType, anchor.dayOfWeek().isoWeekdayNumber()) - 1);
-
-    return .{
-        .year = year,
-        .week = @intCast(@divTrunc(monday - first_monday, 7) + 1),
-    };
+pub fn isoWeek(self: Date) Week {
+    return self.weekOfYear(.Mon, 4);
 }
 
 test isoWeek {
@@ -296,6 +348,31 @@ test isoWeek {
     const yearend = (Date{ .year = 2029, .month = .Dec, .day = 31 }).isoWeek();
     try std.testing.expectEqual(@as(Year, 2030), yearend.year);
     try std.testing.expectEqual(@as(u8, 1), yearend.week);
+}
+
+/// Returns the week of this date under the English-language convention,
+/// where weeks run Sunday to Saturday and week 1 is the one containing
+/// January 1st, and the year that week belongs to.
+///
+/// This is what the `w` and `gg` format sequences write, because it is
+/// what moment.js's default locale means by a week. `isoWeek` is the
+/// other rule, and the `W` and `GG` sequences.
+pub fn localeWeek(self: Date) Week {
+    return self.weekOfYear(.Sun, 1);
+}
+
+test localeWeek {
+    // January 1st is always in week 1, whatever weekday it falls on.
+    try std.testing.expectEqual(@as(u8, 1), (Date{ .year = 2024, .month = .Jan, .day = 1 }).localeWeek().week);
+    try std.testing.expectEqual(@as(u8, 1), (Date{ .year = 2027, .month = .Jan, .day = 1 }).localeWeek().week);
+
+    // 2026-12-31 is a Thursday, in the week that holds 2027's January
+    // 1st, so it is already week 1 of 2027 by this rule while ISO still
+    // calls it week 53 of 2026.
+    const yearend = (Date{ .year = 2026, .month = .Dec, .day = 31 }).localeWeek();
+    try std.testing.expectEqual(@as(Year, 2027), yearend.year);
+    try std.testing.expectEqual(@as(u8, 1), yearend.week);
+    try std.testing.expectEqual(@as(Year, 2026), (Date{ .year = 2026, .month = .Dec, .day = 31 }).isoWeek().year);
 }
 
 test dayOfWeek {

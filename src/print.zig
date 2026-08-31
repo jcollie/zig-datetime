@@ -6,12 +6,6 @@
 
 const std = @import("std");
 
-// pub fn Ordinal(style: enum {.normal, .superscript}) type {
-//     return struct {
-//         pub fn print(writer: anytype, num: )
-
-// };
-// }
 const normal = [_][]const u8{
     "th",
     "st",
@@ -29,32 +23,14 @@ test "normal" {
     try std.testing.expectEqual(10, normal.len);
 }
 
-const superscripts = [_][]const u8{
-    "ᵗʰ",
-    "ˢᵗ",
-    "ⁿᵈ",
-    "ʳᵈ",
-    "ᵗʰ",
-    "ᵗʰ",
-    "ᵗʰ",
-    "ᵗʰ",
-    "ᵗʰ",
-    "ᵗʰ",
-};
-
-test "superscript" {
-    try std.testing.expectEqual(10, superscripts.len);
-}
-
-/// Writes `num` followed by its English ordinal suffix ("1st", "2nd", "3rd",
-/// "4th", ...), using Unicode superscript suffixes when `superscript` is
-/// true. `num` must be an unsigned integer.
-pub fn ordinal(writer: anytype, num: anytype, superscript: bool) !void {
+/// Writes `num` followed by its English ordinal suffix ("1st", "2nd",
+/// "3rd", "4th", ...). `num` must be an unsigned integer.
+pub fn ordinal(writer: anytype, num: anytype) !void {
     const info = @typeInfo(@TypeOf(num));
     if (info != .int) @compileError("ordinal can only print integers");
     if (info.int.signedness != .unsigned) @compileError("ordinal can only print unsigned integers");
 
-    const table = if (superscript) superscripts else normal;
+    const table = normal;
 
     // The suffix is chosen from the last two digits, so the arithmetic
     // needs a type that can represent 10. Several callers pass something
@@ -78,22 +54,18 @@ test ordinal {
     // A type too narrow to hold 10 is widened rather than rejected: a
     // quarter and a weekday number both arrive as `u3`.
     var narrow = std.Io.Writer.fixed(&buf);
-    try ordinal(&narrow, @as(u3, 3), false);
+    try ordinal(&narrow, @as(u3, 3));
     try std.testing.expectEqualStrings("3rd", narrow.buffered());
 
     var first = std.Io.Writer.fixed(&buf);
-    try ordinal(&first, @as(u16, 1), false);
+    try ordinal(&first, @as(u16, 1));
     try std.testing.expectEqualStrings("1st", first.buffered());
 
     // The teens are the exception: 11 through 13 take "th" even though
     // their last digit says otherwise.
     var teen = std.Io.Writer.fixed(&buf);
-    try ordinal(&teen, @as(u16, 11), false);
+    try ordinal(&teen, @as(u16, 11));
     try std.testing.expectEqualStrings("11th", teen.buffered());
-
-    var super = std.Io.Writer.fixed(&buf);
-    try ordinal(&super, @as(u16, 2), true);
-    try std.testing.expectEqualStrings("2ⁿᵈ", super.buffered());
 }
 
 test "print ordinal normal" {
@@ -152,68 +124,7 @@ test "print ordinal normal" {
         var buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
         defer buf.deinit();
 
-        try ordinal(&buf.writer, case.number, false);
-        try std.testing.expectEqualStrings(case.result, buf.written());
-    }
-}
-
-test "print ordinal superscript" {
-    const cases = [_]struct { number: u16, result: []const u8 }{
-        .{
-            .number = 0,
-            .result = "0ᵗʰ",
-        },
-        .{
-            .number = 1,
-            .result = "1ˢᵗ",
-        },
-        .{
-            .number = 2,
-            .result = "2ⁿᵈ",
-        },
-        .{
-            .number = 3,
-            .result = "3ʳᵈ",
-        },
-        .{
-            .number = 4,
-            .result = "4ᵗʰ",
-        },
-        .{
-            .number = 11,
-            .result = "11ᵗʰ",
-        },
-        .{
-            .number = 12,
-            .result = "12ᵗʰ",
-        },
-        .{
-            .number = 13,
-            .result = "13ᵗʰ",
-        },
-        .{
-            .number = 14,
-            .result = "14ᵗʰ",
-        },
-        .{
-            .number = 31,
-            .result = "31ˢᵗ",
-        },
-        .{
-            .number = 112,
-            .result = "112ᵗʰ",
-        },
-        .{
-            .number = 9311,
-            .result = "9311ᵗʰ",
-        },
-    };
-
-    inline for (cases) |case| {
-        var buf: std.Io.Writer.Allocating = .init(std.testing.allocator);
-        defer buf.deinit();
-
-        try ordinal(&buf.writer, case.number, true);
+        try ordinal(&buf.writer, case.number);
         try std.testing.expectEqualStrings(case.result, buf.written());
     }
 }

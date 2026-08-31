@@ -24,8 +24,9 @@ const datetime = @import("datetime");
 const DateTime = datetime.DateTime;
 const Instant = datetime.Instant;
 
-/// The instants to format, as milliseconds since the Unix epoch, each with
-/// a note saying what makes it worth having.
+/// The instants to format, as milliseconds since the Unix epoch, each
+/// with a note saying what makes it worth having. These are the awkward
+/// ones; `sweep_from` below covers the ordinary ones in bulk.
 const instants = [_]struct { at: i64, why: []const u8 }{
     .{ .at = 0, .why = "the epoch itself, a Thursday" },
     .{ .at = 1710513005123, .why = "an ordinary afternoon, 2024-03-15T14:30:05.123Z" },
@@ -36,35 +37,43 @@ const instants = [_]struct { at: i64, why: []const u8 }{
     .{ .at = 1704067200000, .why = "the first second of 2024, a leap year" },
     .{ .at = 1709164800000, .why = "2024-02-29, the leap day" },
     .{ .at = 1735689599000, .why = "the last second of 2024" },
-    .{ .at = 1704585600000, .why = "2024-01-07, where the locale and ISO weeks differ" },
-    .{ .at = 1798761600000, .why = "2026-12-31, in ISO week 53 of 2026 but locale week 1 of 2027" },
-    .{ .at = 1798848000000, .why = "2027-01-01, still ISO week 53 of 2026" },
-    .{ .at = 1893456000000, .why = "2029-12-31, in ISO week 1 of 2030" },
     .{ .at = 951782400000, .why = "2000-02-29, the century leap year" },
     .{ .at = -2208988800000, .why = "1900-01-01, well before the epoch" },
+    .{ .at = -1, .why = "one millisecond before the epoch" },
 };
 
-/// The format strings to try. Every sequence the library has appears at
-/// least once on its own, so a disagreement names the sequence responsible
-/// rather than a combination, and the combinations that follow are the
-/// shapes a caller actually writes.
+/// A day-by-day sweep, at noon so that no zone or rounding question can
+/// enter into it. Week numbering is where the two implementations are
+/// most likely to disagree and the disagreements cluster at the turn of a
+/// year, so the sweep is the real check and the list above is a handful
+/// of cases it would take a long run to reach.
+const sweep_from = 1420070400000; // 2015-01-01
+const sweep_days = 6575; // through to the end of 2032
+const sweep_step = std.time.ms_per_day;
+
+/// The format strings to try. Every sequence appears at least once on its
+/// own, so a disagreement names the sequence responsible rather than a
+/// combination, and the combinations that follow are the shapes a caller
+/// actually writes.
 const formats = [_][]const u8{
     // Every sequence on its own.
-    "M",     "Mo",      "MM",                   "MMM",
-    "MMMM",  "Q",       "Qo",                   "D",
-    "Do",    "DD",      "DDD",                  "DDDo",
-    "DDDD",  "d",       "do",                   "dd",
-    "ddd",   "dddd",    "e",                    "E",
-    "w",     "wo",      "ww",                   "YY",
-    "YYYY",  "A",       "a",                    "H",
-    "HH",    "h",       "hh",                   "k",
-    "kk",    "m",       "mm",                   "s",
-    "ss",    "S",       "SS",                   "SSS",
-    "Z",     "ZZ",
+    "M",       "Mo",                   "MM",                           "MMM",
+    "MMMM",    "Q",                    "Qo",                           "D",
+    "Do",      "DD",                   "DDD",                          "DDDo",
+    "DDDD",    "d",                    "do",                           "dd",
+    "ddd",     "dddd",                 "e",                            "E",
+    "w",       "wo",                   "ww",                           "W",
+    "Wo",      "WW",                   "gg",                           "gggg",
+    "GG",      "GGGG",                 "YY",                           "YYYY",
+    "A",       "a",                    "H",                            "HH",
+    "h",       "hh",                   "k",                            "kk",
+    "m",       "mm",                   "s",                            "ss",
+    "S",       "SS",                   "SSS",                          "Z",
+    "ZZ",
     // The shapes a caller writes.
-         "YYYY-MM-DD",           "YYYY-MM-DDTHH:mm:ss",
-    "HH:mm", "h:mm a",  "dddd, D MMMM YYYY",    "ddd, DD MMM YYYY HH:mm:ss ZZ",
-    "MMM D", "Do MMMM", "YYYY-MM-DDTHH:mm:ssZ",
+         "YYYY-MM-DD",           "YYYY-MM-DDTHH:mm:ss",          "HH:mm",
+    "h:mm a",  "dddd, D MMMM YYYY",    "ddd, DD MMM YYYY HH:mm:ss ZZ", "MMM D",
+    "Do MMMM", "YYYY-MM-DDTHH:mm:ssZ", "GGGG-WW-E",                    "gggg-ww-e",
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -76,8 +85,13 @@ pub fn main(init: std.process.Init) !void {
 
     var line: [256]u8 = undefined;
 
-    for (instants) |instant| {
-        const value = Instant.fromMilliTimestamp(instant.at).asDateTime();
+    for (0..instants.len + sweep_days) |index| {
+        const at = if (index < instants.len)
+            instants[index].at
+        else
+            sweep_from + @as(i64, @intCast(index - instants.len)) * sweep_step;
+
+        const value = Instant.fromMilliTimestamp(at).asDateTime();
 
         inline for (formats) |fmt| {
             var writer = std.Io.Writer.fixed(&line);
@@ -90,7 +104,7 @@ pub fn main(init: std.process.Init) !void {
             std.debug.assert(std.mem.indexOfAny(u8, fmt, "\t\n") == null);
             std.debug.assert(std.mem.indexOfAny(u8, formatted, "\t\n") == null);
 
-            try out.print("{d}\t{s}\t{s}\n", .{ instant.at, fmt, formatted });
+            try out.print("{d}\t{s}\t{s}\n", .{ at, fmt, formatted });
         }
     }
 

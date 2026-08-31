@@ -94,6 +94,34 @@ test printLongName {
     try std.testing.expectEqualStrings("February", writer.buffered());
 }
 
+/// Writes `year` zero padded to four digits, with a leading minus for a
+/// year before the common era.
+///
+/// The sign is written separately and the magnitude padded, because a
+/// signed value handed straight to the formatter puts its sign inside the
+/// padding: -44 comes out as `0-44` rather than `-0044`, and a positive
+/// year picks up a `+` it should not have.
+fn printYear(writer: *std.Io.Writer, year: Year) !void {
+    if (year < 0) try writer.writeAll("-");
+    try writer.print("{d:0>4}", .{@abs(year)});
+}
+
+test printYear {
+    var buf: [16]u8 = undefined;
+
+    var ordinary = std.Io.Writer.fixed(&buf);
+    try printYear(&ordinary, 2024);
+    try std.testing.expectEqualStrings("2024", ordinary.buffered());
+
+    var early = std.Io.Writer.fixed(&buf);
+    try printYear(&early, 44);
+    try std.testing.expectEqualStrings("0044", early.buffered());
+
+    var bce = std.Io.Writer.fixed(&buf);
+    try printYear(&bce, -44);
+    try std.testing.expectEqualStrings("-0044", bce.buffered());
+}
+
 /// Wraps `val` into the range `[1, at]`, mapping a remainder of 0 to `at`
 /// (e.g. hour 0 becomes 12 on a 12-hour clock).
 fn wrap(val: anytype, at: @TypeOf(val)) @TypeOf(val) {
@@ -164,29 +192,24 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
         switch (token) {
             .tag => |format_tag| switch (format_tag) {
                 .M => try writer.print("{}", .{@intFromEnum(self.month)}),
-                .Mo => try print.ordinal(writer, @intFromEnum(self.month), false),
-                .MO => try print.ordinal(writer, @intFromEnum(self.month), true),
+                .Mo => try print.ordinal(writer, @intFromEnum(self.month)),
                 .MM => try writer.print("{:0>2}", .{@intFromEnum(self.month)}),
                 .MMM => try writer.writeAll(self.month.shortName()),
                 .MMMM => try writer.writeAll(self.month.longName()),
 
                 .Q => try writer.print("{}", .{self.month.quarter()}),
-                .Qo => try print.ordinal(writer, self.month.quarter(), false),
-                .QO => try print.ordinal(writer, self.month.quarter(), true),
+                .Qo => try print.ordinal(writer, self.month.quarter()),
 
                 .D => try writer.print("{}", .{self.day}),
-                .Do => try print.ordinal(writer, self.day, false),
-                .DO => try print.ordinal(writer, self.day, true),
+                .Do => try print.ordinal(writer, self.day),
                 .DD => try writer.print("{:0>2}", .{self.day}),
 
                 .DDD => try writer.print("{}", .{self.dayOfThisYear()}),
-                .DDDo => try print.ordinal(writer, self.dayOfThisYear(), false),
-                .DDDO => try print.ordinal(writer, self.dayOfThisYear(), true),
+                .DDDo => try print.ordinal(writer, self.dayOfThisYear()),
                 .DDDD => try writer.print("{:0>3}", .{self.dayOfThisYear()}),
 
                 .d => try writer.print("{}", .{self.weekday.weekdayNumber()}),
-                .do => try print.ordinal(writer, self.weekday.weekdayNumber(), false),
-                .dO => try print.ordinal(writer, self.weekday.weekdayNumber(), true),
+                .do => try print.ordinal(writer, self.weekday.weekdayNumber()),
                 .dd => try writer.writeAll(self.weekday.veryShortName()),
                 .ddd => try writer.writeAll(self.weekday.shortName()),
                 .dddd => try writer.writeAll(self.weekday.longName()),
@@ -194,14 +217,21 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 .e => try writer.print("{}", .{self.weekday.weekdayNumber()}),
                 .E => try writer.print("{}", .{self.weekday.isoWeekdayNumber()}),
 
-                // The ISO 8601 week, which is not the day of the year
-                // divided by seven: week 1 is the week holding January
-                // 4th, so a year opens partway through a week and the
-                // count runs from 1 rather than 0. See `Date.isoWeek`.
-                .w => try writer.print("{}", .{self.isoWeek().week}),
-                .wo => try print.ordinal(writer, self.isoWeek().week, false),
-                .wO => try print.ordinal(writer, self.isoWeek().week, true),
-                .ww => try writer.print("{:0>2}", .{self.isoWeek().week}),
+                // Two week rules, which disagree at the turn of a year.
+                // `w` is the English-language one that moment's default
+                // locale uses; `W` is ISO 8601. Each pairs with its own
+                // week-numbering year, which is why `gg` and `GG` exist
+                // and why neither pairs with `YY`.
+                .w => try writer.print("{}", .{self.localeWeek().week}),
+                .wo => try print.ordinal(writer, self.localeWeek().week),
+                .ww => try writer.print("{:0>2}", .{self.localeWeek().week}),
+                .W => try writer.print("{}", .{self.isoWeek().week}),
+                .Wo => try print.ordinal(writer, self.isoWeek().week),
+                .WW => try writer.print("{:0>2}", .{self.isoWeek().week}),
+                .gg => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.localeWeek().year, 100)))}),
+                .gggg => try printYear(writer, self.localeWeek().year),
+                .GG => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.isoWeek().year, 100)))}),
+                .GGGG => try printYear(writer, self.isoWeek().year),
 
                 // @mod rather than @rem, so a year either side of the
                 // epoch lands in 0-99 rather than going negative, and the
@@ -210,12 +240,7 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 // digits as 2000-2099.
                 .YY => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.year, 100)))}),
                 .YYY => try writer.print("{d}", .{self.year}),
-                .YYYY => {
-                    if (self.year < 0) {
-                        try writer.writeAll("-");
-                    }
-                    try writer.print("{d:0>4}", .{@abs(self.year)});
-                },
+                .YYYY => try printYear(writer, self.year),
 
                 .A => try writeTwelveHour(self.hour, .upper, writer),
                 .a => try writeTwelveHour(self.hour, .lower, writer),
@@ -393,8 +418,9 @@ test parse {
 /// always default to zero. A parsed day of the week is checked against the
 /// computed date and `error.ParseError` is returned on mismatch.
 ///
-/// The quarter (`Q`) and week-of-year (`w`) sequences name no date on
-/// their own and cannot be parsed. The tokenizer runs at comptime, so a
+/// The quarter (`Q`), the two week-of-year families (`w` and `W`) and
+/// their week-numbering years (`gg` and `GG`) name no date on their own
+/// and cannot be parsed. The tokenizer runs at comptime, so a
 /// format string using one is rejected while this is being compiled: the
 /// `error.IllegalToken` it raises there surfaces as a compile error and
 /// never reaches a caller.
@@ -409,11 +435,16 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                     .tag => |tag| switch (tag) {
                         .Q,
                         .Qo,
-                        .QO,
                         .w,
                         .wo,
-                        .wO,
                         .ww,
+                        .W,
+                        .Wo,
+                        .WW,
+                        .gg,
+                        .gggg,
+                        .GG,
+                        .GGGG,
                         => return error.IllegalToken,
                         else => {},
                     },
@@ -500,12 +531,8 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             break :month try Month.parseInt(str);
                         };
                     },
-                    .Mo, .MO => {
-                        const map = switch (tag) {
-                            .Mo => ordinal.Ordinal(.normal).map,
-                            .MO => ordinal.Ordinal(.superscript).map,
-                            else => unreachable,
-                        };
+                    .Mo => {
+                        const map = ordinal.map;
                         datetime.month = month: {
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
@@ -531,12 +558,8 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             break :day @intCast(day);
                         };
                     },
-                    .Do, .DO => {
-                        const map = switch (tag) {
-                            .Do => ordinal.Ordinal(.normal).map,
-                            .DO => ordinal.Ordinal(.superscript).map,
-                            else => unreachable,
-                        };
+                    .Do => {
+                        const map = ordinal.map;
                         datetime.day = day: {
                             const str = read.int(left, 3);
                             if (str.len == 0) return error.ParseError;
@@ -552,7 +575,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             return error.ParseError;
                         };
                     },
-                    .DDDD, .DDD, .DDDo, .DDDO => {
+                    .DDDD, .DDD, .DDDo => {
                         day_of_year = doy: {
                             const str = read.int(left, 3);
                             if (str.len == 0) return error.ParseError;
@@ -561,12 +584,8 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             if (doy < 1 or doy > 366) return error.ParseError;
                             left = left[str.len..];
                             switch (tag) {
-                                .DDDo, .DDDO => ordinal: {
-                                    const map = switch (tag) {
-                                        .DDDo => ordinal.Ordinal(.normal).map,
-                                        .DDDO => ordinal.Ordinal(.superscript).map,
-                                        else => unreachable,
-                                    };
+                                .DDDo => ordinal: {
+                                    const map = ordinal.map;
                                     for (1..left.len + 1) |l| {
                                         if (map.get(left[0..l])) |_| {
                                             left = left[l..];
@@ -710,7 +729,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         left = left[result.str.len..];
                         day_of_week = result.value;
                     },
-                    .d, .e, .E, .do, .dO => {
+                    .d, .e, .E, .do => {
                         day_of_week = dow: {
                             const str = read.int(left, 1);
                             if (str.len != 1) return error.ParseError;
@@ -720,19 +739,15 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                                     if (dow < 1 or dow > 7) return error.ParseError;
                                     dow -= 1;
                                 },
-                                .d, .e, .do, .dO => {
+                                .d, .e, .do => {
                                     if (dow > 6) return error.ParseError;
                                 },
                                 else => unreachable,
                             }
                             left = left[str.len..];
                             switch (tag) {
-                                .do, .dO => ordinal: {
-                                    const map = switch (tag) {
-                                        .do => ordinal.Ordinal(.normal).map,
-                                        .dO => ordinal.Ordinal(.superscript).map,
-                                        else => unreachable,
-                                    };
+                                .do => ordinal: {
+                                    const map = ordinal.map;
                                     for (1..left.len + 1) |l| {
                                         if (map.get(left[0..l])) |_| {
                                             left = left[l..];
@@ -788,11 +803,16 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                     },
                     .Q,
                     .Qo,
-                    .QO,
                     .w,
                     .wo,
-                    .wO,
                     .ww,
+                    .W,
+                    .Wo,
+                    .WW,
+                    .gg,
+                    .gggg,
+                    .GG,
+                    .GGGG,
                     => {
                         return error.IllegalToken;
                     },
@@ -863,15 +883,45 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
     };
 }
 
-/// Returns the ISO 8601 week this date falls in, and the year that week
-/// belongs to. See `Date.isoWeek`, which this defers to.
-pub fn isoWeek(self: DateTime) Date.IsoWeek {
-    const date: Date = .{
+/// This date as a `Date`, dropping the time of day and the offset.
+fn asDate(self: DateTime) Date {
+    return .{
         .year = self.year,
         .month = self.month,
         .day = self.day,
     };
-    return date.isoWeek();
+}
+
+test asDate {
+    const datetime: DateTime = .{ .year = 2024, .month = .Mar, .day = 15, .hour = 14 };
+    try std.testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 15 },
+        datetime.asDate(),
+    );
+}
+
+/// Returns the ISO 8601 week this date falls in, and the year that week
+/// belongs to. See `Date.isoWeek`, which this defers to. The `W` and `GG`
+/// format sequences write these.
+pub fn isoWeek(self: DateTime) Date.Week {
+    return self.asDate().isoWeek();
+}
+
+/// Returns the week this date falls in under the English-language
+/// convention, and the year that week belongs to. See `Date.localeWeek`.
+/// The `w` and `gg` format sequences write these.
+pub fn localeWeek(self: DateTime) Date.Week {
+    return self.asDate().localeWeek();
+}
+
+test localeWeek {
+    // The two rules disagree at the turn of the year, which is why both
+    // are available and why each has its own pair of sequences.
+    const yearend: DateTime = .{ .year = 2026, .month = .Dec, .day = 31 };
+    try std.testing.expectEqual(@as(u8, 1), yearend.localeWeek().week);
+    try std.testing.expectEqual(@as(Year, 2027), yearend.localeWeek().year);
+    try std.testing.expectEqual(@as(u8, 53), yearend.isoWeek().week);
+    try std.testing.expectEqual(@as(Year, 2026), yearend.isoWeek().year);
 }
 
 test isoWeek {
@@ -1555,15 +1605,15 @@ test "the sequences that differ only in padding" {
 
 test "the ordinal sequences of the narrow components" {
     // A quarter and a weekday number are both u3, too narrow to divide by
-    // ten, so these four arms did not compile until `print.ordinal` was
-    // taught to widen.
+    // ten, so these arms did not compile until `print.ordinal` was taught
+    // to widen.
     var datetime: DateTime = .{ .year = 2024, .month = .Mar, .day = 15 };
     datetime.updateDayOfWeek();
 
     var buf: [64]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buf);
-    try datetime.format("Qo-QO-do-dO", &writer);
-    try std.testing.expectEqualStrings("1st-1\u{02e2}\u{1d57}-5th-5\u{1d57}\u{02b0}", writer.buffered());
+    try datetime.format("Qo-do", &writer);
+    try std.testing.expectEqualStrings("1st-5th", writer.buffered());
 }
 
 test "formatTest" {

@@ -203,9 +203,10 @@ pub fn build(b: *std.Build) void {
     // and `tools/oracle.js` asks moment the same questions and reports
     // every answer that differs.
     //
-    // This is deliberately not part of `zig build test`. The two do not
-    // agree yet, so wiring it in would leave the suite red on a known and
-    // catalogued difference rather than on a regression.
+    // Part of `zig build test`, now that the two agree on every sequence:
+    // a divergence from here on is a regression rather than a known gap.
+    // It costs a fetch of moment the first time and a second of node
+    // after that.
     const oracle_step = b.step(
         "oracle",
         "Check formatting against moment.js (needs the network on first run)",
@@ -240,6 +241,7 @@ pub fn build(b: *std.Build) void {
         run_oracle.stdio = .inherit;
 
         oracle_step.dependOn(&run_oracle.step);
+        test_step.dependOn(&run_oracle.step);
     }
 }
 

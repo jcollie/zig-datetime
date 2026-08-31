@@ -21,8 +21,6 @@ pub const FormatTag = enum {
     M,
     /// 1st 2nd ... 11th 12th (month, numeric ordinal)
     Mo,
-    /// 1ˢᵗ 2ⁿᵈ 3ʳᵈ ... 11ᵗʰ 12ᵗʰ
-    MO,
     /// 01 02 ... 11 12 (month, numeric, zero padded)
     MM,
     // /// Ja, Fe, Ma ... No, De (very short month name)
@@ -31,35 +29,55 @@ pub const FormatTag = enum {
     MMMM, // January February ... November December (long month name)
     Q, // 1 2 3 4 (quarter)
     Qo, // 1st 2nd 3rd 4th (quarter)
-    QO, // 1ˢᵗ 2ⁿᵈ 3ʳᵈ 4ᵗʰ (quarter)
     D, // 1 2 ... 30 31 (day of the month)
     Do, // 1st 2nd ... 30th 31st (day of the month, ordinal)
-    DO, // 1ˢᵗ 2ⁿᵈ 3ʳᵈ... 30ᵗʰ 31ˢᵗ (day of the month, ordinal)
     DD, // 01 02 ... 30 31 (day of the month, zero padded)
     DDD, // 1 2 ... 364 365 366
     DDDo, // 1st 2nd ... 364th 365th 366th (day of the year, ordinal)
-    DDDO, // 1ˢᵗ 2ⁿᵈ ... 364ᵗʰ 365ᵗʰ 366ᵗʰ(day of the year, ordinal)
     DDDD, // 001 002 ... 364 365 365 (day of the year)
     d, // 0 1 ... 5 6 (day of the week)
     do, // 0th 1st 2nd 3rd ... 5th 6th (day of the week, ordinal)
-    dO, // 0ᵗʰ 1ˢᵗ 2ⁿᵈ 3ʳᵈ ... 5ᵗʰ 6ᵗʰ (day of the week, ordinal)
     dd, // Su Mo ... Fr Sa (day of the week, very short name)
     ddd, // Sun Mon ... Fri Sat (day of the week, short name)
     dddd, // Sunday Monday ... Friday Saturday (day of the week, long name)
     e, // 0 1 ... 5 6 (locale)
     E, // 1 2 ... 6 7 (ISO)
+    /// 1 2 ... 52 53 (week of the year)
+    ///
+    /// This is the week under the English-language convention, where a
+    /// week begins on Sunday and week 1 holds January 1st, matching what
+    /// moment.js's default locale means by `w`. `W` is the ISO 8601 week,
+    /// which is the other rule. See `Date.weekOfYear`.
+    ///
+    /// The week-numbering year is not always the calendar year that
+    /// `YYYY` writes, so pair these with `gg`, not with `YY`.
+    w,
+    /// 1st 2nd 3rd 4th ... 52nd 53rd (week of the year, ordinal)
+    wo,
+    /// 01 02 ... 52 53 (week of the year, zero padded)
+    ww,
     /// 1 2 ... 52 53 (ISO 8601 week of the year)
     ///
-    /// Note that the week-numbering year is not always the calendar year
-    /// that `YYYY` writes, so pairing the two produces a wrong date for
-    /// the days at either end of a year. See `Date.isoWeek`.
-    w,
+    /// Weeks begin on Monday and week 1 holds January 4th. Pair these
+    /// with `GG` rather than with `YY`. See `Date.isoWeek`.
+    W,
     /// 1st 2nd 3rd 4th ... 52nd 53rd (ISO week, ordinal)
-    wo,
-    /// 1ˢᵗ 2ⁿᵈ 3ʳᵈ 4ᵗʰ ... 52ⁿᵈ 53ʳᵈ (ISO week, ordinal)
-    wO,
+    Wo,
     /// 01 02 ... 52 53 (ISO week, zero padded)
-    ww,
+    WW,
+    /// 70 71 ... 29 30 (week-numbering year, last two digits)
+    ///
+    /// The year the week written by `w` belongs to, which at the turn of
+    /// a year is not the calendar year.
+    gg,
+    /// 1970 1971 ... 2029 2030 (week-numbering year)
+    gggg,
+    /// 70 71 ... 29 30 (ISO week-numbering year, last two digits)
+    ///
+    /// The year the week written by `W` belongs to.
+    GG,
+    /// 1970 1971 ... 2029 2030 (ISO week-numbering year)
+    GGGG,
     YY, // 70 71 ... 29 30 (year, last two digits only)
     YYY, // 1 2 ... 1970 1971 ... 2029 2030 (year)
     YYYY, // 0001 0002 ... 1970 1971 ... 2029 2030 (year, zero padded to 4 digits)
