@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! Sources of timezone data.
 //!
 //! `system` reads the operating system's copy of the IANA database, the

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! Parser and evaluator for the POSIX `TZ` string, the rule that appears in
 //! the footer of a version 2 or later TZif file and that also shows up in
 //! the `TZ` environment variable.

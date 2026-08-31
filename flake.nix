@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+# SPDX-License-Identifier: MIT
+
 {
   description = "zig-datetime";
 
@@ -45,6 +48,8 @@
               # Publishes the API documentation to ocj.page; see
               # .forgejo/workflows/test.yaml.
               pkgs.git-pages-cli
+              # Checks the SPDX headers; see REUSE.toml.
+              pkgs.reuse
             ];
           };
         }

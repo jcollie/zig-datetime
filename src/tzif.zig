@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! Reader for the Time Zone Information Format (TZif) defined by RFC 8536,
 //! the binary format that the IANA timezone database is compiled into and
 //! that operating systems keep under `/usr/share/zoneinfo`.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+# SPDX-License-Identifier: MIT
+
 # Watches for new IANA timezone database releases and opens a pull request
 # pinning each one.
 #

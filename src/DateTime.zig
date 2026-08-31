@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 const DateTime = @This();
 
 const std = @import("std");

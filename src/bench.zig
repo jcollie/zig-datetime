@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! Benchmarks for the datetime library, run with `zig build bench`.
 //!
 //! Inputs cycle through a table of 1024 values and every result is folded

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 // https://www.nist.gov/pml/owm/metric-si-prefixes
 
 const std = @import("std");

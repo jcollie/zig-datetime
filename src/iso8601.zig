@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! Parser for the date and time representations of ISO 8601, the format
 //! behind `2024-03-15T14:30:00Z` and its many relatives. RFC 3339, which
 //! is what most internet protocols actually mean by "ISO 8601", is the

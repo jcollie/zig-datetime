@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 .{
     .name = .datetime,
     .version = "0.0.1",
@@ -26,6 +29,8 @@
         "build.zig",
         "build.zig.zon",
         "README.md",
+        "LICENSES",
+        "REUSE.toml",
         "src",
         "tools",
     },

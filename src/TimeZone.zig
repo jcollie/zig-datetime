@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! A timezone: the rules that say what a clock in some place reads at a
 //! given instant, and what that reading is called.
 //!

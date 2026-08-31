@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+# SPDX-License-Identifier: MIT
+
 # Runs the test suite on every push, and publishes the API documentation
 # to https://jeff.ocj.page/zig-datetime/ when the push was to main.
 #
@@ -29,6 +32,9 @@ jobs:
 
       - name: Check formatting
         run: nix develop .#default -c zig fmt --check .
+
+      - name: Check REUSE compliance
+        run: nix develop .#default -c reuse lint
 
       - name: Run tests
         run: nix develop .#default -c zig build test

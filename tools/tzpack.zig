@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! Packs a tree of TZif files, as produced by `zic -d`, into the two files
 //! that give the library its embedded timezone database: `tzdata.bin`,
 //! holding every zone's bytes end to end, and `tzdata.zig`, an index of

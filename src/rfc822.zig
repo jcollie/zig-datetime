@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 //! Parsing of the date and time syntax defined by RFC 822 section 5, as
 //! amended by RFC 1123 section 5.2.14 (four digit years) and RFC 5322
 //! sections 3.3 and 4.3 (obsolete forms). This is the format used by

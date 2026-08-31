@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 const std = @import("std");
 
 /// Byte-for-byte string equality, used as the map's comparison function.

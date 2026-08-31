@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
 const std = @import("std");
 
 // pub fn Ordinal(style: enum {.normal, .superscript}) type {
