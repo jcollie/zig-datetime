@@ -23,7 +23,7 @@ pub const FormatTag = enum {
     Mo,
     /// 1ˢᵗ 2ⁿᵈ 3ʳᵈ ... 11ᵗʰ 12ᵗʰ
     MO,
-    /// 01 02 ... 11 12 (month, numeric ordinal)
+    /// 01 02 ... 11 12 (month, numeric, zero padded)
     MM,
     // /// Ja, Fe, Ma ... No, De (very short month name)
     // Mm,
@@ -48,10 +48,18 @@ pub const FormatTag = enum {
     dddd, // Sunday Monday ... Friday Saturday (day of the week, long name)
     e, // 0 1 ... 5 6 (locale)
     E, // 1 2 ... 6 7 (ISO)
-    w, // 1 2 ... 52 53
-    wo, // 1st 2nd 3rd 4th ... 52nd 53rd
-    wO, // 1ˢᵗ 2ⁿᵈ 3ʳᵈ 4th ... 52ⁿᵈ 53ʳᵈ
-    ww, // 01 02 ... 52 53
+    /// 1 2 ... 52 53 (ISO 8601 week of the year)
+    ///
+    /// Note that the week-numbering year is not always the calendar year
+    /// that `YYYY` writes, so pairing the two produces a wrong date for
+    /// the days at either end of a year. See `Date.isoWeek`.
+    w,
+    /// 1st 2nd 3rd 4th ... 52nd 53rd (ISO week, ordinal)
+    wo,
+    /// 1ˢᵗ 2ⁿᵈ 3ʳᵈ 4ᵗʰ ... 52ⁿᵈ 53ʳᵈ (ISO week, ordinal)
+    wO,
+    /// 01 02 ... 52 53 (ISO week, zero padded)
+    ww,
     YY, // 70 71 ... 29 30 (year, last two digits only)
     YYY, // 1 2 ... 1970 1971 ... 2029 2030 (year)
     YYYY, // 0001 0002 ... 1970 1971 ... 2029 2030 (year, zero padded to 4 digits)
@@ -66,7 +74,7 @@ pub const FormatTag = enum {
     A,
     /// am pm (ante/post meridian, lower case)
     a,
-    /// 0 1 ... 22 23 (hour, zero padded)
+    /// 0 1 ... 22 23 (hour)
     H,
     /// 00 01 ... 22 23 (hour, zero padded)
     HH,

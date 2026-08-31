@@ -194,12 +194,21 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 .e => try writer.print("{}", .{self.weekday.weekdayNumber()}),
                 .E => try writer.print("{}", .{self.weekday.isoWeekdayNumber()}),
 
-                .w => try writer.print("{}", .{self.dayOfThisYear() / 7}),
-                .wo => try print.ordinal(writer, self.dayOfThisYear() / 7, false),
-                .wO => try print.ordinal(writer, self.dayOfThisYear() / 7, true),
-                .ww => try writer.print("{:0>2}", .{self.dayOfThisYear() / 7}),
+                // The ISO 8601 week, which is not the day of the year
+                // divided by seven: week 1 is the week holding January
+                // 4th, so a year opens partway through a week and the
+                // count runs from 1 rather than 0. See `Date.isoWeek`.
+                .w => try writer.print("{}", .{self.isoWeek().week}),
+                .wo => try print.ordinal(writer, self.isoWeek().week, false),
+                .wO => try print.ordinal(writer, self.isoWeek().week, true),
+                .ww => try writer.print("{:0>2}", .{self.isoWeek().week}),
 
-                .YY => try writer.print("{d:0>2}", .{self.year % 100}),
+                // @mod rather than @rem, so a year either side of the
+                // epoch lands in 0-99 rather than going negative, and the
+                // cast drops the sign the signed type would print. This
+                // is the inverse of the parse side, which reads two
+                // digits as 2000-2099.
+                .YY => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.year, 100)))}),
                 .YYY => try writer.print("{d}", .{self.year}),
                 .YYYY => {
                     if (self.year < 0) {
@@ -854,6 +863,28 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
     };
 }
 
+/// Returns the ISO 8601 week this date falls in, and the year that week
+/// belongs to. See `Date.isoWeek`, which this defers to.
+pub fn isoWeek(self: DateTime) Date.IsoWeek {
+    const date: Date = .{
+        .year = self.year,
+        .month = self.month,
+        .day = self.day,
+    };
+    return date.isoWeek();
+}
+
+test isoWeek {
+    // The `w` sequences format this, and it is not the calendar year that
+    // belongs beside it: 2027 opens inside 2026's week 53.
+    const newyear: DateTime = .{ .year = 2027, .month = .Jan, .day = 1 };
+    try std.testing.expectEqual(@as(Year, 2026), newyear.isoWeek().year);
+    try std.testing.expectEqual(@as(u8, 53), newyear.isoWeek().week);
+
+    const march: DateTime = .{ .year = 2024, .month = .Mar, .day = 15 };
+    try std.testing.expectEqual(@as(u8, 11), march.isoWeek().week);
+}
+
 /// Returns the 1-based day of the year (1-366).
 pub fn dayOfThisYear(self: DateTime) u9 {
     return self.month.daysBefore(self.year) + self.day;
@@ -1456,6 +1487,83 @@ test format {
     var millis = std.Io.Writer.fixed(&buf);
     try datetime.format("ss.SSS", &millis);
     try std.testing.expectEqualStrings("05.123", millis.buffered());
+}
+
+test "every format sequence is reachable from format" {
+    // `format` unrolls the token list, so a sequence's arm is only ever
+    // compiled when some format string uses it. Four of them had never
+    // been compiled and did not build; this walks the whole enum so that
+    // cannot happen again.
+    //
+    // 2024-03-15 is a Friday in ISO week 11 of 2024, day 75 of a leap
+    // year, quarter 1, at 14:30:05 and a fraction with nine digits, so
+    // every sequence has something to say.
+    var datetime: DateTime = .{
+        .year = 2024,
+        .month = .Mar,
+        .day = 15,
+        .hour = 14,
+        .minute = 30,
+        .second = 5,
+        .nanosecond = 123456789,
+        .offset = -5 * std.time.s_per_hour,
+    };
+    datetime.updateDayOfWeek();
+
+    var buf: [64]u8 = undefined;
+    inline for (@typeInfo(FormatTag).@"enum".fields) |field| {
+        var writer = std.Io.Writer.fixed(&buf);
+        try datetime.format(field.name, &writer);
+        try std.testing.expect(writer.buffered().len > 0);
+    }
+}
+
+test "the sequences that differ only in padding" {
+    // A date and time whose components are all single digit, which is the
+    // only way the padded and unpadded spellings can be told apart.
+    var datetime: DateTime = .{
+        .year = 2024,
+        .month = .Jan,
+        .day = 3,
+        .hour = 5,
+        .minute = 7,
+        .second = 9,
+    };
+    datetime.updateDayOfWeek();
+
+    const cases = [_]struct { fmt: []const u8, expected: []const u8 }{
+        .{ .fmt = "M-MM", .expected = "1-01" },
+        .{ .fmt = "D-DD", .expected = "3-03" },
+        .{ .fmt = "H-HH", .expected = "5-05" },
+        .{ .fmt = "h-hh", .expected = "5-05" },
+        .{ .fmt = "m-mm", .expected = "7-07" },
+        .{ .fmt = "s-ss", .expected = "9-09" },
+        // 2024-01-03 is a Wednesday in ISO week 1, which is the case the
+        // old day-of-year-over-seven arithmetic got wrong: it gave 0.
+        .{ .fmt = "w-ww", .expected = "1-01" },
+        .{ .fmt = "DDD-DDDD", .expected = "3-003" },
+        .{ .fmt = "YY-YYY-YYYY", .expected = "24-2024-2024" },
+    };
+
+    inline for (cases) |case| {
+        var buf: [64]u8 = undefined;
+        var writer = std.Io.Writer.fixed(&buf);
+        try datetime.format(case.fmt, &writer);
+        try std.testing.expectEqualStrings(case.expected, writer.buffered());
+    }
+}
+
+test "the ordinal sequences of the narrow components" {
+    // A quarter and a weekday number are both u3, too narrow to divide by
+    // ten, so these four arms did not compile until `print.ordinal` was
+    // taught to widen.
+    var datetime: DateTime = .{ .year = 2024, .month = .Mar, .day = 15 };
+    datetime.updateDayOfWeek();
+
+    var buf: [64]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buf);
+    try datetime.format("Qo-QO-do-dO", &writer);
+    try std.testing.expectEqualStrings("1st-1\u{02e2}\u{1d57}-5th-5\u{1d57}\u{02b0}", writer.buffered());
 }
 
 test "formatTest" {

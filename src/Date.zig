@@ -235,6 +235,69 @@ pub fn dayOfWeek(self: Date) DayOfWeek {
     return DayOfWeek.fromDaysSinceStartOfEra(days);
 }
 
+/// An ISO 8601 week date's week and the year that week belongs to.
+pub const IsoWeek = struct {
+    /// The week-numbering year, which is not always the calendar year:
+    /// see `isoWeek`.
+    year: Year,
+    /// The week within that year, 1 through 52 or 53.
+    week: u8,
+};
+
+/// Returns the ISO 8601 week number of this date, and the year that week
+/// belongs to.
+///
+/// ISO 8601 weeks run Monday to Sunday and week 1 is the one containing
+/// January 4th, equivalently the one holding the year's first Thursday.
+/// A week therefore cannot be split across two years, and the days at
+/// either end of a calendar year may belong to a week of its neighbour:
+/// 2027-01-01 is week 53 of 2026, and 2029-12-31 is week 1 of 2030. That
+/// is why the year is returned alongside the week, and why formatting a
+/// week date with the calendar year would be wrong.
+///
+/// The week is found by walking back to this date's Monday, taking the
+/// Thursday of that week to settle which year the week belongs to, and
+/// counting whole weeks from the Monday of that year's week 1.
+pub fn isoWeek(self: Date) IsoWeek {
+    const monday = self.toDaysSinceStartOfEra() -
+        (@as(DaysType, self.dayOfWeek().isoWeekdayNumber()) - 1);
+
+    // Every week has its Thursday in the year the week is numbered
+    // against, which is what makes this the whole of the year rule.
+    const year = fromDaysSinceStartOfEra(monday + 3).year;
+
+    const anchor: Date = .{ .year = year, .month = .Jan, .day = 4 };
+    const first_monday = anchor.toDaysSinceStartOfEra() -
+        (@as(DaysType, anchor.dayOfWeek().isoWeekdayNumber()) - 1);
+
+    return .{
+        .year = year,
+        .week = @intCast(@divTrunc(monday - first_monday, 7) + 1),
+    };
+}
+
+test isoWeek {
+    // A date in the middle of a year, where the week-numbering year and
+    // the calendar year agree.
+    const march = (Date{ .year = 2024, .month = .Mar, .day = 15 }).isoWeek();
+    try std.testing.expectEqual(@as(Year, 2024), march.year);
+    try std.testing.expectEqual(@as(u8, 11), march.week);
+
+    // January 4th is in week 1 by definition, whatever weekday it is.
+    try std.testing.expectEqual(@as(u8, 1), (Date{ .year = 2024, .month = .Jan, .day = 4 }).isoWeek().week);
+
+    // The first days of a year can belong to the last week of the one
+    // before: 2027 opens on a Friday, so it is still 2026's week 53.
+    const newyear = (Date{ .year = 2027, .month = .Jan, .day = 1 }).isoWeek();
+    try std.testing.expectEqual(@as(Year, 2026), newyear.year);
+    try std.testing.expectEqual(@as(u8, 53), newyear.week);
+
+    // And the last days of a year can belong to week 1 of the next.
+    const yearend = (Date{ .year = 2029, .month = .Dec, .day = 31 }).isoWeek();
+    try std.testing.expectEqual(@as(Year, 2030), yearend.year);
+    try std.testing.expectEqual(@as(u8, 1), yearend.week);
+}
+
 test dayOfWeek {
     // The epoch was a Thursday.
     try std.testing.expectEqual(DayOfWeek.Thu, (Date{ .year = 1970, .month = .Jan, .day = 1 }).dayOfWeek());

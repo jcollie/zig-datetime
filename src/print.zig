@@ -56,17 +56,30 @@ pub fn ordinal(writer: anytype, num: anytype, superscript: bool) !void {
 
     const table = if (superscript) superscripts else normal;
 
+    // The suffix is chosen from the last two digits, so the arithmetic
+    // needs a type that can represent 10. Several callers pass something
+    // narrower than that -- a quarter and a weekday number are both `u3` --
+    // where dividing by 10 would not compile, so those widen first.
+    const Wide = if (info.int.bits < 4) u8 else @TypeOf(num);
+    const wide: Wide = num;
+
     try writer.print("{}", .{num});
     try writer.writeAll(
-        switch (num / 10 % 10) {
+        switch (wide / 10 % 10) {
             1 => table[0],
-            else => table[num % 10],
+            else => table[wide % 10],
         },
     );
 }
 
 test ordinal {
     var buf: [8]u8 = undefined;
+
+    // A type too narrow to hold 10 is widened rather than rejected: a
+    // quarter and a weekday number both arrive as `u3`.
+    var narrow = std.Io.Writer.fixed(&buf);
+    try ordinal(&narrow, @as(u3, 3), false);
+    try std.testing.expectEqualStrings("3rd", narrow.buffered());
 
     var first = std.Io.Writer.fixed(&buf);
     try ordinal(&first, @as(u16, 1), false);
