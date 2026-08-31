@@ -11,7 +11,6 @@
 //! `DayOfWeek.fromDaysSinceStartOfEra`.
 
 const std = @import("std");
-const log = std.log.scoped(.day_of_week);
 
 const Year = @import("year.zig").Year;
 const Month = @import("month.zig").Month;

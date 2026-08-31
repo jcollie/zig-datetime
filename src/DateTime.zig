@@ -21,7 +21,6 @@
 const DateTime = @This();
 
 const std = @import("std");
-const log = std.log.scoped(.date_time);
 
 const Year = @import("year.zig").Year;
 const Month = @import("month.zig").Month;
@@ -2209,7 +2208,6 @@ test "parseTest" {
     };
 
     inline for (cases) |case| {
-        log.warn("{s} {s}", .{ case.fmt, case.value });
         const actual = try DateTime.parse(case.fmt, case.value);
         try std.testing.expectEqual(case.expected, actual.value);
     }
@@ -2269,7 +2267,6 @@ test "parseRelativeToTest" {
     };
 
     inline for (cases) |case| {
-        log.warn("{s} {s}", .{ case.fmt, case.value });
         const actual = try DateTime.parseRelativeTo(case.fmt, case.relative_to, case.value);
         try std.testing.expectEqual(case.expected, actual.value);
     }

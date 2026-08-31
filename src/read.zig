@@ -12,7 +12,6 @@
 //! handling that make `std.fmt.parseInt` general.
 
 const std = @import("std");
-const log = std.log.scoped(.read);
 const Nanosecond = @import("nanosecond.zig").Nanosecond;
 
 /// Returns the run of ASCII digits at the beginning of `text`, at most
