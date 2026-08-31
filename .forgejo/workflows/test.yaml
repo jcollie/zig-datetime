@@ -39,6 +39,14 @@ jobs:
       - name: Run tests
         run: nix develop .#default -c zig build test
 
+      - name: Run tests as though there were no system timezone database
+        # The runner has no zoneinfo tree, so the tests that read one skip
+        # here and run on a developer's machine, which is the wrong way
+        # round: the skips are where a mistake hides. This option empties
+        # the directories the tests look in, so both halves are reachable
+        # from either kind of machine and each is checked on both.
+        run: nix develop .#default -c zig build test -Dno-system-tzdata
+
       - name: Run tests against the embedded timezone database
         # Builds zic from the IANA sources and regenerates the whole
         # database, which is the only thing that exercises the embedded

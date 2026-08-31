@@ -433,13 +433,21 @@ test localSeconds {
 
 const testing = std.testing;
 
-/// Directories that different systems keep the TZif tree in.
-const test_directories = [_][]const u8{
-    "/usr/share/zoneinfo",
-    "/etc/zoneinfo",
-    "/usr/lib/zoneinfo",
-    "/usr/share/lib/zoneinfo",
-};
+/// Directories that different systems keep the TZif tree in, or nothing
+/// at all when the build asked for `-Dno-system-tzdata`.
+///
+/// Emptying the list is what makes a machine that has a database behave
+/// like one that has not: `bytesForTest` finds nothing and skips, which is
+/// the path a mistake can otherwise hide in. See `build.zig`.
+const test_directories: []const []const u8 = if (@import("build_options").no_system_tzdata)
+    &.{}
+else
+    &.{
+        "/usr/share/zoneinfo",
+        "/etc/zoneinfo",
+        "/usr/lib/zoneinfo",
+        "/usr/share/lib/zoneinfo",
+    };
 
 /// Reads the TZif bytes of a named zone from whichever copy of the
 /// database this machine has, or skips the test when it has none. The

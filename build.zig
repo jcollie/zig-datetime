@@ -14,6 +14,12 @@
 //!
 //! Without that option the `tzdata` module resolves to `src/tzdata/stub.zig`
 //! instead, which has the same shape and no data.
+//!
+//! `-Dno-system-tzdata` is a testing knob rather than a build variant. The
+//! tests that read the operating system's copy of the database skip when
+//! there is none, and those skips are where a mistake can hide on a
+//! machine that has one; the option empties the directories the tests look
+//! in so that both halves are reachable from either kind of machine.
 
 const std = @import("std");
 
@@ -64,6 +70,15 @@ pub fn build(b: *std.Build) void {
             "such as @0 for the Unix epoch (default: keep all history)",
     );
 
+    const no_system_tzdata = b.option(
+        bool,
+        "no-system-tzdata",
+        "Run the tests as though the machine had no system timezone " ++
+            "database, so that the paths taken when there is none are " ++
+            "exercised on a machine that has one. Affects the tests only; " ++
+            "the library behaves the same either way (default: false)",
+    ) orelse false;
+
     const module = b.addModule(
         "datetime",
         .{
@@ -83,6 +98,10 @@ pub fn build(b: *std.Build) void {
         b.path("src/tzdata/stub.zig");
 
     module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+
+    const options = b.addOptions();
+    options.addOption(bool, "no_system_tzdata", no_system_tzdata);
+    module.addImport("build_options", options.createModule());
 
     const tests = b.addTest(.{
         .root_module = module,

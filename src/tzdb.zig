@@ -247,7 +247,7 @@ pub const system = struct {
         // Read from the first line of `tzdata.zi`, which not every
         // system ships, so null is an ordinary answer rather than an
         // error. The caller owns the string when there is one.
-        for (search_directories) |directory| {
+        for (test_directories) |directory| {
             const found = (try version(testing.io, testing.allocator, directory)) orelse continue;
             defer testing.allocator.free(found);
 
@@ -299,7 +299,7 @@ pub const system = struct {
     }
 
     test load {
-        for (search_directories) |directory| {
+        for (test_directories) |directory| {
             var zone = load(testing.io, testing.allocator, directory, "America/Chicago") catch continue;
             defer zone.deinit(testing.allocator);
 
@@ -347,8 +347,15 @@ pub const system = struct {
     test loadLocal {
         // Passing null reads the machine's own zone from
         // `/etc/localtime`, which is a path rather than a name and so
-        // needs no TZDIR.
-        var zone = loadLocal(testing.io, testing.allocator, null) catch return error.SkipZigTest;
+        // needs no TZDIR. Under `-Dno-system-tzdata` there is nothing to
+        // read, which a path that cannot exist stands in for, so the skip
+        // happens through the same failure as on a machine without one.
+        const path: ?[]const u8 = if (@import("build_options").no_system_tzdata)
+            "/nonexistent/localtime"
+        else
+            null;
+
+        var zone = loadLocal(testing.io, testing.allocator, path) catch return error.SkipZigTest;
         defer zone.deinit(testing.allocator);
 
         // The zone it names is not knowable here, but it is a real one.
@@ -473,6 +480,18 @@ pub const embedded = struct {
 
 const testing = std.testing;
 
+/// The directories the tests look in, which is `system.search_directories`
+/// unless the build asked for `-Dno-system-tzdata`, in which case it is
+/// nothing at all.
+///
+/// Emptying the list is what makes a machine that has a database behave
+/// like one that has not, so that the tests which skip when there is none
+/// are reachable from either. See `build.zig`.
+const test_directories: []const []const u8 = if (@import("build_options").no_system_tzdata)
+    &.{}
+else
+    &system.search_directories;
+
 test "zone names are checked before they become paths" {
     for ([_][]const u8{
         "UTC",
@@ -504,14 +523,7 @@ test "zone names are checked before they become paths" {
 }
 
 test "the system database loads a zone" {
-    const directories = [_][]const u8{
-        "/usr/share/zoneinfo",
-        "/etc/zoneinfo",
-        "/usr/lib/zoneinfo",
-        "/usr/share/lib/zoneinfo",
-    };
-
-    for (directories) |directory| {
+    for (test_directories) |directory| {
         var zone = system.load(testing.io, testing.allocator, directory, "America/Chicago") catch continue;
         defer zone.deinit(testing.allocator);
 
@@ -561,19 +573,12 @@ test "the embedded database loads a zone" {
 test "the embedded and system databases agree" {
     if (!embedded.available) return error.SkipZigTest;
 
-    const directories = [_][]const u8{
-        "/usr/share/zoneinfo",
-        "/etc/zoneinfo",
-        "/usr/lib/zoneinfo",
-        "/usr/share/lib/zoneinfo",
-    };
-
     // Only worth comparing when both sides are the same release. The two
     // legitimately disagree otherwise, which is the normal state of
     // affairs while a tzdata update is being prepared: the embedded copy
     // is the new release and the machine's is whatever it had.
     const matching = matching: {
-        for (directories) |directory| {
+        for (test_directories) |directory| {
             const found = (try system.version(testing.io, testing.allocator, directory)) orelse continue;
             defer testing.allocator.free(found);
             if (std.mem.eql(u8, found, embedded.version)) break :matching true;
@@ -607,7 +612,7 @@ test "the embedded and system databases agree" {
         probe.* = -2208988800 + @as(i64, @intCast(index)) * (2 * std.time.s_per_day * 365);
     }
 
-    for (directories) |directory| {
+    for (test_directories) |directory| {
         var compared: usize = 0;
         for (names) |name| {
             var from_system = system.load(testing.io, testing.allocator, directory, name) catch continue;
@@ -699,14 +704,7 @@ fn posixtzTest(rule: []const u8) !void {
 }
 
 test "the system database reports which release it was built from" {
-    const directories = [_][]const u8{
-        "/usr/share/zoneinfo",
-        "/etc/zoneinfo",
-        "/usr/lib/zoneinfo",
-        "/usr/share/lib/zoneinfo",
-    };
-
-    for (directories) |directory| {
+    for (test_directories) |directory| {
         const found = (try system.version(testing.io, testing.allocator, directory)) orelse continue;
         defer testing.allocator.free(found);
 
