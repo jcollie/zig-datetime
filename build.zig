@@ -48,16 +48,20 @@ pub fn build(b: *std.Build) void {
     const module = b.addModule(
         "datetime",
         .{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/datetime.zig"),
             .target = target,
             .optimize = optimize,
         },
     );
 
+    // The stub sits in a directory of its own because a module takes its
+    // whole containing directory with it. Left in src/ it would make a
+    // second module out of every file here, which turns up in the
+    // generated documentation as a duplicate of the entire library.
     const tzdata_source = if (embed_tzdata)
         generateTzdata(b, tz_packing, tz_from)
     else
-        b.path("src/tzdata_stub.zig");
+        b.path("src/tzdata/stub.zig");
 
     module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
 
@@ -92,7 +96,7 @@ pub fn build(b: *std.Build) void {
     // The benchmarks always build ReleaseFast, independent of -Doptimize,
     // so they need their own instance of the module built the same way.
     const bench_datetime = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/datetime.zig"),
         .target = target,
         .optimize = .ReleaseFast,
     });
@@ -133,8 +137,8 @@ fn generateTzdata(
     packing: Packing,
     from: ?[]const u8,
 ) std.Build.LazyPath {
-    const tzcode = b.lazyDependency("tzcode", .{}) orelse return b.path("src/tzdata_stub.zig");
-    const tzdata = b.lazyDependency("tzdata", .{}) orelse return b.path("src/tzdata_stub.zig");
+    const tzcode = b.lazyDependency("tzcode", .{}) orelse return b.path("src/tzdata/stub.zig");
+    const tzdata = b.lazyDependency("tzdata", .{}) orelse return b.path("src/tzdata/stub.zig");
 
     // zic.c includes two headers that the tz Makefile generates rather
     // than ships. Both are a handful of #defines, so they are written out
