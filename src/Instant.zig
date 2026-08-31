@@ -9,16 +9,13 @@ const Minute = @import("minute.zig").Minute;
 const Second = @import("second.zig").Second;
 const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
-const Timezone = @import("timezone.zig").Timezone;
 
 timestamp: i128,
-timezone: Timezone,
 
 /// Returns the current time read from the `.real` clock of `io`, in UTC.
 pub fn now(io: std.Io) Instant {
     return .{
         .timestamp = std.Io.Timestamp.now(io, .real).nanoseconds,
-        .timezone = .UTC,
     };
 }
 
@@ -26,7 +23,6 @@ pub fn now(io: std.Io) Instant {
 pub fn utc(io: std.Io) Instant {
     return .{
         .timestamp = std.Io.Timestamp.now(io, .real).nanoseconds,
-        .timezone = .UTC,
     };
 }
 
@@ -34,7 +30,6 @@ pub fn utc(io: std.Io) Instant {
 pub fn fromNanoTimeStamp(timestamp: i128) Instant {
     return .{
         .timestamp = timestamp,
-        .timezone = .UTC,
     };
 }
 
@@ -42,7 +37,6 @@ pub fn fromNanoTimeStamp(timestamp: i128) Instant {
 pub fn fromMicroTimeStamp(timestamp: i64) Instant {
     return .{
         .timestamp = timestamp * std.time.ns_per_us,
-        .timezone = .UTC,
     };
 }
 
@@ -50,7 +44,6 @@ pub fn fromMicroTimeStamp(timestamp: i64) Instant {
 pub fn fromMilliTimestamp(timestamp: i64) Instant {
     return .{
         .timestamp = timestamp * std.time.ns_per_ms,
-        .timezone = .UTC,
     };
 }
 
@@ -89,7 +82,6 @@ test "instantTest" {
         .{
             .instant = .{
                 .timestamp = 0,
-                .timezone = .UTC,
             },
             .datetime = .{
                 .year = 1970,
@@ -105,7 +97,6 @@ test "instantTest" {
         .{
             .instant = .{
                 .timestamp = -1,
-                .timezone = .UTC,
             },
             .datetime = .{
                 .year = 1969,
@@ -123,7 +114,6 @@ test "instantTest" {
         .{
             .instant = .{
                 .timestamp = -@as(i128, std.time.ns_per_day),
-                .timezone = .UTC,
             },
             .datetime = .{
                 .year = 1969,
@@ -141,7 +131,6 @@ test "instantTest" {
         .{
             .instant = .{
                 .timestamp = -2208988800 * @as(i128, std.time.ns_per_s),
-                .timezone = .UTC,
             },
             .datetime = .{
                 .year = 1900,
@@ -157,7 +146,6 @@ test "instantTest" {
         .{
             .instant = .{
                 .timestamp = 1697316872549526016,
-                .timezone = .UTC,
             },
             .datetime = .{
                 .year = 2023,

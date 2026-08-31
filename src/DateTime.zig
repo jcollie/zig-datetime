@@ -207,8 +207,6 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 .Z => try print.offset(writer, self.offset, .colon),
                 .ZZ => try print.offset(writer, self.offset, .none),
 
-                // .z => try writer.writeAll(@tagName(self.timezone)),
-
                 // .x => try writer.print("{}", .{self.toUnixMilli()}),
                 // .X => try writer.print("{}", .{self.toUnix()}),
             },

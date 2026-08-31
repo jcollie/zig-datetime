@@ -89,7 +89,6 @@ pub fn atInstant(self: TimeZone, instant: Instant) DateTime {
 
     const shifted: Instant = .{
         .timestamp = instant.timestamp + @as(i128, local_type.offset) * std.time.ns_per_s,
-        .timezone = instant.timezone,
     };
     var datetime = shifted.asDateTime();
     datetime.offset = local_type.offset;
