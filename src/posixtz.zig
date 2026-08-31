@@ -52,12 +52,21 @@ pub const Rule = union(enum) {
         weekday: DayOfWeek,
     },
 
-    /// Returns the day of the month this rule picks out in `year`.
-    fn dayOfMonth(self: Rule, year: Year) struct { month: Month, day: Day } {
+    /// Returns the day this rule picks out in `year`, as a day number
+    /// counted from the epoch.
+    ///
+    /// `january_first` is that year's first of January, already converted.
+    /// Taking it rather than working it out is what keeps this off the
+    /// calendar: everything here is arithmetic on a day number, and a
+    /// caller asking about three years in a row converts once and steps
+    /// between them by the length of a year. Converting inside would put
+    /// two conversions behind every switch and twelve behind every
+    /// `Posix.spanAt`.
+    fn dayNumber(self: Rule, year: Year, january_first: Date.DaysType) Date.DaysType {
         switch (self) {
             .month_week_day => |spec| {
-                const first: Date = .{ .year = year, .month = spec.month, .day = 1 };
-                const first_weekday = @intFromEnum(first.dayOfWeek());
+                const first_of_month = january_first + spec.month.daysBefore(year);
+                const first_weekday = @intFromEnum(DayOfWeek.fromDaysSinceStartOfEra(first_of_month));
                 const wanted = @intFromEnum(spec.weekday);
 
                 // The first `wanted` weekday of the month, then forward by
@@ -68,7 +77,7 @@ pub const Rule = union(enum) {
                 const last = spec.month.lastDay(year);
                 while (day > last) day -= 7;
 
-                return .{ .month = spec.month, .day = @intCast(day) };
+                return first_of_month + day - 1;
             },
             .julian_no_leap, .julian => {
                 const leap = Month.Feb.lastDay(year) == 29;
@@ -82,15 +91,20 @@ pub const Rule = union(enum) {
                     else => unreachable,
                 };
 
-                var month: Month = .Jan;
-                var remaining = day_of_year;
-                while (remaining > month.lastDay(year)) {
-                    remaining -= month.lastDay(year);
-                    month = month.next();
-                }
-                return .{ .month = month, .day = @intCast(remaining) };
+                return january_first + day_of_year - 1;
             },
         }
+    }
+
+    /// Returns the day of the month this rule picks out in `year`.
+    ///
+    /// The same answer as `dayNumber` said another way, and the way that
+    /// reads: this is what the rule means, and `dayNumber` is how the hot
+    /// path asks for it.
+    fn dayOfMonth(self: Rule, year: Year) struct { month: Month, day: Day } {
+        const january_first = (Date{ .year = year, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+        const date = Date.fromDaysSinceStartOfEra(self.dayNumber(year, january_first));
+        return .{ .month = date.month, .day = date.day };
     }
 
     test dayOfMonth {
@@ -128,10 +142,8 @@ pub const Transition = struct {
 
     /// Returns the Unix timestamp at which this transition happens in
     /// `year`, given the UTC offset in effect just before it.
-    fn timestamp(self: Transition, year: Year, offset_before: i32) i64 {
-        const day = self.rule.dayOfMonth(year);
-        const date: Date = .{ .year = year, .month = day.month, .day = day.day };
-        const midnight = @as(i64, date.toDaysSinceStartOfEra()) * std.time.s_per_day;
+    fn timestamp(self: Transition, year: Year, offset_before: i32, january_first: Date.DaysType) i64 {
+        const midnight = @as(i64, self.rule.dayNumber(year, january_first)) * std.time.s_per_day;
         return midnight + self.time - offset_before;
     }
 
@@ -143,7 +155,8 @@ pub const Transition = struct {
             .rule = .{ .month_week_day = .{ .month = .Mar, .week = 2, .weekday = .Sun } },
         };
 
-        const at = transition.timestamp(2024, -6 * std.time.s_per_hour);
+        const january_first = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+        const at = transition.timestamp(2024, -6 * std.time.s_per_hour, january_first);
         try std.testing.expectEqual(@as(i64, 1710057600), at);
     }
 };
@@ -187,91 +200,260 @@ pub const Posix = struct {
     /// `Date` can hold have no year beyond them to look at and the bounds
     /// come back open; past `Date.min_seconds` and `Date.max_seconds`
     /// there is no year at all and everything saturates. The result stays
-    /// total either way, and `typeAt`, which needs only its own year, can
-    /// disagree with it out there.
+    /// total either way.
     ///
-    /// The bounds come from the switches either side of it, which may
-    /// belong to the neighbouring years, so the switches for three years
-    /// are computed and the pair bracketing `timestamp` is taken.
+    /// The bounds are the nearest switch either side, and a switch either
+    /// side may belong to a neighbouring year, since a switch time can be
+    /// up to 167 hours off its day and so spill out of the year that
+    /// names it. So the work is: convert `timestamp` to a local date once
+    /// to name its year, evaluate that year's two switches, and take the
+    /// neighbouring years' as well unless it can be shown they cannot
+    /// help. `spanAtScanning` is the same thing with nothing shown and
+    /// every year evaluated, and a test holds the two against each other.
+    ///
+    /// Naming the year is the expensive part, so the neighbours are
+    /// reached by stepping the first of January by a year's length rather
+    /// than converting again, and every switch is worked out as an offset
+    /// from that one day number.
     pub fn spanAt(self: Posix, timestamp: i64) Span {
         const dst = self.dst orelse return .{
-            .local_type = .{
-                .offset = self.std_offset,
-                .is_dst = false,
-                .designation = self.std_designation,
-            },
+            .local_type = self.localType(false),
             .start = std.math.minInt(i64),
             .end = std.math.maxInt(i64),
         };
 
         // Which year's rules apply is decided in local standard time,
         // which is what POSIX means by the rules being "local".
-        // Saturating, because a caller may hand in any `i64` and the
-        // sum of an extreme one and an offset is not one.
+        // Saturating, because a caller may hand in any `i64` and the sum
+        // of an extreme one and an offset is not one.
         const local = timestamp +| self.std_offset;
-        const year = Date.fromDaysSinceStartOfEra(Date.daysFromSecondsSaturating(local)).year;
+        const days = Date.daysFromSecondsSaturating(local);
 
-        // Each switch is expressed in the time that is in effect just
-        // before it happens: standard time going in, daylight time coming
-        // back out.
-        // Each switch is carried with what it opens, so that the walk
-        // below knows which kind bounded the span without working the
-        // question out a second time from the answer.
-        const Switch = struct { at: i64, opens_dst: bool };
+        // The year, and its first of January. Every switch below is an
+        // offset from that one day number, which is what keeps the
+        // calendar out of the rest of this.
+        const placed = Date.yearAndFirstDay(days);
+        const year = placed.year;
+        const january_first = placed.january_first;
 
-        var switches: [6]Switch = undefined;
-        var count: usize = 0;
-        // Saturating again: `year` may already be the first or last a
-        // `Year` can hold, when the timestamp was outside the calendar.
-        // A repeated year only puts a duplicate in the list below, which
-        // the sort and the walk do not mind.
-        for ([_]Year{ year -| 1, year, year +| 1 }) |each| {
-            switches[count] = .{
-                .at = dst.start.timestamp(each, self.std_offset),
-                .opens_dst = true,
+        const start_at = dst.start.timestamp(year, self.std_offset, january_first);
+        const end_at = dst.end.timestamp(year, dst.offset, january_first);
+        const lower = @min(start_at, end_at);
+        const upper = @max(start_at, end_at);
+
+        // When the instant sits between this year's own two switches, and
+        // both of them are far enough inside the year, no switch of the
+        // neighbouring years can be between them and there is nothing to
+        // gain by working those out.
+        //
+        // Far enough is provable rather than assumed. A switch for year Y
+        // is `dayNumber(Y) * 86400 + time - offset`, where the day is
+        // inside Y, the time is under 168 hours either way, and the offset
+        // is under 25 hours, so no switch of Y reaches more than about
+        // nine days outside Y. Ten is the margin taken here.
+        //
+        // Everything real passes: a rule switching in March and November
+        // is months clear of either end. What does not is the sort of rule
+        // the fuzzer builds, `M1.1.0/167`, and that takes the long way
+        // round. `spanAtScanning` is that long way, and a test compares
+        // the two over every rule and instant it can think of, which is
+        // what says this reasoning holds.
+        const reach = 10 * std.time.s_per_day;
+        const opens = @as(i64, january_first) *| std.time.s_per_day;
+        const closes = (@as(i64, january_first) +| yearLength(year)) *| std.time.s_per_day;
+        const clear_of_the_year = lower > opens +| reach and upper < closes -| reach;
+
+        if (clear_of_the_year and lower <= timestamp and timestamp < upper) {
+            return .{
+                .local_type = self.localType(lower == start_at),
+                .start = lower,
+                .end = upper,
             };
-            count += 1;
-            switches[count] = .{
-                .at = dst.end.timestamp(each, dst.offset),
-                .opens_dst = false,
-            };
-            count += 1;
         }
 
-        const order = struct {
-            fn lessThan(_: void, a: Switch, b: Switch) bool {
-                return a.at < b.at;
-            }
-        };
-        std.mem.sort(Switch, switches[0..count], {}, order.lessThan);
+        const Switch = struct { at: i64, opens_dst: bool };
+        var switches: [6]Switch = undefined;
+        switches[0] = .{ .at = start_at, .opens_dst = true };
+        switches[1] = .{ .at = end_at, .opens_dst = false };
+        var count: usize = 2;
 
+        // Saturating, because `year` may already be the first or last a
+        // `Year` can hold, when the timestamp was outside the calendar.
+        const previous = year -| 1;
+        const next = year +| 1;
+
+        // Which neighbouring years can hold the bound this year is
+        // missing. When the switches are clear of both ends of the year,
+        // every switch of the year before lies below this year's pair and
+        // every switch of the year after lies above it, so only the side
+        // the instant fell off of the pair can supply anything. When they
+        // are not clear, nothing is known and both years are needed.
+        const want_previous = !clear_of_the_year or timestamp < lower;
+        const want_next = !clear_of_the_year or timestamp >= upper;
+
+        // A year equal to its own neighbour is one the arithmetic above
+        // saturated at, and would only repeat switches already in hand.
+        if (want_previous and previous != year) {
+            const first = january_first - yearLength(previous);
+            switches[count] = .{
+                .at = dst.start.timestamp(previous, self.std_offset, first),
+                .opens_dst = true,
+            };
+            switches[count + 1] = .{
+                .at = dst.end.timestamp(previous, dst.offset, first),
+                .opens_dst = false,
+            };
+            count += 2;
+        }
+
+        if (want_next and next != year) {
+            const first = january_first + yearLength(year);
+            switches[count] = .{
+                .at = dst.start.timestamp(next, self.std_offset, first),
+                .opens_dst = true,
+            };
+            switches[count + 1] = .{
+                .at = dst.end.timestamp(next, dst.offset, first),
+                .opens_dst = false,
+            };
+            count += 2;
+        }
+
+        // The span is bounded by the nearest switch either side, which is
+        // one pass rather than a sort: ordering them all only to walk to
+        // the pair straddling the instant is work the answer does not use.
         var start: i64 = std.math.minInt(i64);
         var end: i64 = std.math.maxInt(i64);
         var in_dst = false;
-        for (switches[0..count]) |each| {
-            if (each.at <= timestamp) {
-                start = each.at;
-                // Whether this span is the daylight one follows from
-                // which switch opened it.
-                in_dst = each.opens_dst;
-            } else {
-                end = each.at;
-                break;
+        var have_start = false;
+
+        for (switches[0..count]) |candidate| {
+            if (candidate.at <= timestamp) {
+                if (!have_start or candidate.at > start) {
+                    start = candidate.at;
+                    // Whether the span is the daylight one follows from
+                    // which switch opened it.
+                    in_dst = candidate.opens_dst;
+                    have_start = true;
+                }
+            } else if (candidate.at < end) {
+                end = candidate.at;
             }
         }
 
         return .{
-            .local_type = if (in_dst) .{
-                .offset = dst.offset,
-                .is_dst = true,
-                .designation = dst.designation,
-            } else .{
-                .offset = self.std_offset,
-                .is_dst = false,
-                .designation = self.std_designation,
-            },
+            .local_type = self.localType(in_dst),
             .start = start,
             .end = end,
+        };
+    }
+
+    /// What `spanAt` means, written the slow and obvious way: the switches
+    /// of all three years that could hold one, and the nearest either side
+    /// of `timestamp`.
+    ///
+    /// This exists for the test below to hold `spanAt` against. `spanAt`
+    /// skips years it can show hold nothing, and the reasoning behind
+    /// those skips is the part worth checking against something that does
+    /// no reasoning at all; a shortcut checked only by its own argument is
+    /// how the last two bugs in this file got in.
+    fn spanAtScanning(self: Posix, timestamp: i64) Span {
+        const dst = self.dst orelse return .{
+            .local_type = self.localType(false),
+            .start = std.math.minInt(i64),
+            .end = std.math.maxInt(i64),
+        };
+
+        const local = timestamp +| self.std_offset;
+        const days = Date.daysFromSecondsSaturating(local);
+        const placed = Date.yearAndFirstDay(days);
+        const year = placed.year;
+        const january_first = placed.january_first;
+
+        // Saturating, because `year` may already be the first or last a
+        // `Year` can hold. A repeated year only puts a duplicate in the
+        // list below, which the walk does not mind. The neighbouring
+        // years' first of January is this one's stepped by the length of a
+        // year, which saves converting them.
+        const previous = year -| 1;
+        const next = year +| 1;
+        const years = [_]Year{ previous, year, next };
+        const firsts = [_]Date.DaysType{
+            if (previous == year) january_first else january_first - yearLength(previous),
+            january_first,
+            if (next == year) january_first else january_first + yearLength(year),
+        };
+
+        // The span is bounded by the nearest switch either side, which is
+        // one pass rather than a sort: ordering all six only to walk to
+        // the pair straddling the instant is work the answer does not use.
+        var start: i64 = std.math.minInt(i64);
+        var end: i64 = std.math.maxInt(i64);
+        var in_dst = false;
+        var have_start = false;
+
+        for (years, firsts) |each, first| {
+            const candidates = [_]struct { at: i64, opens_dst: bool }{
+                .{ .at = dst.start.timestamp(each, self.std_offset, first), .opens_dst = true },
+                .{ .at = dst.end.timestamp(each, dst.offset, first), .opens_dst = false },
+            };
+
+            for (candidates) |candidate| {
+                if (candidate.at <= timestamp) {
+                    if (!have_start or candidate.at > start) {
+                        start = candidate.at;
+                        // Whether this span is the daylight one follows
+                        // from which switch opened it.
+                        in_dst = candidate.opens_dst;
+                        have_start = true;
+                    }
+                } else if (candidate.at < end) {
+                    end = candidate.at;
+                }
+            }
+        }
+
+        return .{
+            .local_type = self.localType(in_dst),
+            .start = start,
+            .end = end,
+        };
+    }
+
+    test spanAtScanning {
+        const rule = try parse("CST6CDT,M3.2.0,M11.1.0");
+
+        // The second Sunday of March 2024, an hour before and after.
+        const spring = 1710057600;
+        const before = rule.spanAtScanning(spring - 3600);
+        const after = rule.spanAtScanning(spring + 3600);
+
+        try std.testing.expectEqual(@as(i64, -6 * 3600), before.local_type.offset);
+        try std.testing.expectEqual(@as(i64, -5 * 3600), after.local_type.offset);
+        try std.testing.expectEqual(spring, before.end);
+        try std.testing.expectEqual(spring, after.start);
+
+        // And it is the same answer `spanAt` shortcuts its way to.
+        try std.testing.expectEqual(rule.spanAt(spring - 3600), before);
+        try std.testing.expectEqual(rule.spanAt(spring + 3600), after);
+    }
+
+    /// This rule's daylight or standard type, whichever was asked for.
+    ///
+    /// `spanAt` and `spanAtScanning` return from several places between
+    /// them and all of them need it, which is the only reason it is a
+    /// function.
+    fn localType(self: Posix, in_dst: bool) Type {
+        if (in_dst) if (self.dst) |dst| return .{
+            .offset = dst.offset,
+            .is_dst = true,
+            .designation = dst.designation,
+        };
+
+        return .{
+            .offset = self.std_offset,
+            .is_dst = false,
+            .designation = self.std_designation,
         };
     }
 
@@ -286,8 +468,8 @@ pub const Posix = struct {
         try testing.expectEqual(@as(i64, 1710057600), summer.start);
         try testing.expectEqual(@as(i64, 1730617200), summer.end);
 
-        // Midwinter is standard time, and its span is bounded by the switches
-        // in the years either side, which is why three years are computed.
+        // Midwinter is standard time, and its span is bounded by switches in
+        // the years either side, which is why the neighbouring years matter.
         const winter = rule.spanAt(1704067200);
         try testing.expect(!winter.local_type.is_dst);
         try testing.expectEqualStrings("CST", winter.local_type.designation);
@@ -302,15 +484,16 @@ pub const Posix = struct {
     /// Returns the local time type in effect at `timestamp`. The same
     /// caveat as `spanAt` about instants outside the calendar.
     ///
-    /// This used to repeat `spanAt`'s search over one year rather than
-    /// three, which was about a quarter quicker, and it was wrong for
-    /// rules whose two switches do not sit tidily inside the year that
-    /// names them. A switch time may be up to 167 hours either side of
-    /// its day and so spill into a neighbouring year, and two switches
-    /// landing in the same week can swap order from year to year. Fuzzing
-    /// found both, which is two more than were found by reading it, so
-    /// the shortcut is gone rather than patched: the cases it has to be
-    /// right about are not ones anybody has managed to enumerate.
+    /// This used to have a search of its own, over one year rather than
+    /// three, and it was wrong for rules whose two switches do not sit
+    /// tidily inside the year that names them: a switch time may be up to
+    /// 167 hours either side of its day and so spill into a neighbouring
+    /// year, and two switches landing in the same week can swap order
+    /// from year to year. Fuzzing found both, which is two more than
+    /// reading it found, so it defers to `spanAt` and there is one search
+    /// to be right about. The speed that cost is back in `spanAt`, where
+    /// skipping a year is conditional on being able to show it holds
+    /// nothing rather than on the rule looking ordinary.
     pub fn typeAt(self: Posix, timestamp: i64) Type {
         return self.spanAt(timestamp).local_type;
     }
@@ -373,6 +556,112 @@ pub fn parse(text: []const u8) ParseError!Posix {
             .end = end,
         },
     };
+}
+
+/// How many days `year` has, which is how the rule evaluation steps from
+/// one year's first of January to its neighbour's without converting one.
+fn yearLength(year: Year) Date.DaysType {
+    return if (Month.Feb.lastDay(year) == 29) 366 else 365;
+}
+
+test "the shortcut in spanAt agrees with a full scan" {
+    // Every rule this file, its tests and the fuzzer's seeds have thought
+    // of, including the ones whose switches land outside the year they
+    // belong to and so cannot take the shortcut at all.
+    const rules = [_][]const u8{
+        "UTC0",
+        "EST5",
+        "<-03>3",
+        "IST-5:30",
+        "EST5EDT,M3.2.0,M11.1.0",
+        "CST6CDT,M3.2.0/2,M11.1.0/2",
+        "AEST-10AEDT,M10.1.0,M4.1.0", // southern, so the span crosses the new year
+        "CST6CDT,J60,J300",
+        "CST6CDT,59,300",
+        "CST6CDT,M3.5.0,M11.1.0",
+        "CST6CDT,M1.1.0,M12.5.6", // switches in the first and last weeks
+        "CST6CDT,J1,J365",
+        "CST6CDT,0,365",
+        "AAA0BBB,M1.1.0/167,M1.1.0/-167", // a week either side of the year's edge
+        "AAA0BBB,M12.5.6/167,M1.1.0/-167",
+        "AAA24BBB24,M1.1.0,M2.1.0", // the largest offsets POSIX allows
+        "AAA-24BBB-24,M12.1.0,M1.1.0",
+        // The first Sunday of January less a day is January in most
+        // years and the December before in the rest, so one year's switch
+        // can land inside the year before's pair. 2022 into 2023 is such
+        // a pair of years, and is inside the sweep below.
+        "AAA0BBB,M1.1.0/-24,J365/12",
+        "AAA0BBB,J1/12,M12.5.0/167", // and the same shape at the other end
+        "AAA0BBB,J1,J1", // a rule whose two switches coincide
+        "AAA0BBB,M6.1.0/24,M6.1.0/24",
+    };
+
+    for (rules) |text| {
+        const rule = try parse(text);
+
+        // A coarse sweep, at a step that is not a divisor of a day so
+        // that it walks over every hour of the clock in turn.
+        var at: i64 = 1704067200 - 2 * 365 * std.time.s_per_day;
+        while (at < 1704067200 + 2 * 365 * std.time.s_per_day) : (at += 7 * 3600 + 13) {
+            try std.testing.expectEqual(rule.spanAtScanning(at), rule.spanAt(at));
+        }
+
+        // And a fine one either side of the new year, second by second
+        // through the hours the shortcut's margin is reasoning about.
+        for ([_]i64{ 1703980800, 1704067200, 1735516800, 1735603200 }) |midnight| {
+            var near = midnight - 8 * std.time.s_per_day;
+            while (near < midnight + 8 * std.time.s_per_day) : (near += 997) {
+                try std.testing.expectEqual(rule.spanAtScanning(near), rule.spanAt(near));
+            }
+        }
+
+        // Every switch of a decade, and the seconds either side of it,
+        // since those are the instants the two could most easily place on
+        // opposite sides of.
+        var year: Year = 2015;
+        while (year <= 2025) : (year += 1) {
+            const first = (Date{ .year = year, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+            if (rule.dst) |dst| {
+                for ([_]i64{
+                    dst.start.timestamp(year, rule.std_offset, first),
+                    dst.end.timestamp(year, dst.offset, first),
+                }) |edge| {
+                    for ([_]i64{ -2, -1, 0, 1, 2 }) |delta| {
+                        const probe = edge +| delta;
+                        try std.testing.expectEqual(rule.spanAtScanning(probe), rule.spanAt(probe));
+                    }
+                }
+            }
+        }
+
+        // The ends of the range, where the arithmetic saturates and the
+        // two have to saturate the same way.
+        for ([_]i64{
+            std.math.minInt(i64),     std.math.maxInt(i64),
+            std.math.minInt(i64) + 1, std.math.maxInt(i64) - 1,
+            Date.min_seconds,         Date.max_seconds,
+            Date.min_seconds - 1,     Date.max_seconds + 1,
+            Date.min_seconds + 1,     Date.max_seconds - 1,
+            std.math.minInt(i64) / 4, std.math.maxInt(i64) / 4,
+            std.math.minInt(i32),     std.math.maxInt(i32),
+            0,                        -1,
+        }) |probe| {
+            try std.testing.expectEqual(rule.spanAtScanning(probe), rule.spanAt(probe));
+        }
+    }
+}
+
+test yearLength {
+    try std.testing.expectEqual(@as(Date.DaysType, 366), yearLength(2024));
+    try std.testing.expectEqual(@as(Date.DaysType, 365), yearLength(2025));
+    try std.testing.expectEqual(@as(Date.DaysType, 365), yearLength(2100));
+    try std.testing.expectEqual(@as(Date.DaysType, 366), yearLength(2000));
+
+    // And it is the distance between two consecutive first of Januaries,
+    // which is the only reason it is here.
+    const first = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+    const second = (Date{ .year = 2025, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+    try std.testing.expectEqual(yearLength(2024), second - first);
 }
 
 /// A position in the string, with the small operations the grammar is

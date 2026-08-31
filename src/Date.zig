@@ -174,6 +174,78 @@ pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
     };
 }
 
+/// The year a day number falls in, together with the day number of that
+/// year's first of January.
+///
+/// `fromDaysSinceStartOfEra` answers this too, by way of a month and a
+/// day that then have to be added back up. This stops short of them.
+/// The algorithm counts years from March so that the leap day lands at
+/// the end of one, which is why there is a year to name before there is a
+/// month: the March-based day of year decides which side of the new year
+/// the date falls on, and the first of January is that many days back
+/// plus or minus the run from January to March.
+///
+/// `posixtz` works out every switch of a rule as an offset from the first
+/// of January, and this is where that day comes from.
+pub fn yearAndFirstDay(days: DaysType) struct { year: Year, january_first: DaysType } {
+    const z = days + 719468;
+
+    const era = @divTrunc(if (z >= 0) z else z - 146096, 146097);
+
+    const day_of_era = (z - era * 146097);
+    std.debug.assert(day_of_era >= 0 and day_of_era <= 146096);
+
+    const year_of_era = @divTrunc(day_of_era - @divTrunc(day_of_era, 1460) + @divTrunc(day_of_era, 36524) - @divTrunc(day_of_era, 146096), 365);
+    std.debug.assert(year_of_era >= 0 and year_of_era <= 399);
+
+    const year_0 = year_of_era + era * 400;
+
+    const day_of_year = day_of_era - (365 * year_of_era + @divTrunc(year_of_era, 4) - @divTrunc(year_of_era, 100));
+    std.debug.assert(day_of_year >= 0 and day_of_year <= 365);
+
+    // The last 59 or 60 days of a March-based year are the January and
+    // February of the next calendar one, and 306 is the run from the
+    // first of March to the end of December.
+    if (day_of_year < 306) {
+        const year: Year = @intCast(year_0);
+        const before_march: DaysType = if (leap.is(year)) 60 else 59;
+        return .{ .year = year, .january_first = days - day_of_year - before_march };
+    }
+
+    return .{
+        .year = @intCast(year_0 + 1),
+        .january_first = days - day_of_year + 306,
+    };
+}
+
+test yearAndFirstDay {
+    const new_year = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+
+    // A day names its own year, and the first of January names itself.
+    const opening = yearAndFirstDay(new_year);
+    try std.testing.expectEqual(@as(Year, 2024), opening.year);
+    try std.testing.expectEqual(new_year, opening.january_first);
+
+    const summer = yearAndFirstDay((Date{ .year = 2024, .month = .Jul, .day = 4 }).toDaysSinceStartOfEra());
+    try std.testing.expectEqual(@as(Year, 2024), summer.year);
+    try std.testing.expectEqual(new_year, summer.january_first);
+
+    // And the day before belongs to the year before.
+    try std.testing.expectEqual(@as(Year, 2023), yearAndFirstDay(new_year - 1).year);
+
+    // It is the same answer the full conversion gives, all the way
+    // through a leap year and the ones either side of it.
+    var day = (Date{ .year = 2023, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+    const last = (Date{ .year = 2025, .month = .Dec, .day = 31 }).toDaysSinceStartOfEra();
+    while (day <= last) : (day += 1) {
+        const date = fromDaysSinceStartOfEra(day);
+        const first = day - (@as(DaysType, date.month.daysBefore(date.year)) + date.day - 1);
+        const placed = yearAndFirstDay(day);
+        try std.testing.expectEqual(date.year, placed.year);
+        try std.testing.expectEqual(first, placed.january_first);
+    }
+}
+
 test fromDaysSinceStartOfEra {
     try std.testing.expectEqual(
         Date{ .year = 1970, .month = .Jan, .day = 1 },
