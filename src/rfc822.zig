@@ -174,9 +174,8 @@ fn digits(left: *[]const u8, min_len: usize, max_len: usize) ParseError!Digits {
     std.debug.assert(max_len <= 4);
     const str = read.int(left.*, max_len);
     if (str.len < min_len) return error.ParseError;
-    const value = std.fmt.parseInt(u16, str, 10) catch return error.ParseError;
     left.* = left.*[str.len..];
-    return .{ .value = value, .len = str.len };
+    return .{ .value = @intCast(read.digits(str)), .len = str.len };
 }
 
 /// The named zones of RFC 822 section 5.1, as seconds east of UTC, plus
