@@ -291,4 +291,15 @@ needs.
 ```sh
 zig build test                  # system data only; embedded tests skip
 zig build test -Dembed-tzdata   # everything, including embedded-vs-system agreement
+zig build bench                 # always ReleaseFast, whatever -Doptimize says
 ```
+
+## Reading the docs locally
+
+```sh
+zig build docs-serve            # http://127.0.0.1:8000, -Ddocs-port=N to change
+```
+
+A server rather than opening `zig-out/docs/index.html`, because the
+viewer fetches `sources.tar` and `main.wasm` at runtime and a browser
+refuses those from a `file://` page.
