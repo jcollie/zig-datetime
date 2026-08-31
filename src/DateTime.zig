@@ -530,11 +530,46 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
         break :tokens &final;
     };
 
+    // Which of the date fields the format string speaks for. A day of the
+    // year names a month and a day between them, so it counts as both.
+    const mentions = comptime mentions: {
+        var year = false;
+        var month = false;
+        var day = false;
+        for (tokens) |token| switch (token) {
+            .tag => |tag| switch (tag) {
+                .YYYY, .YY, .Y, .y, .yy, .yyy, .yyyy => year = true,
+                .MMMM, .MMM, .MM, .M, .Mo => month = true,
+                .DD, .D, .Do => day = true,
+                .DDDD, .DDD, .DDDo => {
+                    month = true;
+                    day = true;
+                },
+                else => {},
+            },
+            .literal => {},
+        };
+        break :mentions .{ .year = year, .month = month, .day = day };
+    };
+
     var datetime: DateTime = relative_to;
     datetime.hour = 0;
     datetime.minute = 0;
     datetime.second = 0;
     datetime.nanosecond = 0;
+
+    // moment fills the date fields the format string left out by walking
+    // year, month, day in that order: the ones before the first field the
+    // string does speak for come from the reference, and everything after
+    // it takes its lowest value instead. So "2024" against `YYYY` is the
+    // first of January and not the reference's month and day, while a
+    // string naming only a time keeps the whole reference date.
+    if (mentions.year) {
+        if (!mentions.month) datetime.month = .Jan;
+        if (!mentions.day) datetime.day = 1;
+    } else if (mentions.month) {
+        if (!mentions.day) datetime.day = 1;
+    }
 
     var am_pm: AmPm = .none;
     var day_of_week: ?DayOfWeek = null;
@@ -550,9 +585,15 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
             .tag => |tag| {
                 switch (tag) {
                     .YY => {
-                        const year = read.int(left, 2);
-                        datetime.year = @as(Year, @intCast(read.digits(year))) + 2000;
-                        left = left[year.len..];
+                        const str = read.int(left, 2);
+                        if (str.len != 2) return error.ParseError;
+
+                        // moment's window: 69 through 99 are the twentieth
+                        // century and 00 through 68 are this one, which is
+                        // the POSIX rule and puts the break at 1969.
+                        const value_ = @as(Year, @intCast(read.digits(str)));
+                        datetime.year = value_ + (if (value_ > 68) @as(Year, 1900) else 2000);
+                        left = left[str.len..];
                     },
                     .YYYY, .Y, .y, .yy, .yyy, .yyyy => {
                         datetime.year = year: {
@@ -675,7 +716,12 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             }
                             const hour = read.digits(str);
                             switch (tag) {
-                                .HH, .H => if (hour >= 24) return error.ParseError,
+                                // 24 is allowed, and means the end of the
+                                // day rather than an hour in it. It is
+                                // carried into the next day below, once
+                                // the minutes and seconds are known to be
+                                // zero, which is moment's rule.
+                                .HH, .H => if (hour > 24) return error.ParseError,
                                 .hh, .h => if (hour < 1 or hour > 12) return error.ParseError,
                                 else => unreachable,
                             }
@@ -848,15 +894,14 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             if (hours.len != 2) return error.ParseError;
                             left = left[hours.len..];
 
-                            // The colon is what separates the two forms, so
-                            // it is required by Z and rejected by ZZ.
-                            if (tag == .Z) {
-                                if (left.len == 0 or left[0] != ':') return error.ParseError;
-                                left = left[1..];
-                            }
+                            // Both sequences take either spelling and the
+                            // minutes at all, which is moment's rule:
+                            // +05, +0500 and +05:00 all read the same, for
+                            // Z and for ZZ alike.
+                            if (left.len > 0 and left[0] == ':') left = left[1..];
 
                             const minutes = read.int(left, 2);
-                            if (minutes.len != 2) return error.ParseError;
+                            if (minutes.len != 0 and minutes.len != 2) return error.ParseError;
                             left = left[minutes.len..];
 
                             const hour: i32 = @intCast(read.digits(hours));
@@ -941,6 +986,22 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
         }
         datetime.month = month;
         datetime.day = @intCast(remaining);
+    }
+
+    // An hour of 24 is the end of the day rather than an hour in it, and
+    // only when nothing smaller was named: moment reads 24:00 as the
+    // following midnight and rejects 24:00:01. The date has to move, so
+    // this happens before the day is checked and the weekday recomputed.
+    if (datetime.hour == 24) {
+        if (datetime.minute != 0 or datetime.second != 0 or datetime.nanosecond != 0) {
+            return error.ParseError;
+        }
+        datetime.hour = 0;
+
+        const next = Date.fromDaysSinceStartOfEra(datetime.asDate().toDaysSinceStartOfEra() + 1);
+        datetime.year = next.year;
+        datetime.month = next.month;
+        datetime.day = next.day;
     }
 
     // A day number is checked against 31 as it is read, because the month
@@ -1112,6 +1173,95 @@ pub fn toUtc(self: DateTime) DateTime {
     };
 }
 
+test "an hour of 24 is the end of the day" {
+    // moment reads 24:00 as the following midnight rather than refusing
+    // it, and refuses it once anything smaller is not zero.
+    const rolled = try parse("YYYY-MM-DD HH:mm", "2024-03-15 24:00");
+    try std.testing.expectEqual(@as(Day, 16), rolled.value.day);
+    try std.testing.expectEqual(@as(Hour, 0), rolled.value.hour);
+    try std.testing.expectEqual(DayOfWeek.Sat, rolled.value.weekday);
+
+    // It rolls the month and the year with it.
+    const year_end = try parse("YYYY-MM-DD HH:mm", "2024-12-31 24:00");
+    try std.testing.expectEqual(@as(Year, 2025), year_end.value.year);
+    try std.testing.expectEqual(Month.Jan, year_end.value.month);
+    try std.testing.expectEqual(@as(Day, 1), year_end.value.day);
+
+    try std.testing.expectError(
+        error.ParseError,
+        parse("YYYY-MM-DD HH:mm:ss", "2024-03-15 24:00:01"),
+    );
+    try std.testing.expectError(error.ParseError, parse("HH:mm", "25:00"));
+}
+
+test "a two digit year is windowed the way moment windows it" {
+    // 69 through 99 are the twentieth century, 00 through 68 are this one.
+    // The break is at 1969, which is the POSIX rule moment follows.
+    try std.testing.expectEqual(@as(Year, 1969), (try parse("YY", "69")).value.year);
+    try std.testing.expectEqual(@as(Year, 1999), (try parse("YY", "99")).value.year);
+    try std.testing.expectEqual(@as(Year, 2068), (try parse("YY", "68")).value.year);
+    try std.testing.expectEqual(@as(Year, 2000), (try parse("YY", "00")).value.year);
+
+    // Two digits, not one and not three.
+    try std.testing.expectError(error.ParseError, parse("YY", "7"));
+}
+
+test "either spelling of an offset parses, for both sequences" {
+    // moment takes Z, +05, +0500 and +05:00 for `Z` and for `ZZ` alike,
+    // rather than one form each.
+    inline for (.{ "Z", "ZZ" }) |fmt| {
+        try std.testing.expectEqual(@as(i32, 0), (try parse(fmt, "Z")).value.offset);
+        try std.testing.expectEqual(
+            @as(i32, -5 * std.time.s_per_hour),
+            (try parse(fmt, "-05:00")).value.offset,
+        );
+        try std.testing.expectEqual(
+            @as(i32, -5 * std.time.s_per_hour),
+            (try parse(fmt, "-0500")).value.offset,
+        );
+        try std.testing.expectEqual(
+            @as(i32, -5 * std.time.s_per_hour),
+            (try parse(fmt, "-05")).value.offset,
+        );
+        try std.testing.expectEqual(
+            @as(i32, 5 * std.time.s_per_hour + 45 * std.time.s_per_min),
+            (try parse(fmt, "+05:45")).value.offset,
+        );
+    }
+}
+
+test "the fields a format string leaves out" {
+    // moment walks year, month, day: the fields before the first one the
+    // format string speaks for come from the reference, and the ones after
+    // it take their lowest value.
+    const reference: DateTime = .{ .year = 2001, .month = .Sep, .day = 9 };
+
+    // The year is named, so the month and day are January the first
+    // rather than September the ninth.
+    const year_only = try parseRelativeTo("YYYY", reference, "2024");
+    try std.testing.expectEqual(@as(Year, 2024), year_only.value.year);
+    try std.testing.expectEqual(Month.Jan, year_only.value.month);
+    try std.testing.expectEqual(@as(Day, 1), year_only.value.day);
+
+    // The month is named but the year is not, so the year comes from the
+    // reference and the day drops to the first.
+    const month_and_day = try parseRelativeTo("MM-DD", reference, "03-15");
+    try std.testing.expectEqual(@as(Year, 2001), month_and_day.value.year);
+    try std.testing.expectEqual(Month.Mar, month_and_day.value.month);
+    try std.testing.expectEqual(@as(Day, 15), month_and_day.value.day);
+
+    const month_only = try parseRelativeTo("MM", reference, "03");
+    try std.testing.expectEqual(@as(Year, 2001), month_only.value.year);
+    try std.testing.expectEqual(@as(Day, 1), month_only.value.day);
+
+    // Nothing about the date is named, so all of it is the reference's.
+    const time_only = try parseRelativeTo("HH:mm", reference, "14:30");
+    try std.testing.expectEqual(@as(Year, 2001), time_only.value.year);
+    try std.testing.expectEqual(Month.Sep, time_only.value.month);
+    try std.testing.expectEqual(@as(Day, 9), time_only.value.day);
+    try std.testing.expectEqual(@as(Hour, 14), time_only.value.hour);
+}
+
 test "a day is checked against the month it landed in" {
     // A day number is read before the month it belongs to is necessarily
     // known, so it is checked against 31 there and against the real month
@@ -1160,8 +1310,8 @@ test "parseTest" {
             .value = "70",
             .fmt = "YY",
             .expected = .{
-                .year = 2070,
-                .weekday = .Wed,
+                .year = 1970,
+                .weekday = .Thu,
             },
         },
         .{
