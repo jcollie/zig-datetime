@@ -15,27 +15,23 @@
     }:
 
     let
-      packages =
+      inherit (nixpkgs) lib;
+      makePackages =
         system:
         import nixpkgs {
           inherit system;
         };
-      forAllSystems = (
-        function:
-        nixpkgs.lib.genAttrs [
-          "aarch64-linux"
-          "aarch64-darwin"
-          "x86_64-linux"
-          "x86_64-darwin"
-        ] (system: function (packages system))
-      );
+      forAllSystems = lib.genAttrs lib.systems.flakeExposed;
     in
     {
       devShells = forAllSystems (
-        pkgs:
+        system:
         let
-          zig_0_16 = pkgs.mkShell {
-            name = "zig-datetime-0.16";
+          pkgs = makePackages system;
+        in
+        {
+          default = pkgs.mkShell {
+            name = "zig-datetime";
             nativeBuildInputs = [
               pkgs.zig_0_16
               pkgs.pinact
@@ -50,29 +46,7 @@
               # .forgejo/workflows/test.yaml.
               pkgs.git-pages-cli
             ];
-
-            # Naming cacert above only puts it in the closure; curl still
-            # has to be told where the bundle is, so that the shell does not
-            # depend on the surrounding system having said so.
-            #
-            # This does nothing for `zig fetch`, whose trust store is a
-            # hardcoded list of system paths that no environment variable
-            # can redirect. tools/update-tzdata.sh works around that by
-            # downloading with curl and hashing the local file.
-            #
-            # It has to be the shellHook rather than a plain attribute:
-            # `nix develop` manages the certificate variables itself and
-            # overwrites an attribute of the same name, but the hook runs
-            # afterwards and wins.
-            shellHook = ''
-              export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-              export NIX_SSL_CERT_FILE="$SSL_CERT_FILE"
-            '';
           };
-        in
-        {
-          inherit zig_0_16;
-          default = zig_0_16;
         }
       );
     };
