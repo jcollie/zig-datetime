@@ -404,6 +404,65 @@ test formatAllocSentinel {
     try std.testing.expectEqual(@as(u8, 0), text.ptr[text.len]);
 }
 
+/// What the week sequences said, before it is turned into a date.
+///
+/// The two families are kept apart because they default differently. `W`,
+/// `GG` and `E` count the ISO way, where a missing week is week 1; `w`,
+/// `gg`, `d` and `e` count the English-language way, where a missing week
+/// is the reference's own week. moment splits them the same way and for
+/// the same reason.
+const Week = struct {
+    year: ?Year = null,
+    week: ?u16 = null,
+    weekday: ?DayOfWeek = null,
+    local_weekday: ?DayOfWeek = null,
+    iso_year: ?Year = null,
+    iso_week: ?u16 = null,
+    iso_weekday: ?DayOfWeek = null,
+
+    /// Whether anything was said about a week at all.
+    fn any(self: Week) bool {
+        return self.year != null or self.week != null or self.weekday != null or
+            self.local_weekday != null or self.iso_year != null or
+            self.iso_week != null or self.iso_weekday != null;
+    }
+
+    /// Whether the ISO family was used, which is what picks the rule.
+    fn isIso(self: Week) bool {
+        return self.iso_year != null or self.iso_week != null or self.iso_weekday != null;
+    }
+};
+
+/// Turns what the week sequences said into a date, filling in what they
+/// did not say from `year` when the format string named one and from
+/// `reference` otherwise.
+///
+/// This is only reached when the format string named neither a month nor a
+/// day, because a week is a way of naming a date and there is nothing for
+/// it to do once the date is named another way. moment gates it the same
+/// way, and treats a weekday alongside a full date as a claim to check
+/// rather than a date to build.
+fn resolveWeek(self: Week, year: ?Year, reference: Date) ParseError!Date {
+    if (self.isIso()) {
+        const week_year = self.iso_year orelse year orelse reference.isoWeek().year;
+        const week = self.iso_week orelse 1;
+        const weekday = self.iso_weekday orelse .Mon;
+
+        if (week < 1 or week > Date.weeksInYear(week_year, .Mon, 4)) return error.ParseError;
+        return Date.fromWeek(week_year, week, weekday, .Mon, 4);
+    }
+
+    const week_year = self.year orelse year orelse reference.localeWeek().year;
+
+    // A missing week is the reference's own, which is what makes a bare
+    // `d` mean "that weekday, this week" rather than "in week one".
+    const week = self.week orelse reference.localeWeek().week;
+    const weekday = self.weekday orelse self.local_weekday orelse .Sun;
+
+    if (week < 1 or week > Date.weeksInYear(week_year, .Sun, 1)) return error.ParseError;
+    return Date.fromWeek(week_year, week, weekday, .Sun, 1);
+}
+
 const AmPm = enum {
     none,
     am,
@@ -462,12 +521,18 @@ test parse {
 /// always default to zero. A parsed day of the week is checked against the
 /// computed date and `error.ParseError` is returned on mismatch.
 ///
-/// The quarter (`Q`), the two week-of-year families (`w` and `W`) and
-/// their week-numbering years (`gg` and `GG`) name no date on their own
-/// and cannot be parsed. The tokenizer runs at comptime, so a
-/// format string using one is rejected while this is being compiled: the
-/// `error.IllegalToken` it raises there surfaces as a compile error and
-/// never reaches a caller.
+/// A week names a date, so the week sequences are parsed: `w` and `W`
+/// with their week-numbering years `gg` and `GG`, together with a weekday
+/// from `d`, `e` or `E`, build a date between them when the format string
+/// names neither a month nor a day. What each of them defaults to when the
+/// string leaves it out is `resolveWeek`.
+///
+/// Some sequences still name no date and cannot be parsed: the quarter
+/// (`Q`), the era (`N`), the zone name (`z`), the Unix timestamps (`X` and
+/// `x`), and the run-together hour and minute (`Hmm`). The tokenizer runs
+/// at comptime, so a format string using one is rejected while this is
+/// being compiled: the `error.IllegalToken` it raises there surfaces as a
+/// compile error and never reaches a caller.
 pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime, value: []const u8) ParseError!ParseResult {
     const expanded = comptime formatsequence.expandLocalized(format_string);
 
@@ -499,16 +564,6 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         .zz,
                         .ggggg,
                         .GGGGG,
-                        .w,
-                        .wo,
-                        .ww,
-                        .W,
-                        .Wo,
-                        .WW,
-                        .gg,
-                        .gggg,
-                        .GG,
-                        .GGGG,
                         => return error.IllegalToken,
                         else => {},
                     },
@@ -574,6 +629,13 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
     var am_pm: AmPm = .none;
     var day_of_week: ?DayOfWeek = null;
     var day_of_year: ?u16 = null;
+
+    // The week sequences, kept apart by family: `w`, `gg` and `d` count
+    // weeks the English-language way and `W`, `GG` and `E` the ISO way,
+    // and the two default what they are not told differently. See
+    // `resolveWeek`.
+    var week: Week = .{};
+
     var left = value;
 
     // Unrolled, as `format` does with the same token list. The tokens are
@@ -838,6 +900,60 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         };
                         left = left[result.str.len..];
                         day_of_week = result.value;
+                        week.weekday = result.value;
+                    },
+                    .w, .ww, .wo, .W, .WW, .Wo => {
+                        const parsed = number: {
+                            const str = read.int(left, 2);
+                            if (str.len == 0) return error.ParseError;
+                            switch (tag) {
+                                .ww, .WW => if (str.len != 2) return error.ParseError,
+                                else => {},
+                            }
+                            left = left[str.len..];
+                            break :number read.digits(str);
+                        };
+
+                        switch (tag) {
+                            .wo, .Wo => {
+                                for (1..left.len + 1) |l| {
+                                    if (ordinal.map.get(left[0..l])) |_| {
+                                        left = left[l..];
+                                        break;
+                                    }
+                                } else return error.ParseError;
+                            },
+                            else => {},
+                        }
+
+                        switch (tag) {
+                            .w, .ww, .wo => week.week = @intCast(parsed),
+                            .W, .WW, .Wo => week.iso_week = @intCast(parsed),
+                            else => unreachable,
+                        }
+                    },
+                    .gg, .gggg, .GG, .GGGG => {
+                        const width: usize = switch (tag) {
+                            .gg, .GG => 2,
+                            else => 4,
+                        };
+
+                        const str = read.int(left, width);
+                        if (str.len != width) return error.ParseError;
+                        left = left[str.len..];
+
+                        const parsed = @as(Year, @intCast(read.digits(str)));
+                        const year = switch (tag) {
+                            // Two digits are windowed the same way `YY` is.
+                            .gg, .GG => parsed + (if (parsed > 68) @as(Year, 1900) else 2000),
+                            else => parsed,
+                        };
+
+                        switch (tag) {
+                            .gg, .gggg => week.year = year,
+                            .GG, .GGGG => week.iso_year = year,
+                            else => unreachable,
+                        }
                     },
                     .d, .e, .E, .do => {
                         day_of_week = dow: {
@@ -846,8 +962,14 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             var dow = read.digits(str);
                             switch (tag) {
                                 .E => {
+                                    // ISO numbers the week Monday 1 to
+                                    // Sunday 7, and `DayOfWeek` numbers it
+                                    // Sunday 0 to Saturday 6, so only
+                                    // Sunday moves. Subtracting one, which
+                                    // is what this used to do, turned every
+                                    // day into the one before it.
                                     if (dow < 1 or dow > 7) return error.ParseError;
-                                    dow -= 1;
+                                    if (dow == 7) dow = 0;
                                 },
                                 .d, .e, .do => {
                                     if (dow > 6) return error.ParseError;
@@ -869,7 +991,21 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                                 .d, .e, .E => {},
                                 else => unreachable,
                             }
-                            break :dow std.enums.fromInt(DayOfWeek, @as(u3, @intCast(dow))) orelse return error.ParseError;
+                            const parsed = std.enums.fromInt(DayOfWeek, @as(u3, @intCast(dow))) orelse
+                                return error.ParseError;
+
+                            // `E` counts the ISO way and the others the
+                            // locale way, which decides both the default
+                            // week and the default week-numbering year if
+                            // the date has to be built from them.
+                            switch (tag) {
+                                .E => week.iso_weekday = parsed,
+                                .e => week.local_weekday = parsed,
+                                .d, .do => week.weekday = parsed,
+                                else => unreachable,
+                            }
+
+                            break :dow parsed;
                         };
                     },
                     .Z, .ZZ => {
@@ -930,16 +1066,6 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                     .zz,
                     .ggggg,
                     .GGGGG,
-                    .w,
-                    .wo,
-                    .ww,
-                    .W,
-                    .Wo,
-                    .WW,
-                    .gg,
-                    .gggg,
-                    .GG,
-                    .GGGG,
                     => {
                         return error.IllegalToken;
                     },
@@ -969,6 +1095,20 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
             if (datetime.hour > 12) return error.ParseError;
             if (datetime.hour < 12) datetime.hour += 12;
         },
+    }
+
+    // A week names a date, so it is only used when the format string named
+    // neither a month nor a day. With a full date already in hand a
+    // weekday is a claim to check instead, which is what happens below.
+    if (week.any() and !mentions.month and !mentions.day) {
+        const from_week = try resolveWeek(
+            week,
+            if (mentions.year) datetime.year else null,
+            relative_to.asDate(),
+        );
+        datetime.year = from_week.year;
+        datetime.month = from_week.month;
+        datetime.day = from_week.day;
     }
 
     if (day_of_year) |doy| {
@@ -1015,6 +1155,9 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
     // is recomputed once here rather than after each of them.
     datetime.updateDayOfWeek();
 
+    // The weekday is a check rather than a source when the date was named
+    // outright; when the date was built from a week it came from this in
+    // the first place and agrees by construction.
     if (day_of_week) |dow| {
         if (datetime.weekday != dow) return error.ParseError;
     }
@@ -1171,6 +1314,60 @@ pub fn toUtc(self: DateTime) DateTime {
         .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
         .offset = 0,
     };
+}
+
+test "the ISO weekday sequence numbers the week from Monday" {
+    // `E` is Monday 1 through Sunday 7, which is not how `DayOfWeek`
+    // numbers itself, and the conversion used to be off by a day.
+    const reference: DateTime = .{ .year = 2001, .month = .Sep, .day = 9 };
+
+    try std.testing.expectEqual(
+        Date{ .year = 2001, .month = .Jan, .day = 1 },
+        (try parseRelativeTo("E", reference, "1")).value.asDate(),
+    );
+    try std.testing.expectEqual(
+        Date{ .year = 2001, .month = .Jan, .day = 4 },
+        (try parseRelativeTo("E", reference, "4")).value.asDate(),
+    );
+    try std.testing.expectEqual(
+        Date{ .year = 2001, .month = .Jan, .day = 7 },
+        (try parseRelativeTo("E", reference, "7")).value.asDate(),
+    );
+
+    try std.testing.expectError(error.ParseError, parseRelativeTo("E", reference, "0"));
+    try std.testing.expectError(error.ParseError, parseRelativeTo("E", reference, "8"));
+}
+
+test "a week names a date when nothing else does" {
+    // A week is a way of naming a date, so it builds one when the format
+    // string named neither a month nor a day.
+    const reference: DateTime = .{ .year = 2001, .month = .Sep, .day = 9 };
+
+    // ISO: a missing week is week 1, and a missing weekday is Monday.
+    try std.testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 15 },
+        (try parseRelativeTo("GGGG-[W]WW-E", reference, "2024-W11-5")).value.asDate(),
+    );
+
+    // The English-language rule instead defaults a missing week to the
+    // reference's own, which is what makes a bare `d` mean that weekday
+    // of this week.
+    try std.testing.expectEqual(
+        Date{ .year = 2001, .month = .Sep, .day = 13 },
+        (try parseRelativeTo("d", reference, "4")).value.asDate(),
+    );
+
+    // With a month and a day named there is nothing for the week to do,
+    // and the weekday goes back to being a claim that has to hold.
+    _ = try parseRelativeTo("dddd, D MMMM YYYY", reference, "Friday, 15 March 2024");
+    try std.testing.expectError(
+        error.ParseError,
+        parseRelativeTo("dddd, D MMMM YYYY", reference, "Monday, 15 March 2024"),
+    );
+
+    // A week that the year does not have is refused.
+    try std.testing.expectError(error.ParseError, parseRelativeTo("GGGG-[W]WW", reference, "2024-W53"));
+    _ = try parseRelativeTo("GGGG-[W]WW", reference, "2026-W53");
 }
 
 test "an hour of 24 is the end of the day" {

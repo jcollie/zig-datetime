@@ -305,11 +305,29 @@ fn firstWeekOffset(year: Year, week_starts_on: DayOfWeek, january_day_in_first_w
 
 /// The number of weeks in `year` under this rule, which is 52 or 53, and
 /// is what a week falling off either end of a year is carried across.
-fn weeksInYear(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: u4) i32 {
+///
+/// Public because parsing needs it to bound a week it was given: week 53
+/// is a real week of some years and not of others.
+pub fn weeksInYear(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: u4) i32 {
     const offset = firstWeekOffset(year, week_starts_on, january_day_in_first_week);
     const next = firstWeekOffset(year + 1, week_starts_on, january_day_in_first_week);
     const days: i32 = if (leap.is(year)) 366 else 365;
     return @divTrunc(days - offset + next, 7);
+}
+
+test weeksInYear {
+    // A year has 53 weeks when it starts on the day the week starts on, or
+    // when a leap year starts the day before.
+    try std.testing.expectEqual(@as(i32, 52), weeksInYear(2024, .Mon, 4));
+    try std.testing.expectEqual(@as(i32, 53), weeksInYear(2026, .Mon, 4));
+    try std.testing.expectEqual(@as(i32, 53), weeksInYear(2020, .Mon, 4));
+
+    // The English-language rule puts January 1st in week 1 and so needs a
+    // 53rd less often; 2020 and 2026 both have one by the ISO rule and
+    // not by this one.
+    try std.testing.expectEqual(@as(i32, 52), weeksInYear(2024, .Sun, 1));
+    try std.testing.expectEqual(@as(i32, 52), weeksInYear(2020, .Sun, 1));
+    try std.testing.expectEqual(@as(i32, 52), weeksInYear(2026, .Sun, 1));
 }
 
 test weekOfYear {
@@ -348,6 +366,103 @@ test isoWeek {
     const yearend = (Date{ .year = 2029, .month = .Dec, .day = 31 }).isoWeek();
     try std.testing.expectEqual(@as(Year, 2030), yearend.year);
     try std.testing.expectEqual(@as(u8, 1), yearend.week);
+}
+
+/// Returns the date `day_of_year` days into `year`, counting from 1.
+///
+/// Values outside the year are carried into its neighbour rather than
+/// refused, so day 0 is the last day of the year before and day 366 of an
+/// ordinary year is the first of the year after. `weekOfYear`'s inverse
+/// needs that, because a week can begin in one year and end in another.
+pub fn fromDayOfYear(year: Year, day_of_year: i32) Date {
+    const length: i32 = if (leap.is(year)) 366 else 365;
+
+    if (day_of_year <= 0) {
+        const previous = year - 1;
+        const before: i32 = if (leap.is(previous)) 366 else 365;
+        return fromDayOfYear(previous, before + day_of_year);
+    }
+    if (day_of_year > length) return fromDayOfYear(year + 1, day_of_year - length);
+
+    var month: Month = .Jan;
+    var remaining = day_of_year;
+    while (remaining > month.lastDay(year)) {
+        remaining -= month.lastDay(year);
+        month = month.next();
+    }
+    return .{ .year = year, .month = month, .day = @intCast(remaining) };
+}
+
+test fromDayOfYear {
+    try std.testing.expectEqual(Date{ .year = 2024, .month = .Jan, .day = 1 }, fromDayOfYear(2024, 1));
+    try std.testing.expectEqual(Date{ .year = 2024, .month = .Mar, .day = 15 }, fromDayOfYear(2024, 75));
+    try std.testing.expectEqual(Date{ .year = 2024, .month = .Dec, .day = 31 }, fromDayOfYear(2024, 366));
+
+    // Out of range carries into the neighbouring year rather than failing.
+    try std.testing.expectEqual(Date{ .year = 2023, .month = .Dec, .day = 31 }, fromDayOfYear(2024, 0));
+    try std.testing.expectEqual(Date{ .year = 2025, .month = .Jan, .day = 1 }, fromDayOfYear(2024, 367));
+    try std.testing.expectEqual(Date{ .year = 2026, .month = .Jan, .day = 1 }, fromDayOfYear(2025, 366));
+}
+
+/// Returns the date of `weekday` in `week` of `week_year`, under a week
+/// rule given the way `weekOfYear` takes one. This is that function's
+/// inverse.
+///
+/// The week may reach outside its numbering year at either end, which is
+/// the whole point of a week-numbering year, so the result can land in the
+/// year before or after: week 1 of 2027 begins on 2026-12-27.
+pub fn fromWeek(
+    week_year: Year,
+    week: u16,
+    weekday: DayOfWeek,
+    week_starts_on: DayOfWeek,
+    january_day_in_first_week: u4,
+) Date {
+    // Where the weekday sits within its week, counting from the day the
+    // week begins on rather than from Sunday.
+    const within_week = @mod(
+        @as(i32, weekday.weekdayNumber()) - @as(i32, week_starts_on.weekdayNumber()),
+        7,
+    );
+
+    const offset = firstWeekOffset(week_year, week_starts_on, january_day_in_first_week);
+    return fromDayOfYear(week_year, 1 + 7 * (@as(i32, week) - 1) + within_week + offset);
+}
+
+test fromWeek {
+    // ISO: Monday starts the week and week 1 holds January 4th.
+    try std.testing.expectEqual(
+        Date{ .year = 2001, .month = .Jan, .day = 4 },
+        fromWeek(2001, 1, .Thu, .Mon, 4),
+    );
+    try std.testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 15 },
+        fromWeek(2024, 11, .Fri, .Mon, 4),
+    );
+
+    // A week can reach outside its numbering year: 2026's week 53 runs to
+    // the Sunday after New Year's Day 2027.
+    try std.testing.expectEqual(
+        Date{ .year = 2027, .month = .Jan, .day = 3 },
+        fromWeek(2026, 53, .Sun, .Mon, 4),
+    );
+    try std.testing.expectEqual(
+        Date{ .year = 2026, .month = .Dec, .day = 28 },
+        fromWeek(2026, 53, .Mon, .Mon, 4),
+    );
+
+    // It is the inverse of `weekOfYear`, under either rule.
+    for ([_]Date{
+        .{ .year = 2024, .month = .Mar, .day = 15 },
+        .{ .year = 2027, .month = .Jan, .day = 1 },
+        .{ .year = 2029, .month = .Dec, .day = 31 },
+    }) |date| {
+        const iso = date.isoWeek();
+        try std.testing.expectEqual(date, fromWeek(iso.year, iso.week, date.dayOfWeek(), .Mon, 4));
+
+        const locale = date.localeWeek();
+        try std.testing.expectEqual(date, fromWeek(locale.year, locale.week, date.dayOfWeek(), .Sun, 1));
+    }
 }
 
 /// Returns the week of this date under the English-language convention,
