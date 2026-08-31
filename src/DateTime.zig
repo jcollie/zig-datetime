@@ -1412,7 +1412,7 @@ pub fn parseWith(
 }
 
 /// This date as a `Date`, dropping the time of day and the offset.
-fn asDate(self: DateTime) Date {
+pub fn asDate(self: DateTime) Date {
     return .{
         .year = self.year,
         .month = self.month,

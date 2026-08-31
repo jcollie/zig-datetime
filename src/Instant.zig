@@ -104,7 +104,7 @@ pub fn asDateTime(self: Instant) DateTime {
     const nanosecond: Nanosecond = @intCast(@mod(self.timestamp, std.time.ns_per_s));
     const seconds = @divFloor(self.timestamp, std.time.ns_per_s);
 
-    const days: Date.DaysType = @intCast(@divFloor(seconds, std.time.s_per_day));
+    const days: Date.DaysType = Date.daysFromSecondsSaturating(@intCast(std.math.clamp(seconds, std.math.minInt(i64), std.math.maxInt(i64))));
     const second_of_day: i64 = @intCast(@mod(seconds, std.time.s_per_day));
 
     const date = Date.fromDaysSinceStartOfEra(days);

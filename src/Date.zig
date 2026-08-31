@@ -50,6 +50,93 @@ pub const DaysType = std.math.IntFittingRange(
     std.math.maxInt(Year) * 366,
 );
 
+/// The day numbers of the first and last dates a `Date` can hold.
+///
+/// `DaysType` is sized for 366 days a year, which is more than a year
+/// actually has, so its own extremes name years a `Year` cannot. These
+/// are the real bounds, and what a saturating conversion saturates to.
+pub const min_days: DaysType = (Date{
+    .year = std.math.minInt(Year),
+    .month = .Jan,
+    .day = 1,
+}).toDaysSinceStartOfEra();
+
+pub const max_days: DaysType = (Date{
+    .year = std.math.maxInt(Year),
+    .month = .Dec,
+    .day = 31,
+}).toDaysSinceStartOfEra();
+
+test min_days {
+    // The bounds are dates, and round trip like any other.
+    try std.testing.expectEqual(
+        Date{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 },
+        fromDaysSinceStartOfEra(min_days),
+    );
+    try std.testing.expectEqual(
+        Date{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31 },
+        fromDaysSinceStartOfEra(max_days),
+    );
+
+    // And they are inside what `DaysType` can hold, with room to spare,
+    // because it is sized for a longer year than there is.
+    try std.testing.expect(min_days > std.math.minInt(DaysType));
+    try std.testing.expect(max_days < std.math.maxInt(DaysType));
+}
+
+/// The first and last instants that fall on a date a `Date` can hold, as
+/// seconds since the epoch.
+///
+/// Outside these an instant has no calendar date at all, so anything that
+/// converts one saturates rather than trapping. That keeps the conversion
+/// total, and makes the answer wrong in the same way the question was.
+pub const min_seconds: i64 = @as(i64, min_days) * std.time.s_per_day;
+pub const max_seconds: i64 = @as(i64, max_days) * std.time.s_per_day + (std.time.s_per_day - 1);
+
+test min_seconds {
+    // The bounds are instants on the bounding dates.
+    try std.testing.expectEqual(min_days, daysFromSecondsSaturating(min_seconds));
+    try std.testing.expectEqual(max_days, daysFromSecondsSaturating(max_seconds));
+
+    // And a second further out saturates rather than moving.
+    try std.testing.expectEqual(min_days, daysFromSecondsSaturating(min_seconds - 1));
+    try std.testing.expectEqual(max_days, daysFromSecondsSaturating(max_seconds + 1));
+}
+
+/// Returns the day number `seconds` seconds after the epoch falls in,
+/// clamped to the range a `Date` can hold.
+///
+/// An `i64` of seconds reaches far outside the calendar: a `Year` is an
+/// `i32`, so the furthest date there is sits around 6.8e16 seconds from
+/// the epoch and an `i64` goes to 9.2e18. Converting the excess would be
+/// an `@intCast` that cannot fit, which is a panic in a safe build and
+/// illegal behaviour in a fast one.
+///
+/// Clamping rather than refusing keeps every caller total. The answer for
+/// an instant outside the calendar is the first or last date there is,
+/// which is wrong in the same way that the question was.
+pub fn daysFromSecondsSaturating(seconds: i64) DaysType {
+    const days = @divFloor(seconds, std.time.s_per_day);
+    if (days < min_days) return min_days;
+    if (days > max_days) return max_days;
+    return @intCast(days);
+}
+
+test daysFromSecondsSaturating {
+    try std.testing.expectEqual(@as(DaysType, 0), daysFromSecondsSaturating(0));
+    try std.testing.expectEqual(@as(DaysType, 1), daysFromSecondsSaturating(std.time.s_per_day));
+
+    // Floor division, so a second before the epoch is the day before it.
+    try std.testing.expectEqual(@as(DaysType, -1), daysFromSecondsSaturating(-1));
+
+    // Past the end of the calendar the answer stops moving rather than
+    // wrapping or trapping, and what it stops at is a date.
+    try std.testing.expectEqual(max_days, daysFromSecondsSaturating(std.math.maxInt(i64)));
+    try std.testing.expectEqual(min_days, daysFromSecondsSaturating(std.math.minInt(i64)));
+    _ = fromDaysSinceStartOfEra(daysFromSecondsSaturating(std.math.maxInt(i64)));
+    _ = fromDaysSinceStartOfEra(daysFromSecondsSaturating(std.math.minInt(i64)));
+}
+
 /// Returns the date that is `days` days after 1970-01-01; negative values
 /// give dates before the epoch.
 pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
@@ -153,9 +240,15 @@ pub fn toDaysSinceStartOfEra(self: Date) DaysType {
 
     const month = self.month.monthNumber();
 
-    const year = self.year - switch (self.month) {
-        .Jan, .Feb => @as(Year, 1),
-        else => @as(Year, 0),
+    // Everything from here is in `DaysType` rather than `Year`. The
+    // arithmetic leaves an `i32` twice over the range a `Year` claims:
+    // January of the earliest year underflows the shift below, and the
+    // era multiplication at the end overflows from about year 5.9
+    // million. Both were an overflow rather than a wrong answer, and both
+    // are inside what the type says it holds.
+    const year = @as(DaysType, self.year) - switch (self.month) {
+        .Jan, .Feb => @as(DaysType, 1),
+        else => @as(DaysType, 0),
     };
 
     const era = @divTrunc(
@@ -167,9 +260,9 @@ pub fn toDaysSinceStartOfEra(self: Date) DaysType {
     std.debug.assert(year_of_era >= 0 and year_of_era <= 399);
 
     const day_of_year = @divTrunc(
-        153 * (month + switch (self.month) {
-            .Jan, .Feb => @as(Year, 9),
-            else => @as(Year, -3),
+        153 * (@as(DaysType, month) + switch (self.month) {
+            .Jan, .Feb => @as(DaysType, 9),
+            else => @as(DaysType, -3),
         }) + 2,
         5,
     ) + self.day - 1;

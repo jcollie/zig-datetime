@@ -385,6 +385,22 @@ zig build bench                    # always ReleaseFast, whatever -Doptimize say
 The two oracles are part of `zig build test`, so an ordinary run needs
 `node` and fetches moment the first time.
 
+`src/fuzz.zig` holds a property per parser: nothing crashes on input
+nobody chose, whatever comes back holds together, and anything with an
+inverse survives the round trip. Each runs twice over, against a list of
+seeds and against inputs built by mutating them, so an ordinary test run
+does a small amount of fuzzing and `-Dfuzz-iterations=N` does as much as
+you like:
+
+```sh
+zig build test -Dfuzz-iterations=500000 --seed 42
+```
+
+The seed is the test runner's, so a failure replays exactly. There are
+`std.testing.fuzz` targets beside the mutation ones for when
+`zig build --fuzz` works: on Zig 0.16.0 it does not compile, on any
+project, in the compiler's own test runner.
+
 `-Dno-system-tzdata` empties the directories the tests look in, which
 makes a machine that has a timezone database behave like one that has
 not. The tests that read it skip either way; the option is what makes the

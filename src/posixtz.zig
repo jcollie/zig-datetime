@@ -181,6 +181,15 @@ pub const Posix = struct {
 
     /// Returns the span around `timestamp`.
     ///
+    /// Any `i64` is accepted, but only an instant well inside the
+    /// calendar answers meaningfully. Placing a span needs the switches
+    /// of the years either side of it, so the first and last year a
+    /// `Date` can hold have no year beyond them to look at and the bounds
+    /// come back open; past `Date.min_seconds` and `Date.max_seconds`
+    /// there is no year at all and everything saturates. The result stays
+    /// total either way, and `typeAt`, which needs only its own year, can
+    /// disagree with it out there.
+    ///
     /// The bounds come from the switches either side of it, which may
     /// belong to the neighbouring years, so the switches for three years
     /// are computed and the pair bracketing `timestamp` is taken.
@@ -197,39 +206,59 @@ pub const Posix = struct {
 
         // Which year's rules apply is decided in local standard time,
         // which is what POSIX means by the rules being "local".
-        const local = timestamp + self.std_offset;
-        const year = Date.fromDaysSinceStartOfEra(@intCast(@divFloor(local, std.time.s_per_day))).year;
+        // Saturating, because a caller may hand in any `i64` and the
+        // sum of an extreme one and an offset is not one.
+        const local = timestamp +| self.std_offset;
+        const year = Date.fromDaysSinceStartOfEra(Date.daysFromSecondsSaturating(local)).year;
 
         // Each switch is expressed in the time that is in effect just
         // before it happens: standard time going in, daylight time coming
         // back out.
-        var switches: [6]i64 = undefined;
+        // Each switch is carried with what it opens, so that the walk
+        // below knows which kind bounded the span without working the
+        // question out a second time from the answer.
+        const Switch = struct { at: i64, opens_dst: bool };
+
+        var switches: [6]Switch = undefined;
         var count: usize = 0;
-        for ([_]Year{ year - 1, year, year + 1 }) |each| {
-            switches[count] = dst.start.timestamp(each, self.std_offset);
+        // Saturating again: `year` may already be the first or last a
+        // `Year` can hold, when the timestamp was outside the calendar.
+        // A repeated year only puts a duplicate in the list below, which
+        // the sort and the walk do not mind.
+        for ([_]Year{ year -| 1, year, year +| 1 }) |each| {
+            switches[count] = .{
+                .at = dst.start.timestamp(each, self.std_offset),
+                .opens_dst = true,
+            };
             count += 1;
-            switches[count] = dst.end.timestamp(each, dst.offset);
+            switches[count] = .{
+                .at = dst.end.timestamp(each, dst.offset),
+                .opens_dst = false,
+            };
             count += 1;
         }
-        std.mem.sort(i64, switches[0..count], {}, std.sort.asc(i64));
+
+        const order = struct {
+            fn lessThan(_: void, a: Switch, b: Switch) bool {
+                return a.at < b.at;
+            }
+        };
+        std.mem.sort(Switch, switches[0..count], {}, order.lessThan);
 
         var start: i64 = std.math.minInt(i64);
         var end: i64 = std.math.maxInt(i64);
-        for (switches[0..count]) |at| {
-            if (at <= timestamp) start = at else {
-                end = at;
+        var in_dst = false;
+        for (switches[0..count]) |each| {
+            if (each.at <= timestamp) {
+                start = each.at;
+                // Whether this span is the daylight one follows from
+                // which switch opened it.
+                in_dst = each.opens_dst;
+            } else {
+                end = each.at;
                 break;
             }
         }
-
-        // Whether this span is the daylight one follows from which switch
-        // opened it: the span after a start switch is daylight, the span
-        // after an end switch is standard.
-        const in_dst = start != std.math.minInt(i64) and
-            start == dst.start.timestamp(
-                Date.fromDaysSinceStartOfEra(@intCast(@divFloor(start + self.std_offset, std.time.s_per_day))).year,
-                self.std_offset,
-            );
 
         return .{
             .local_type = if (in_dst) .{
@@ -270,40 +299,20 @@ pub const Posix = struct {
         try testing.expectEqual(@as(i64, std.math.maxInt(i64)), always.end);
     }
 
-    /// Returns the local time type in effect at `timestamp`.
+    /// Returns the local time type in effect at `timestamp`. The same
+    /// caveat as `spanAt` about instants outside the calendar.
+    ///
+    /// This used to repeat `spanAt`'s search over one year rather than
+    /// three, which was about a quarter quicker, and it was wrong for
+    /// rules whose two switches do not sit tidily inside the year that
+    /// names them. A switch time may be up to 167 hours either side of
+    /// its day and so spill into a neighbouring year, and two switches
+    /// landing in the same week can swap order from year to year. Fuzzing
+    /// found both, which is two more than were found by reading it, so
+    /// the shortcut is gone rather than patched: the cases it has to be
+    /// right about are not ones anybody has managed to enumerate.
     pub fn typeAt(self: Posix, timestamp: i64) Type {
-        const dst = self.dst orelse return .{
-            .offset = self.std_offset,
-            .is_dst = false,
-            .designation = self.std_designation,
-        };
-
-        // Which year's rules apply is decided in local standard time,
-        // which is what POSIX means by the rules being "local".
-        const local = timestamp + self.std_offset;
-        const year = Date.fromDaysSinceStartOfEra(@intCast(@divFloor(local, std.time.s_per_day))).year;
-
-        // Each switch is expressed in the time that is in effect just
-        // before it happens: standard time going in, daylight time coming
-        // back out.
-        const start = dst.start.timestamp(year, self.std_offset);
-        const end = dst.end.timestamp(year, dst.offset);
-
-        const in_dst = if (start <= end)
-            timestamp >= start and timestamp < end
-        else
-            // Southern hemisphere: daylight saving time spans New Year.
-            timestamp >= start or timestamp < end;
-
-        return if (in_dst) .{
-            .offset = dst.offset,
-            .is_dst = true,
-            .designation = dst.designation,
-        } else .{
-            .offset = self.std_offset,
-            .is_dst = false,
-            .designation = self.std_designation,
-        };
+        return self.spanAt(timestamp).local_type;
     }
 
     test typeAt {
@@ -517,6 +526,11 @@ const Cursor = struct {
     /// 167 hours either side of midnight so that a rule can name a moment
     /// in a neighbouring week.
     fn ruleTime(self: *Cursor) ParseError!i32 {
+        // `peek` requires the caller to have checked, and this is the
+        // caller: a rule ending in its separator, `M3.2.0/`, left nothing
+        // to read and this looked at it anyway.
+        if (self.done()) return error.Truncated;
+
         var sign: i32 = 1;
         switch (self.peek()) {
             '+' => self.index += 1,
@@ -553,6 +567,11 @@ const Cursor = struct {
 
         var too_big: Cursor = .{ .text = "168" };
         try std.testing.expectError(error.BadOffset, too_big.ruleTime());
+
+        // A rule that ends at its own separator has no time to read, and
+        // used to read one byte past the end looking for it.
+        var empty: Cursor = .{ .text = "" };
+        try std.testing.expectError(error.Truncated, empty.ruleTime());
     }
 
     /// Reads a run of digits whose value must not exceed `max`.

@@ -81,6 +81,13 @@ pub fn build(b: *std.Build) void {
             "such as @0 for the Unix epoch (default: keep all history)",
     );
 
+    const fuzz_iterations = b.option(
+        usize,
+        "fuzz-iterations",
+        "How many mutated inputs each fuzz target tries. The default keeps " ++
+            "`zig build test` quick; raise it for a longer hunt (default: 2000)",
+    ) orelse 2000;
+
     const no_system_tzdata = b.option(
         bool,
         "no-system-tzdata",
@@ -112,6 +119,7 @@ pub fn build(b: *std.Build) void {
 
     const options = b.addOptions();
     options.addOption(bool, "no_system_tzdata", no_system_tzdata);
+    options.addOption(usize, "fuzz_iterations", fuzz_iterations);
     module.addImport("build_options", options.createModule());
 
     const tests = b.addTest(.{
