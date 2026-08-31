@@ -45,16 +45,12 @@ pub const Month = enum(u4) {
 
         for (str) |c| if (!std.ascii.isDigit(c)) return error.IllegalCharacter;
 
-        const month = try std.fmt.parseInt(
-            @typeInfo(Month).@"enum".tag_type,
-            str,
-            10,
-        );
+        const month = @import("read.zig").digits(str);
 
         if (month < 1) return error.Underflow;
         if (month > 12) return error.Overflow;
 
-        return std.enums.fromInt(Month, month) orelse unreachable;
+        return std.enums.fromInt(Month, @as(u4, @intCast(month))) orelse unreachable;
     }
 
     /// Returns the calendar month number, January = 1 through December = 12.

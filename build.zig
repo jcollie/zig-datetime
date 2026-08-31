@@ -54,12 +54,12 @@ pub fn build(b: *std.Build) void {
         },
     );
 
-    module.addAnonymousImport("tzdata", .{
-        .root_source_file = if (embed_tzdata)
-            generateTzdata(b, tz_packing, tz_from)
-        else
-            b.path("src/tzdata_stub.zig"),
-    });
+    const tzdata_source = if (embed_tzdata)
+        generateTzdata(b, tz_packing, tz_from)
+    else
+        b.path("src/tzdata_stub.zig");
+
+    module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
 
     const tests = b.addTest(.{
         .root_module = module,
@@ -88,6 +88,35 @@ pub fn build(b: *std.Build) void {
 
     const docs_step = b.step("docs", "Build the API documentation into zig-out/docs");
     docs_step.dependOn(&install_docs.step);
+
+    // The benchmarks always build ReleaseFast, independent of -Doptimize,
+    // so they need their own instance of the module built the same way.
+    const bench_datetime = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    bench_datetime.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+
+    const bench_exe = b.addExecutable(.{
+        .name = "bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/bench.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .imports = &.{
+                .{
+                    .name = "datetime",
+                    .module = bench_datetime,
+                },
+            },
+        }),
+    });
+
+    const run_bench = b.addRunArtifact(bench_exe);
+
+    const bench_step = b.step("bench", "Run the benchmarks");
+    bench_step.dependOn(&run_bench.step);
 }
 
 /// Builds the embedded timezone database and returns the path of the

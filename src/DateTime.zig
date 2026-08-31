@@ -326,29 +326,31 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
 
     var am_pm: AmPm = .none;
     var day_of_week: ?DayOfWeek = null;
-    var day_of_year: ?u7 = null;
+    var day_of_year: ?u16 = null;
     var left = value;
 
-    for (tokens) |token| {
+    // Unrolled, as `format` does with the same token list. The tokens are
+    // comptime known, so this turns a switch over every sequence in the
+    // enum into straight-line code for the handful the format string
+    // actually uses.
+    inline for (tokens) |token| {
         switch (token) {
             .tag => |tag| {
                 switch (tag) {
                     .YY => {
                         const year = read.int(left, 2);
-                        datetime.year = try std.fmt.parseInt(Year, year, 10) + 2000;
+                        datetime.year = @as(Year, @intCast(read.digits(year))) + 2000;
                         left = left[year.len..];
-                        datetime.updateDayOfWeek();
                     },
                     .YYYY, .YYY => {
                         datetime.year = year: {
                             const str = read.int(left, 4);
                             if (str.len == 0) return error.ParseError;
                             if (tag == .YYYY and str.len != 4) return error.ParseError;
-                            const year = try std.fmt.parseInt(Year, str, 10);
+                            const year: Year = @intCast(read.digits(str));
                             left = left[str.len..];
                             break :year year;
                         };
-                        datetime.updateDayOfWeek();
                     },
                     .MMMM => {
                         datetime.month = month: {
@@ -360,7 +362,6 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             }
                             return error.ParseError;
                         };
-                        datetime.updateDayOfWeek();
                     },
                     .MMM => {
                         datetime.month = month: {
@@ -372,7 +373,6 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             }
                             return error.ParseError;
                         };
-                        datetime.updateDayOfWeek();
                     },
                     .MM, .M => {
                         datetime.month = month: {
@@ -382,7 +382,6 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             defer left = left[str.len..];
                             break :month try Month.parseInt(str);
                         };
-                        datetime.updateDayOfWeek();
                     },
                     .Mo, .MO => {
                         const map = switch (tag) {
@@ -403,19 +402,17 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             }
                             return error.ParseError;
                         };
-                        datetime.updateDayOfWeek();
                     },
                     .DD, .D => {
                         datetime.day = day: {
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
                             if (tag == .DD and str.len != 2) return error.ParseError;
-                            const day = try std.fmt.parseInt(Day, str, 10);
-                            if (day <= 0 or day > 31) return error.ParseError;
+                            const day = read.digits(str);
+                            if (day < 1 or day > 31) return error.ParseError;
                             left = left[str.len..];
-                            break :day day;
+                            break :day @intCast(day);
                         };
-                        datetime.updateDayOfWeek();
                     },
                     .Do, .DO => {
                         const map = switch (tag) {
@@ -426,7 +423,8 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         datetime.day = day: {
                             const str = read.int(left, 3);
                             if (str.len == 0) return error.ParseError;
-                            const day = try std.fmt.parseInt(Day, str, 10);
+                            const day = read.digits(str);
+                            if (day < 1 or day > 31) return error.ParseError;
                             left = left[str.len..];
                             for (1..left.len + 1) |l| {
                                 if (map.get(left[0..l])) |_| {
@@ -436,15 +434,14 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             }
                             return error.ParseError;
                         };
-                        datetime.updateDayOfWeek();
                     },
                     .DDDD, .DDD, .DDDo, .DDDO => {
                         day_of_year = doy: {
                             const str = read.int(left, 3);
                             if (str.len == 0) return error.ParseError;
                             if (tag == .DDDD and str.len != 3) return error.ParseError;
-                            const doy = try std.fmt.parseInt(u7, str, 10);
-                            if (doy < 0 or doy > 366) return error.ParseError;
+                            const doy = read.digits(str);
+                            if (doy < 1 or doy > 366) return error.ParseError;
                             left = left[str.len..];
                             switch (tag) {
                                 .DDDo, .DDDO => ordinal: {
@@ -464,7 +461,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                                 .DDDD, .DDD => {},
                                 else => unreachable,
                             }
-                            break :doy doy;
+                            break :doy @intCast(doy);
                         };
                     },
                     .HH, .H, .hh, .h => {
@@ -476,14 +473,14 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                                 .H, .h => {},
                                 else => unreachable,
                             }
-                            const hour = try std.fmt.parseInt(Hour, str, 10);
+                            const hour = read.digits(str);
                             switch (tag) {
                                 .HH, .H => if (hour >= 24) return error.ParseError,
-                                .hh, .h => if (hour <= 0 or hour > 12) return error.ParseError,
+                                .hh, .h => if (hour < 1 or hour > 12) return error.ParseError,
                                 else => unreachable,
                             }
                             left = left[str.len..];
-                            break :hour hour;
+                            break :hour @intCast(hour);
                         };
                     },
                     .kk, .k => {
@@ -491,10 +488,11 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
                             if (tag == .kk and str.len != 2) return error.ParseError;
-                            var hour = try std.fmt.parseInt(Hour, str, 10);
+                            var hour = read.digits(str);
+                            if (hour > 24) return error.ParseError;
                             if (hour == 24) hour = 0;
                             left = left[str.len..];
-                            break :hour hour;
+                            break :hour @intCast(hour);
                         };
                     },
                     .mm, .m => {
@@ -502,10 +500,10 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
                             if (tag == .mm and str.len != 2) return error.ParseError;
-                            const minute = try std.fmt.parseInt(Minute, str, 10);
-                            if (minute < 0 or minute > 59) return error.ParseError;
+                            const minute = read.digits(str);
+                            if (minute > 59) return error.ParseError;
                             left = left[str.len..];
-                            break :minute minute;
+                            break :minute @intCast(minute);
                         };
                     },
                     .ss, .s => {
@@ -513,10 +511,10 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
                             if (tag == .ss and str.len != 2) return error.ParseError;
-                            const second = try std.fmt.parseInt(Second, str, 10);
-                            if (second < 0 or second > 60) return error.ParseError;
+                            const second = read.digits(str);
+                            if (second > 60) return error.ParseError;
                             left = left[str.len..];
-                            break :second second;
+                            break :second @intCast(second);
                         };
                     },
                     .SSSSSSSSS,
@@ -599,14 +597,14 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         day_of_week = dow: {
                             const str = read.int(left, 1);
                             if (str.len != 1) return error.ParseError;
-                            var dow = try std.fmt.parseInt(u4, str, 10);
+                            var dow = read.digits(str);
                             switch (tag) {
                                 .E => {
                                     if (dow < 1 or dow > 7) return error.ParseError;
                                     dow -= 1;
                                 },
                                 .d, .e, .do, .dO => {
-                                    if (dow < 0 or dow > 6) return error.ParseError;
+                                    if (dow > 6) return error.ParseError;
                                 },
                                 else => unreachable,
                             }
@@ -629,7 +627,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                                 .d, .e, .E => {},
                                 else => unreachable,
                             }
-                            break :dow std.enums.fromInt(DayOfWeek, dow) orelse return error.ParseError;
+                            break :dow std.enums.fromInt(DayOfWeek, @as(u3, @intCast(dow))) orelse return error.ParseError;
                         };
                     },
                     .Z, .ZZ => {
@@ -665,8 +663,8 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             if (minutes.len != 2) return error.ParseError;
                             left = left[minutes.len..];
 
-                            const hour = try std.fmt.parseInt(i32, hours, 10);
-                            const minute = try std.fmt.parseInt(i32, minutes, 10);
+                            const hour: i32 = @intCast(read.digits(hours));
+                            const minute: i32 = @intCast(read.digits(minutes));
                             if (hour > 23 or minute > 59) return error.ParseError;
                             break :offset sign * (hour * std.time.s_per_hour + minute * std.time.s_per_min);
                         };
@@ -716,6 +714,27 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
             if (datetime.hour < 12) datetime.hour += 12;
         },
     }
+
+    if (day_of_year) |doy| {
+        // A day of the year names a complete date by itself, so it
+        // replaces whatever month and day were set, and is checked
+        // against the length of the year it landed in.
+        const length: u16 = if (Month.Feb.lastDay(datetime.year) == 29) 366 else 365;
+        if (doy > length) return error.ParseError;
+
+        var month: Month = .Jan;
+        var remaining = doy;
+        while (remaining > month.lastDay(datetime.year)) {
+            remaining -= month.lastDay(datetime.year);
+            month = month.next();
+        }
+        datetime.month = month;
+        datetime.day = @intCast(remaining);
+    }
+
+    // Every sequence that moves the date leaves the weekday stale, so it
+    // is recomputed once here rather than after each of them.
+    datetime.updateDayOfWeek();
 
     if (day_of_week) |dow| {
         if (datetime.weekday != dow) return error.ParseError;
@@ -1138,6 +1157,39 @@ test "parseTest" {
                 .hour = 1,
             },
         },
+        // A day of the year names a complete date on its own.
+        .{
+            .value = "2024-075",
+            .fmt = "YYYY-DDD",
+            .expected = .{ .year = 2024, .month = .Mar, .day = 15, .weekday = .Fri },
+        },
+        .{
+            .value = "2024-200",
+            .fmt = "YYYY-DDD",
+            .expected = .{ .year = 2024, .month = .Jul, .day = 18, .weekday = .Thu },
+        },
+        .{
+            .value = "2024-001",
+            .fmt = "YYYY-DDDD",
+            .expected = .{ .year = 2024, .month = .Jan, .day = 1, .weekday = .Mon },
+        },
+        // Day 366 exists in a leap year.
+        .{
+            .value = "2024-366",
+            .fmt = "YYYY-DDDD",
+            .expected = .{ .year = 2024, .month = .Dec, .day = 31, .weekday = .Tue },
+        },
+        // The same ordinal is a different date in a common year.
+        .{
+            .value = "2025-075",
+            .fmt = "YYYY-DDD",
+            .expected = .{ .year = 2025, .month = .Mar, .day = 16, .weekday = .Sun },
+        },
+        .{
+            .value = "2025-365",
+            .fmt = "YYYY-DDDD",
+            .expected = .{ .year = 2025, .month = .Dec, .day = 31, .weekday = .Wed },
+        },
         // Midnight is a valid reading on a 24-hour clock.
         .{
             .value = "2024-03-15T00:30:00",
@@ -1498,4 +1550,11 @@ test "toUtcTest" {
         // Converting an already-UTC value again is a no-op.
         try std.testing.expectEqual(case.expected, case.local.toUtc().toUtc());
     }
+}
+
+test "day of the year is checked against the length of the year" {
+    // 366 only exists in a leap year, and there is no day zero.
+    try std.testing.expectError(error.ParseError, DateTime.parse("YYYY-DDD", "2025-366"));
+    try std.testing.expectError(error.ParseError, DateTime.parse("YYYY-DDD", "2024-367"));
+    try std.testing.expectError(error.ParseError, DateTime.parse("YYYY-DDD", "2024-000"));
 }
