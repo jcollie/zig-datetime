@@ -1,8 +1,21 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! The vocabulary of the format strings that `DateTime.format` and
+//! `DateTime.parse` are driven by, in the style moment.js established.
+//!
+//! Every sequence is a variant of `FormatTag`, spelled exactly as it
+//! appears in a format string, which is what lets `Tokenizer` recognize
+//! them by reflecting over the enum's field names rather than from a table
+//! that would have to be kept in step. Sequences overlap by design — `M`,
+//! `MM`, `MMM` and `MMMM` all start alike — so the tokenizer always takes
+//! the longest field name that matches at the cursor, and anything that
+//! matches nothing is passed through as a literal character.
+
 const std = @import("std");
 
+/// One sequence of a format string. The field names are the sequences
+/// themselves, which is what `Tokenizer` matches against.
 pub const FormatTag = enum {
     /// 1 2 ... 11 12 (month, numeric)
     M,
@@ -128,6 +141,8 @@ pub const FormatTag = enum {
         index: usize,
         format_string: []const u8,
 
+        /// What the tokenizer produces: either a recognized sequence or a
+        /// literal character to be copied through as-is.
         pub const Token = union(enum) {
             char: u8,
             tag: FormatTag,

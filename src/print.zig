@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! Writing the pieces of a formatted date that are more than a padded
+//! number: English ordinal suffixes and UTC offsets.
+
 const std = @import("std");
 
 // pub fn Ordinal(style: enum {.normal, .superscript}) type {

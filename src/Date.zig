@@ -1,6 +1,14 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! A calendar date: a year, a month and a day, with no time of day and no
+//! timezone attached.
+//!
+//! Conversion to and from a day number runs on Howard Hinnant's `civil_from_days`
+//! algorithm, which shifts the year to start in March so that the leap day
+//! falls at the end of it and the month lengths become a repeating pattern
+//! that a single division can invert. See `fromDaysSinceStartOfEra`.
+
 const Date = @This();
 
 const std = @import("std");
@@ -13,6 +21,7 @@ year: Year,
 month: Month,
 day: Day,
 
+/// The Unix epoch, 1970-01-01.
 pub const init: Date = .{
     .year = 1970,
     .month = .Jan,
@@ -24,6 +33,8 @@ pub fn isRegular(self: Date) bool {
     return self.day >= 1 and self.day <= self.month.lastDay(self.year);
 }
 
+/// A count of days since 1970-01-01, wide enough for every date a `Year`
+/// can hold: the whole span of years at the longest a year can be.
 pub const DaysType = std.math.IntFittingRange(
     std.math.minInt(Year) * 366,
     std.math.maxInt(Year) * 366,

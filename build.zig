@@ -1,6 +1,20 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! Build script for the datetime library.
+//!
+//! The library itself needs nothing beyond the standard library. What this
+//! script mostly does is the optional `-Dembed-tzdata` path, which turns
+//! the IANA sources into a module compiled into the binary: it fetches the
+//! sources and tzcode as lazy dependencies, builds `zic` with the C
+//! compiler Zig ships, runs it to compile the sources into a TZif tree,
+//! and then runs `tools/tzpack.zig` over that tree to produce the blob and
+//! index that `src/tzdb.zig` reads. Nothing on the host is used, so the
+//! result is the same whatever timezone data the machine happens to have.
+//!
+//! Without that option the `tzdata` module resolves to `src/tzdata/stub.zig`
+//! instead, which has the same shape and no data.
+
 const std = @import("std");
 
 /// The IANA release that `build.zig.zon` pins. Kept here so the generated
@@ -19,6 +33,8 @@ const tz_sources = [_][]const u8{
     "factory", "backward",
 };
 
+/// Declares the library module, the tests, the benchmarks, the generated
+/// documentation, and the optional embedded timezone database.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});

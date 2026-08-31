@@ -47,6 +47,7 @@ const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const Second = @import("second.zig").Second;
 const Year = @import("year.zig").Year;
 
+/// What `parse` can fail with.
 pub const ParseError = error{
     /// The input does not start with something shaped like a date.
     ParseError,
@@ -77,6 +78,10 @@ pub const Precision = enum {
     second,
 };
 
+/// What a successful parse yields: the value, how much of the input it
+/// came from, and the two things a `DateTime` alone cannot record — that
+/// the input said nothing about its offset, and how much of it was
+/// defaulted rather than written.
 pub const ParseResult = struct {
     /// The prefix of the input that was consumed.
     str: []const u8,
@@ -399,34 +404,52 @@ fn parseZone(cursor: *Cursor) ParseError!?i32 {
         @as(i32, @intCast(minutes)) * std.time.s_per_min);
 }
 
+/// Turns a parsed month number into a `Month`, rejecting 0 and anything
+/// past 12.
 fn monthFrom(value: u32) ParseError!Month {
     if (value < 1 or value > 12) return error.OutOfRange;
     return std.enums.fromInt(Month, value) orelse unreachable;
 }
 
+/// Turns a parsed day number into a `Day`, checking it against the length
+/// of the month it falls in, which is why the year is needed as well.
 fn dayFrom(value: u32, month: Month, year: Year) ParseError!Day {
     if (value < 1 or value > month.lastDay(year)) return error.OutOfRange;
     return @intCast(value);
 }
 
+/// A position in the input, with the small operations the grammar is
+/// written in terms of.
+///
+/// The methods split in two. `eat`, `eatAny` and `digitsAhead` never move
+/// the cursor past something they did not accept, and report a refusal by
+/// returning rather than by failing; the three date forms are told apart
+/// by asking them what is ahead, so nothing here ever has to back up.
+/// `digits` and `fraction` commit, and so report a malformed field as an
+/// error instead.
 const Cursor = struct {
     text: []const u8,
     index: usize = 0,
 
+    /// Whether the input is exhausted.
     fn done(self: Cursor) bool {
         return self.index >= self.text.len;
     }
 
+    /// The character at the cursor. The caller must have checked `done`.
     fn peek(self: Cursor) u8 {
         return self.text[self.index];
     }
 
+    /// Consumes `char` if it is next, and reports whether it was.
     fn eat(self: *Cursor, char: u8) bool {
         if (self.done() or self.peek() != char) return false;
         self.index += 1;
         return true;
     }
 
+    /// Consumes the next character if it is any of `chars`, and reports
+    /// whether it was.
     fn eatAny(self: *Cursor, chars: []const u8) bool {
         if (self.done()) return false;
         if (std.mem.indexOfScalar(u8, chars, self.peek()) == null) return false;
@@ -485,6 +508,8 @@ const Cursor = struct {
 
 const testing = std.testing;
 
+/// Asserts that `input` parses whole, to the given value, offset flag and
+/// precision.
 fn expectParse(
     input: []const u8,
     expected: DateTime,
@@ -698,6 +723,8 @@ test "trailing text is left for the caller" {
     try testing.expectEqual(@as(u5, 14), result.value.hour);
 }
 
+/// Returns `base` with the time of day replaced, so that the test cases
+/// can name a date once and vary the time against it.
 fn set(base: DateTime, hour: Hour, minute: Minute, second: Second, nanosecond: Nanosecond) DateTime {
     var copy = base;
     copy.hour = hour;
@@ -707,6 +734,7 @@ fn set(base: DateTime, hour: Hour, minute: Minute, second: Second, nanosecond: N
     return copy;
 }
 
+/// Returns `base` with the UTC offset replaced.
 fn withOffset(base: DateTime, offset: i32) DateTime {
     var copy = base;
     copy.offset = offset;

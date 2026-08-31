@@ -10,6 +10,12 @@
 
 const std = @import("std");
 
+/// Walks the TZif tree at `argv[1]`, writing the concatenated zone bytes
+/// and the Zig index of them into the directory at `argv[2]`, recording
+/// the IANA release in `argv[3]` and the `zic -r` cutoff in `argv[4]`.
+///
+/// Zones are sorted by name before they are written so that `tzdb` can
+/// binary search the index.
 pub fn main(init: std.process.Init.Minimal) !void {
     var gpa_state: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa_state.deinit();
@@ -37,6 +43,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
         name: []const u8,
         bytes: []const u8,
 
+        /// Orders zones by name, which is the order the index is written
+        /// in and the order the lookup expects.
         fn lessThan(_: void, a: @This(), b: @This()) bool {
             return std.mem.lessThan(u8, a.name, b.name);
         }

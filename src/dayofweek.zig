@@ -1,6 +1,15 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! The day of the week.
+//!
+//! Weekdays are numbered from Sunday, which is what the C library and the
+//! RFC 822 grammar both assume. The week runs unbroken through the whole
+//! of the proleptic Gregorian calendar, so a weekday is a day count taken
+//! modulo seven and never has to be looked up; that is what lets
+//! `Date.dayOfWeek` derive one rather than carry it around. See
+//! `DayOfWeek.fromDaysSinceStartOfEra`.
+
 const std = @import("std");
 const log = std.log.scoped(.day_of_week);
 
@@ -9,6 +18,7 @@ const Month = @import("month.zig").Month;
 const Day = @import("day.zig").Day;
 const Date = @import("Date.zig");
 
+/// A day of the week, numbered from Sunday = 0 through Saturday = 6.
 pub const DayOfWeek = enum(u3) {
     Sun = 0,
     Mon = 1,
@@ -18,7 +28,11 @@ pub const DayOfWeek = enum(u3) {
     Fri = 5,
     Sat = 6,
 
+    /// What the `parse*Str` functions can fail with. There is only the one
+    /// way to fail: the input did not begin with a name in the map.
     pub const ParseError = error{ParseError};
+    /// The result of a successful parse: the prefix of the input that was
+    /// consumed and the day it named.
     pub const ParseStringResult = struct {
         str: []const u8,
         value: DayOfWeek,
@@ -142,8 +156,11 @@ pub const DayOfWeek = enum(u3) {
         return @enumFromInt(result);
     }
 
+    /// The type the name maps below are built from. Comparison ignores
+    /// case, so the maps only have to carry lower-case keys.
     pub const MapType = std.StaticStringMapWithEql(DayOfWeek, std.ascii.eqlIgnoreCase);
 
+    /// The two-letter day names, "su" through "sa".
     pub const very_short_map = MapType.initComptime(
         .{
             .{ "su", .Sun },
@@ -156,6 +173,7 @@ pub const DayOfWeek = enum(u3) {
         },
     );
 
+    /// The three-letter day names, "sun" through "sat".
     pub const short_map = MapType.initComptime(
         .{
             .{ "sun", .Sun },
@@ -168,6 +186,7 @@ pub const DayOfWeek = enum(u3) {
         },
     );
 
+    /// The full day names, "sunday" through "saturday".
     pub const long_map = MapType.initComptime(
         .{
             .{ "sunday", .Sun },
@@ -180,6 +199,11 @@ pub const DayOfWeek = enum(u3) {
         },
     );
 
+    /// Every prefix of every day name that names exactly one day, from two
+    /// letters up to the full name. For callers that want to accept an
+    /// abbreviation without fixing its length first; note that
+    /// `parseWithMap` takes the shortest match, so against this map it
+    /// stops after two letters and leaves the rest of the name behind.
     pub const any_map = MapType.initComptime(
         .{
             .{ "su", .Sun },

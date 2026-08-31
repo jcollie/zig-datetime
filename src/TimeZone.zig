@@ -20,6 +20,9 @@ const Month = @import("month.zig").Month;
 const posixtz = @import("posixtz.zig");
 const tzif = @import("tzif.zig");
 
+/// One local time type: an offset from UTC, whether it is a daylight
+/// saving one, and the abbreviation shown for it. Re-exported from `tzif`
+/// so that callers of a zone need not reach into the file format.
 pub const Type = tzif.Type;
 
 /// The IANA name of the zone, such as "America/Chicago".
@@ -34,6 +37,8 @@ data: tzif.Tzif,
 /// transition. Absent for a version 1 file, which has no footer.
 rule: ?posixtz.Posix,
 
+/// What building a zone can fail with: anything wrong with the TZif bytes,
+/// or with the POSIX rule in their footer.
 pub const Error = tzif.ParseError || posixtz.ParseError;
 
 /// Builds a zone from TZif bytes that the caller continues to own. Use
@@ -47,6 +52,9 @@ pub fn fromOwnedBytes(name: []const u8, bytes: []const u8) Error!TimeZone {
     return init(name, bytes, true);
 }
 
+/// Parses `bytes` into a zone. The footer is parsed here rather than on
+/// demand so that a malformed rule is reported when the zone is built,
+/// not later at some lookup that happens to fall past the transitions.
 fn init(name: []const u8, bytes: []const u8, owned: bool) Error!TimeZone {
     const data = try tzif.parse(bytes);
     return .{

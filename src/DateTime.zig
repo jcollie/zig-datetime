@@ -1,6 +1,23 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! A date and a time of day, together with the offset from UTC that the
+//! reading is against.
+//!
+//! `DateTime` is a wall clock: the fields say what a clock somewhere read,
+//! and `offset` says how far that somewhere is from UTC. It is not an
+//! instant on its own; see `Instant` for that, and `TimeZone` for the
+//! rules that turn one into the other.
+//!
+//! `format` and `parse` here are the general-purpose text routes, driven
+//! by a comptime format string of the sequences in `formatsequence.FormatTag`
+//! ("YYYY-MM-DD HH:mm:ss"). Because the string is comptime, the tokenizer
+//! runs during compilation and what is left at runtime is a straight line
+//! of writes or reads with no interpretation of the format. That is also
+//! why the standard syntaxes live elsewhere: `iso8601` and `rfc822` accept
+//! inputs whose shape is only known once the input has been read, which a
+//! comptime format string cannot express.
+
 const DateTime = @This();
 
 const std = @import("std");
@@ -36,6 +53,8 @@ weekday: DayOfWeek = .Thu,
 /// whole minutes: America/Chicago's is -5:50:36.
 offset: i32 = 0,
 
+/// The Unix epoch, 1970-01-01T00:00:00Z. Used as the default for the date
+/// fields a format string does not mention; see `parse`.
 pub const unix_epoch: DateTime = .{
     .nanosecond = 0,
     .second = 0,
@@ -251,6 +270,9 @@ const AmPm = enum {
     pm,
 };
 
+/// What `parse` can fail with. `IllegalToken` means the format string used
+/// a sequence that cannot be parsed, such as the quarter or the week of
+/// the year, neither of which pins down a date on its own.
 pub const ParseError = error{
     IllegalToken,
     InvalidCharacter,

@@ -1,6 +1,16 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! Reading fixed-width numeric fields out of a date string.
+//!
+//! Date syntaxes are made almost entirely of short runs of digits at a
+//! known position, so the parsers here split that job in two: `int` finds
+//! how far the run goes without converting anything, letting the caller
+//! decide whether the length it found is the one the grammar wanted, and
+//! `digits` converts a run that has already been checked. Keeping the two
+//! apart is what lets `digits` skip the sign, base prefix and overflow
+//! handling that make `std.fmt.parseInt` general.
+
 const std = @import("std");
 const log = std.log.scoped(.read);
 const Nanosecond = @import("nanosecond.zig").Nanosecond;

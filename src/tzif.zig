@@ -12,6 +12,7 @@
 
 const std = @import("std");
 
+/// What `parse` can fail with.
 pub const ParseError = error{
     BadMagic,
     BadHeader,
@@ -20,6 +21,11 @@ pub const ParseError = error{
     Truncated,
 };
 
+/// The file's version, taken from the byte after the magic. Versions 2 and
+/// later store the whole file twice: a version 1 block for readers that
+/// predate them, then a second block with 64-bit transition times and a
+/// POSIX rule in its footer. See `parse`, which reads the second block
+/// whenever there is one.
 pub const Version = enum(u8) {
     /// The original 32-bit format, which has no 64-bit block and no footer.
     v1 = 0,
@@ -66,6 +72,13 @@ const Counts = struct {
     }
 };
 
+/// A parsed TZif file, as slices into the bytes it was parsed from.
+///
+/// Parsing only finds where each of the file's arrays begins and ends. The
+/// arrays themselves are left in the file's own layout, and the accessors
+/// below decode one record out of them per call, which is what keeps the
+/// type free of an allocator at the cost of decoding a record again each
+/// time it is read.
 pub const Tzif = struct {
     version: Version,
     /// The width in bytes of each transition time, 4 for a version 1 file
@@ -313,6 +326,8 @@ fn appendInt(list: *std.ArrayList(u8), comptime T: type, value: T) !void {
     try list.appendSlice(testing.allocator, &buffer);
 }
 
+/// Appends a 44-byte TZif header: the magic, the version byte, the fifteen
+/// reserved bytes, and the six counts.
 fn appendHeader(list: *std.ArrayList(u8), version: u8, counts: Counts) !void {
     try list.appendSlice(testing.allocator, magic);
     try list.append(testing.allocator, version);
@@ -334,6 +349,8 @@ fn buildFile(transitions: []const i64, indices: []const u8, footer: ?[]const u8)
     errdefer list.deinit(testing.allocator);
 
     const write = struct {
+        /// Appends the two type records the test files are built from,
+        /// standard CST at -06:00 and daylight CDT at -05:00.
         fn types(l: *std.ArrayList(u8)) !void {
             // CST, standard, designation at offset 0.
             try appendInt(l, i32, -6 * 3600);

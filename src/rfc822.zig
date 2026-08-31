@@ -24,6 +24,8 @@ const Month = @import("month.zig").Month;
 const Second = @import("second.zig").Second;
 const Year = @import("year.zig").Year;
 
+/// What `parse` can fail with. The grammar has no failure worth telling
+/// apart from any other, so there is only the one error.
 pub const ParseError = error{ParseError};
 
 /// The result of a successful parse: the prefix of the input that was
@@ -162,10 +164,12 @@ const Cursor = struct {
         return self.text[self.index..];
     }
 
+    /// Whether the input is exhausted.
     fn done(self: Cursor) bool {
         return self.index >= self.text.len;
     }
 
+    /// The character at the cursor. The caller must have checked `done`.
     fn peek(self: Cursor) u8 {
         return self.text[self.index];
     }

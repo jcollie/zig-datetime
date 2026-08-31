@@ -23,6 +23,9 @@ const Month = @import("month.zig").Month;
 const Year = @import("year.zig").Year;
 const Type = @import("tzif.zig").Type;
 
+/// What `parse` can fail with. `MissingRules` is the case worth naming:
+/// the string gave a daylight saving designation but no rule saying when
+/// it starts and ends, which POSIX allows and this cannot evaluate.
 pub const ParseError = error{
     BadDesignation,
     BadOffset,
@@ -108,6 +111,8 @@ pub const Transition = struct {
     }
 };
 
+/// The daylight saving half of a rule: what the clock reads then, what it
+/// is called, and the two points in the year it is bounded by.
 pub const Dst = struct {
     designation: []const u8,
     /// Seconds east of UTC.
@@ -116,6 +121,11 @@ pub const Dst = struct {
     end: Transition,
 };
 
+/// A parsed POSIX `TZ` string.
+///
+/// This is a rule rather than a table: it describes every year the same
+/// way, so it can answer for times arbitrarily far past the end of a TZif
+/// file's stored transitions. `span` evaluates it for a given timestamp.
 pub const Posix = struct {
     std_designation: []const u8,
     /// Seconds east of UTC.
@@ -283,18 +293,23 @@ pub fn parse(text: []const u8) ParseError!Posix {
     };
 }
 
+/// A position in the string, with the small operations the grammar is
+/// written in terms of.
 const Cursor = struct {
     text: []const u8,
     index: usize = 0,
 
+    /// Whether the string is exhausted.
     fn done(self: Cursor) bool {
         return self.index >= self.text.len;
     }
 
+    /// The character at the cursor. The caller must have checked `done`.
     fn peek(self: Cursor) u8 {
         return self.text[self.index];
     }
 
+    /// Consumes `char`, which the grammar requires to be next.
     fn expect(self: *Cursor, char: u8) ParseError!void {
         if (self.done() or self.peek() != char) return error.BadRule;
         self.index += 1;

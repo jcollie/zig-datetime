@@ -25,16 +25,21 @@ const tzdb = datetime.tzdb;
 const N = 10_000_000;
 const table_len = 1024;
 
+/// Prints one benchmark's result, converting the total elapsed time into
+/// nanoseconds per operation and operations per second.
 fn report(name: []const u8, ns: u64) void {
     const per = @as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(N));
     const rate = 1e9 / per / 1e6;
     std.debug.print("{s:<26} {d:>8.2} ns/op {d:>8.2} Mop/s\n", .{ name, per, rate });
 }
 
+/// Prints a line for a benchmark that could not be run, in place of its
+/// numbers, so that its absence is visible rather than silent.
 fn skip(name: []const u8, why: []const u8) void {
     std.debug.print("{s:<26} {s}\n", .{ name, why });
 }
 
+/// Runs every benchmark in turn and prints the results.
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const gpa = init.gpa;

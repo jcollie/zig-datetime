@@ -1,10 +1,21 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
-// https://www.nist.gov/pml/owm/metric-si-prefixes
+//! The SI decimal prefixes, used to move a time value between units.
+//!
+//! A `Prefix` is stored as the power of ten it stands for, so converting
+//! between two of them is a matter of subtracting one exponent from the
+//! other and multiplying or dividing by ten raised to the difference. That
+//! is what makes the enum non-exhaustive: any exponent in range is a valid
+//! value, and only the named ones have a symbol.
+//!
+//! https://www.nist.gov/pml/owm/metric-si-prefixes
 
 const std = @import("std");
 
+/// An SI decimal prefix, whose enum value is the power of ten it stands
+/// for. Non-exhaustive, so an unnamed exponent is a valid value too, but
+/// `symbol` only has an answer for the named ones.
 pub const Prefix = enum(i8) {
     quetta = 30,
     ronna = 27,

@@ -14,6 +14,7 @@ const std = @import("std");
 const TimeZone = @import("TimeZone.zig");
 const generated = @import("tzdata");
 
+/// What `validateName` rejects a zone name with.
 pub const InvalidNameError = error{InvalidZoneName};
 
 /// Checks that `name` is a plausible IANA zone name before it is used to
@@ -205,6 +206,9 @@ pub const system = struct {
         return try gpa.dupe(u8, found);
     }
 
+    /// What `load` can fail with: a name that does not validate, anything
+    /// that goes wrong reading the file, anything wrong with its contents,
+    /// or a failed allocation.
     pub const LoadError = InvalidNameError ||
         std.Io.Dir.ReadFileAllocError ||
         TimeZone.Error ||
@@ -307,6 +311,8 @@ pub const embedded = struct {
         );
     }
 
+    /// Looks `name` up in the index. The generated entries are sorted by
+    /// name, so this is a binary search over them.
     fn find(name: []const u8) ?generated.Entry {
         var low: usize = 0;
         var high: usize = generated.entries.len;
@@ -542,6 +548,8 @@ test "TZ values are sorted into what they ask for" {
     try validateName(system.resolveTz("America/Chicago").name);
 }
 
+/// Asserts that `rule` parses as a POSIX `TZ` string and gives the -06:00
+/// standard offset that the test's inputs all describe.
 fn posixtzTest(rule: []const u8) !void {
     const parsed = try @import("posixtz.zig").parse(rule);
     try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), parsed.std_offset);

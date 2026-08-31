@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! Leap years of the proleptic Gregorian calendar.
+
 const Year = @import("year.zig").Year;
 
 /// Returns true if `year` is a leap year in the proleptic Gregorian calendar.

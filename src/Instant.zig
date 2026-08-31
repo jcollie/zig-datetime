@@ -1,6 +1,13 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! A point on the timeline, held as a count of nanoseconds since the Unix
+//! epoch of 1970-01-01T00:00:00Z.
+//!
+//! Unlike `DateTime`, an `Instant` names a moment without reference to any
+//! clock or zone, which makes it the right thing to compare, subtract and
+//! store. `asDateTime` breaks one out into UTC calendar fields.
+
 const Instant = @This();
 
 const std = @import("std");

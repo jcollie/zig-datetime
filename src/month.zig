@@ -1,12 +1,20 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
+//! The month of the year, its length, and where it starts in the year.
+//!
+//! Months are numbered from January = 1, so that the enum value is the
+//! month number that a date is written with and no conversion is needed
+//! on the way in or out of text.
+
 const std = @import("std");
 
 const Year = @import("year.zig").Year;
 const Day = @import("day.zig").Day;
 const leap = @import("leap.zig");
 
+/// A month of the year, numbered January = 1 through December = 12 so that
+/// the enum value is the number a date is written with.
 pub const Month = enum(u4) {
     Jan = 1,
     Feb = 2,
@@ -33,6 +41,7 @@ pub const Month = enum(u4) {
         return @intCast(@intFromEnum(self));
     }
 
+    /// What `parseInt` and the name parsers can fail with.
     pub const ParseError = error{
         TooShort,
         TooLong,
@@ -202,9 +211,13 @@ pub const Month = enum(u4) {
         };
     }
 
+    /// Walks the months in order. The cursor is nulled once `next` wraps
+    /// back around to January, which is what ends the iteration; there is
+    /// no separate count to keep.
     pub const Iterator = struct {
         index: ?Month,
 
+        /// An iterator positioned at January.
         pub const init: Iterator = .{ .index = .Jan };
 
         /// Returns the next month, or null once December has been returned.
@@ -227,6 +240,8 @@ pub const Month = enum(u4) {
         return .init;
     }
 
+    /// The three-letter month names, "jan" through "dec". Comparison
+    /// ignores case, so only lower-case keys are carried.
     pub const short_map = std.StaticStringMapWithEql(Month, std.ascii.eqlIgnoreCase).initComptime(
         .{
             .{ "jan", .Jan },
@@ -244,6 +259,7 @@ pub const Month = enum(u4) {
         },
     );
 
+    /// The full month names, "january" through "december".
     pub const long_map = std.StaticStringMapWithEql(Month, std.ascii.eqlIgnoreCase).initComptime(
         .{
             .{ "january", .Jan },
@@ -261,6 +277,10 @@ pub const Month = enum(u4) {
         },
     );
 
+    /// Every prefix of every month name that names exactly one month, from
+    /// two letters up to the full name. The ambiguous ones are absent for
+    /// that reason: "ma" could be March or May and "ju" could be June or
+    /// July, so those four names only enter the map at three letters.
     pub const any_map = std.StaticStringMapWithEql(Month, std.ascii.eqlIgnoreCase).initComptime(
         .{
             .{ "ja", .Jan },
