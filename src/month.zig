@@ -34,11 +34,16 @@ pub const Month = enum(u4) {
     pub fn as(self: Month, comptime T: type) T {
         const info = @typeInfo(T);
         if (info != .int) @compileError("can't convert to anything but an int");
-        switch (info.bits.signedness) {
+        switch (info.int.signedness) {
             .signed => if (info.int.bits < 5) @compileError("must have at least 5 bits"),
             .unsigned => if (info.int.bits < 4) @compileError("must have at least 4 bits"),
         }
         return @intCast(@intFromEnum(self));
+    }
+
+    test as {
+        try std.testing.expectEqual(@as(u4, 1), Month.Jan.as(u4));
+        try std.testing.expectEqual(@as(i32, 12), Month.Dec.as(i32));
     }
 
     /// What `parseInt` and the name parsers can fail with.
@@ -65,6 +70,18 @@ pub const Month = enum(u4) {
         return std.enums.fromInt(Month, @as(u4, @intCast(month))) orelse unreachable;
     }
 
+    test parseInt {
+        try std.testing.expectEqual(Month.Mar, try parseInt("3"));
+        // A leading zero is accepted, since dates are written with one.
+        try std.testing.expectEqual(Month.Mar, try parseInt("03"));
+        try std.testing.expectEqual(Month.Dec, try parseInt("12"));
+
+        try std.testing.expectError(error.Overflow, parseInt("13"));
+        try std.testing.expectError(error.Underflow, parseInt("0"));
+        try std.testing.expectError(error.TooShort, parseInt(""));
+        try std.testing.expectError(error.IllegalCharacter, parseInt("1x"));
+    }
+
     /// Returns the calendar month number, January = 1 through December = 12.
     pub fn monthNumber(self: Month) u4 {
         return switch (self) {
@@ -81,6 +98,11 @@ pub const Month = enum(u4) {
             .Nov => 11,
             .Dec => 12,
         };
+    }
+
+    test monthNumber {
+        try std.testing.expectEqual(@as(u4, 1), Month.Jan.monthNumber());
+        try std.testing.expectEqual(@as(u4, 12), Month.Dec.monthNumber());
     }
 
     /// Returns the month after this one, wrapping from December to January.
@@ -101,6 +123,12 @@ pub const Month = enum(u4) {
         };
     }
 
+    test next {
+        try std.testing.expectEqual(Month.Feb, Month.Jan.next());
+        // December wraps round to January.
+        try std.testing.expectEqual(Month.Jan, Month.Dec.next());
+    }
+
     /// Returns the month before this one, wrapping from January to December.
     pub fn prev(self: Month) Month {
         return switch (self) {
@@ -117,6 +145,12 @@ pub const Month = enum(u4) {
             .Nov => .Oct,
             .Dec => .Nov,
         };
+    }
+
+    test prev {
+        try std.testing.expectEqual(Month.Nov, Month.Dec.prev());
+        // January wraps back to December.
+        try std.testing.expectEqual(Month.Dec, Month.Jan.prev());
     }
 
     /// Returns the number of the last day of this month (28-31) in `year`,
@@ -138,6 +172,15 @@ pub const Month = enum(u4) {
         };
     }
 
+    test lastDay {
+        try std.testing.expectEqual(@as(Day, 31), Month.Jan.lastDay(2024));
+        try std.testing.expectEqual(@as(Day, 30), Month.Apr.lastDay(2024));
+
+        // Only February depends on the year.
+        try std.testing.expectEqual(@as(Day, 29), Month.Feb.lastDay(2024));
+        try std.testing.expectEqual(@as(Day, 28), Month.Feb.lastDay(2025));
+    }
+
     /// Returns the quarter of the year (1-4) containing this month.
     pub fn quarter(self: Month) u3 {
         return switch (self) {
@@ -154,6 +197,12 @@ pub const Month = enum(u4) {
             .Nov => 4,
             .Dec => 4,
         };
+    }
+
+    test quarter {
+        try std.testing.expectEqual(@as(u3, 1), Month.Mar.quarter());
+        try std.testing.expectEqual(@as(u3, 2), Month.Apr.quarter());
+        try std.testing.expectEqual(@as(u3, 4), Month.Dec.quarter());
     }
 
     /// Returns the three-letter English name ("Jan" ... "Dec").
@@ -174,6 +223,11 @@ pub const Month = enum(u4) {
         };
     }
 
+    test shortName {
+        try std.testing.expectEqualStrings("Jan", Month.Jan.shortName());
+        try std.testing.expectEqualStrings("Sep", Month.Sep.shortName());
+    }
+
     /// Returns the full English name ("January" ... "December").
     pub fn longName(self: Month) []const u8 {
         return switch (self) {
@@ -190,6 +244,12 @@ pub const Month = enum(u4) {
             .Nov => "November",
             .Dec => "December",
         };
+    }
+
+    test longName {
+        try std.testing.expectEqualStrings("January", Month.Jan.longName());
+        // May is the one name that is the same at both lengths.
+        try std.testing.expectEqualStrings("May", Month.May.longName());
     }
 
     /// Returns the number of days in `year` that pass before the first of
@@ -211,6 +271,17 @@ pub const Month = enum(u4) {
         };
     }
 
+    test daysBefore {
+        // Nothing passes before January, and January's 31 days before
+        // February whatever the year.
+        try std.testing.expectEqual(@as(u9, 0), Month.Jan.daysBefore(2024));
+        try std.testing.expectEqual(@as(u9, 31), Month.Feb.daysBefore(2024));
+
+        // From March on, a leap year has put one more day behind it.
+        try std.testing.expectEqual(@as(u9, 60), Month.Mar.daysBefore(2024));
+        try std.testing.expectEqual(@as(u9, 59), Month.Mar.daysBefore(2025));
+    }
+
     /// Walks the months in order. The cursor is nulled once `next` wraps
     /// back around to January, which is what ends the iteration; there is
     /// no separate count to keep.
@@ -221,6 +292,10 @@ pub const Month = enum(u4) {
         pub const init: Iterator = .{ .index = .Jan };
 
         /// Returns the next month, or null once December has been returned.
+        ///
+        /// This has no doctest of its own: a doctest is named by a bare
+        /// identifier, and `next` here would be ambiguous with `Month.next`
+        /// in the enclosing scope. See the one on `Month.iterator`.
         pub fn next(self: *Iterator) ?Month {
             defer {
                 if (self.index) |i| {
@@ -238,6 +313,20 @@ pub const Month = enum(u4) {
     /// Returns an iterator over the months January through December.
     pub fn iterator() Iterator {
         return .init;
+    }
+
+    test iterator {
+        var count: usize = 0;
+        var last: ?Month = null;
+
+        var it = iterator();
+        while (it.next()) |month| {
+            count += 1;
+            last = month;
+        }
+
+        try std.testing.expectEqual(@as(usize, 12), count);
+        try std.testing.expectEqual(Month.Dec, last.?);
     }
 
     /// The three-letter month names, "jan" through "dec". Comparison

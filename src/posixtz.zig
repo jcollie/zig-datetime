@@ -92,6 +92,31 @@ pub const Rule = union(enum) {
             },
         }
     }
+
+    test dayOfMonth {
+        // The United States rules: the second Sunday of March and the
+        // first Sunday of November.
+        const march: Rule = .{ .month_week_day = .{ .month = .Mar, .week = 2, .weekday = .Sun } };
+        try std.testing.expectEqual(Month.Mar, march.dayOfMonth(2024).month);
+        try std.testing.expectEqual(@as(Day, 10), march.dayOfMonth(2024).day);
+
+        // Week 5 means the last such weekday, however many there are.
+        const last: Rule = .{ .month_week_day = .{ .month = .Mar, .week = 5, .weekday = .Sun } };
+        try std.testing.expectEqual(@as(Day, 31), last.dayOfMonth(2024).day);
+
+        // `Jn` never counts February 29, so J60 is March 1 in any year.
+        const julian: Rule = .{ .julian_no_leap = 60 };
+        try std.testing.expectEqual(Month.Mar, julian.dayOfMonth(2024).month);
+        try std.testing.expectEqual(@as(Day, 1), julian.dayOfMonth(2024).day);
+        try std.testing.expectEqual(Month.Mar, julian.dayOfMonth(2025).month);
+
+        // The zero-based form does count it, so the same ordinal lands a
+        // day earlier in a leap year than it does in an ordinary one.
+        const zero_based: Rule = .{ .julian = 59 };
+        try std.testing.expectEqual(Month.Feb, zero_based.dayOfMonth(2024).month);
+        try std.testing.expectEqual(@as(Day, 29), zero_based.dayOfMonth(2024).day);
+        try std.testing.expectEqual(Month.Mar, zero_based.dayOfMonth(2025).month);
+    }
 };
 
 /// A switch into or out of daylight saving time.
@@ -108,6 +133,18 @@ pub const Transition = struct {
         const date: Date = .{ .year = year, .month = day.month, .day = day.day };
         const midnight = @as(i64, date.toDaysSinceStartOfEra()) * std.time.s_per_day;
         return midnight + self.time - offset_before;
+    }
+
+    test timestamp {
+        // The second Sunday of March 2024 is the 10th, and the switch
+        // defaults to 02:00 local time. The offset in effect just before
+        // it is standard time, which is what turns that into UTC.
+        const transition: Transition = .{
+            .rule = .{ .month_week_day = .{ .month = .Mar, .week = 2, .weekday = .Sun } },
+        };
+
+        const at = transition.timestamp(2024, -6 * std.time.s_per_hour);
+        try std.testing.expectEqual(@as(i64, 1710057600), at);
     }
 };
 
@@ -209,6 +246,30 @@ pub const Posix = struct {
         };
     }
 
+    test spanAt {
+        const rule = try parse("CST6CDT,M3.2.0,M11.1.0");
+
+        // Midsummer 2024 falls inside daylight saving time, and the span runs
+        // from the March switch to the November one.
+        const summer = rule.spanAt(1720000000);
+        try testing.expect(summer.local_type.is_dst);
+        try testing.expectEqualStrings("CDT", summer.local_type.designation);
+        try testing.expectEqual(@as(i64, 1710057600), summer.start);
+        try testing.expectEqual(@as(i64, 1730617200), summer.end);
+
+        // Midwinter is standard time, and its span is bounded by the switches
+        // in the years either side, which is why three years are computed.
+        const winter = rule.spanAt(1704067200);
+        try testing.expect(!winter.local_type.is_dst);
+        try testing.expectEqualStrings("CST", winter.local_type.designation);
+
+        // A zone that never switches has one span covering all of time.
+        const fixed = try parse("<-03>3");
+        const always = fixed.spanAt(0);
+        try testing.expectEqual(@as(i64, std.math.minInt(i64)), always.start);
+        try testing.expectEqual(@as(i64, std.math.maxInt(i64)), always.end);
+    }
+
     /// Returns the local time type in effect at `timestamp`.
     pub fn typeAt(self: Posix, timestamp: i64) Type {
         const dst = self.dst orelse return .{
@@ -243,6 +304,18 @@ pub const Posix = struct {
             .is_dst = false,
             .designation = self.std_designation,
         };
+    }
+
+    test typeAt {
+        const rule = try parse("CST6CDT,M3.2.0,M11.1.0");
+
+        const summer = rule.typeAt(1720000000);
+        try testing.expect(summer.is_dst);
+        try testing.expectEqual(@as(i32, -5 * std.time.s_per_hour), summer.offset);
+
+        const winter = rule.typeAt(1704067200);
+        try testing.expect(!winter.is_dst);
+        try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), winter.offset);
     }
 };
 
@@ -304,15 +377,38 @@ const Cursor = struct {
         return self.index >= self.text.len;
     }
 
+    test done {
+        var cursor: Cursor = .{ .text = "5" };
+        try std.testing.expect(!cursor.done());
+
+        cursor.index = 1;
+        try std.testing.expect(cursor.done());
+    }
+
     /// The character at the cursor. The caller must have checked `done`.
     fn peek(self: Cursor) u8 {
         return self.text[self.index];
+    }
+
+    test peek {
+        const cursor: Cursor = .{ .text = "<-03>3" };
+        try std.testing.expectEqual(@as(u8, '<'), cursor.peek());
     }
 
     /// Consumes `char`, which the grammar requires to be next.
     fn expect(self: *Cursor, char: u8) ParseError!void {
         if (self.done() or self.peek() != char) return error.BadRule;
         self.index += 1;
+    }
+
+    test expect {
+        // The dots of an `Mm.w.d` rule are required, so a missing one is
+        // a malformed rule rather than the end of the field.
+        var cursor: Cursor = .{ .text = ".2.0" };
+        try cursor.expect('.');
+        try std.testing.expectEqual(@as(usize, 1), cursor.index);
+
+        try std.testing.expectError(error.BadRule, cursor.expect('.'));
     }
 
     /// Reads a zone abbreviation, either three or more letters or any run
@@ -341,6 +437,25 @@ const Cursor = struct {
         const name = self.text[start..self.index];
         if (name.len < 3) return error.BadDesignation;
         return name;
+    }
+
+    test designation {
+        // The bare form is a run of three or more letters.
+        var plain: Cursor = .{ .text = "CST6CDT" };
+        try std.testing.expectEqualStrings("CST", try plain.designation());
+
+        // The bracketed form is what lets a name hold digits and signs,
+        // which is how the numeric zone abbreviations are written.
+        var bracketed: Cursor = .{ .text = "<-03>3" };
+        try std.testing.expectEqualStrings("-03", try bracketed.designation());
+        // The closing bracket is consumed too, leaving the offset next.
+        try std.testing.expectEqualStrings("3", bracketed.text[bracketed.index..]);
+
+        var too_short: Cursor = .{ .text = "ES5" };
+        try std.testing.expectError(error.BadDesignation, too_short.designation());
+
+        var unclosed: Cursor = .{ .text = "<ABC" };
+        try std.testing.expectError(error.BadDesignation, unclosed.designation());
     }
 
     /// Reads `[+|-]hh[:mm[:ss]]` and returns it in seconds, keeping POSIX's
@@ -374,6 +489,30 @@ const Cursor = struct {
         return sign * seconds;
     }
 
+    test offset {
+        // POSIX writes offsets west-positive, the opposite of the sign
+        // this library uses everywhere else, and that is kept here: the
+        // conversion happens in `parse`.
+        var hours: Cursor = .{ .text = "6" };
+        try std.testing.expectEqual(@as(i32, 6 * std.time.s_per_hour), try hours.offset());
+
+        var negative: Cursor = .{ .text = "-5:30" };
+        try std.testing.expectEqual(
+            @as(i32, -(5 * std.time.s_per_hour + 30 * std.time.s_per_min)),
+            try negative.offset(),
+        );
+
+        var seconds: Cursor = .{ .text = "5:30:45" };
+        try std.testing.expectEqual(
+            @as(i32, 5 * std.time.s_per_hour + 30 * std.time.s_per_min + 45),
+            try seconds.offset(),
+        );
+
+        // An offset is capped at 24 hours; `ruleTime` is what goes wider.
+        var too_big: Cursor = .{ .text = "25" };
+        try std.testing.expectError(error.BadOffset, too_big.offset());
+    }
+
     /// Reads the `/time` of a rule, which unlike a zone offset may run to
     /// 167 hours either side of midnight so that a rule can name a moment
     /// in a neighbouring week.
@@ -400,6 +539,22 @@ const Cursor = struct {
         return sign * seconds;
     }
 
+    test ruleTime {
+        var cursor: Cursor = .{ .text = "2:00" };
+        try std.testing.expectEqual(@as(i32, 2 * std.time.s_per_hour), try cursor.ruleTime());
+
+        // The wider range is the point: a rule may name a moment in the
+        // week either side, which an offset could not express.
+        var far: Cursor = .{ .text = "167" };
+        try std.testing.expectEqual(@as(i32, 167 * std.time.s_per_hour), try far.ruleTime());
+
+        var negative: Cursor = .{ .text = "-2" };
+        try std.testing.expectEqual(@as(i32, -2 * std.time.s_per_hour), try negative.ruleTime());
+
+        var too_big: Cursor = .{ .text = "168" };
+        try std.testing.expectError(error.BadOffset, too_big.ruleTime());
+    }
+
     /// Reads a run of digits whose value must not exceed `max`.
     fn number(self: *Cursor, max: i32) ParseError!i32 {
         const start = self.index;
@@ -413,6 +568,22 @@ const Cursor = struct {
             if (value > max) return error.BadOffset;
         }
         return value;
+    }
+
+    test number {
+        var cursor: Cursor = .{ .text = "11" };
+        try std.testing.expectEqual(@as(i32, 11), try cursor.number(12));
+
+        // The cap is checked as the digits arrive, so a value that would
+        // overflow on the way to it is caught rather than wrapping.
+        var over: Cursor = .{ .text = "13" };
+        try std.testing.expectError(error.BadOffset, over.number(12));
+
+        var huge: Cursor = .{ .text = "99999999999" };
+        try std.testing.expectError(error.BadOffset, huge.number(365));
+
+        var empty: Cursor = .{ .text = "x" };
+        try std.testing.expectError(error.BadOffset, empty.number(12));
     }
 
     /// Reads a `rule[/time]` pair.
@@ -450,9 +621,55 @@ const Cursor = struct {
         }
         return .{ .rule = rule };
     }
+
+    test transition {
+        // `Mm.w.d`, the form nearly every real zone uses.
+        var month_week_day: Cursor = .{ .text = "M3.2.0" };
+        const us = try month_week_day.transition();
+        try std.testing.expectEqual(Month.Mar, us.rule.month_week_day.month);
+        try std.testing.expectEqual(@as(u8, 2), us.rule.month_week_day.week);
+        try std.testing.expectEqual(DayOfWeek.Sun, us.rule.month_week_day.weekday);
+
+        // The time defaults to 02:00 local when the rule does not give one.
+        try std.testing.expectEqual(@as(i32, 2 * std.time.s_per_hour), us.time);
+
+        var timed: Cursor = .{ .text = "M10.1.0/3:00" };
+        try std.testing.expectEqual(@as(i32, 3 * std.time.s_per_hour), (try timed.transition()).time);
+
+        var julian: Cursor = .{ .text = "J60" };
+        try std.testing.expectEqual(@as(u16, 60), (try julian.transition()).rule.julian_no_leap);
+
+        // A leading digit with no J is the zero-based form.
+        var zero_based: Cursor = .{ .text = "59" };
+        try std.testing.expectEqual(@as(u16, 59), (try zero_based.transition()).rule.julian);
+    }
 };
 
 const testing = std.testing;
+
+test parse {
+    const rule = try parse("CST6CDT,M3.2.0,M11.1.0");
+    try testing.expectEqualStrings("CST", rule.std_designation);
+
+    // POSIX writes offsets west-positive; everything here is seconds east
+    // of UTC, so the sign is flipped on the way in.
+    try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), rule.std_offset);
+
+    // A daylight saving offset that is not written is one hour ahead of
+    // standard time, which is what makes `CST6CDT` a complete rule.
+    try testing.expectEqualStrings("CDT", rule.dst.?.designation);
+    try testing.expectEqual(@as(i32, -5 * std.time.s_per_hour), rule.dst.?.offset);
+
+    // A zone with no daylight saving time at all has no `dst` half. The
+    // brackets are what let the name hold a sign and digits.
+    const fixed = try parse("<-03>3");
+    try testing.expectEqualStrings("-03", fixed.std_designation);
+    try testing.expectEqual(@as(?Dst, null), fixed.dst);
+
+    // Naming a daylight saving time without saying when it applies is
+    // something POSIX allows but this cannot evaluate.
+    try testing.expectError(error.MissingRules, parse("EST5EDT"));
+}
 
 test "parse a rule with no daylight saving time" {
     const rule = try parse("IST-5:30");

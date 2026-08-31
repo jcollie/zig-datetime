@@ -118,7 +118,7 @@ pub const FormatTag = enum {
         return @as(u30, @divTrunc(value, factor));
     }
 
-    test "cnv" {
+    test convertFractionalSeconds {
         const cases = [_]struct { tag: FormatTag, expected: u30, value: u30 }{
             .{ .tag = .S, .expected = 1, .value = 123456789 },
             .{ .tag = .SS, .expected = 12, .value = 123456789 },
@@ -156,6 +156,12 @@ pub const FormatTag = enum {
             };
         }
 
+        test init {
+            var it: Tokenizer = .init("YYYY");
+            try std.testing.expectEqual(FormatTag.YYYY, it.next().?.tag);
+            try std.testing.expectEqual(@as(?Token, null), it.next());
+        }
+
         /// Returns the next token, or null when the format string is
         /// exhausted.
         pub fn next(self: *Tokenizer) ?Token {
@@ -181,6 +187,17 @@ pub const FormatTag = enum {
             return .{
                 .char = self.format_string[self.index],
             };
+        }
+
+        test next {
+            // The longest sequence that matches wins, so "MM" is one tag
+            // and not two of `M`, while the dash matches nothing and comes
+            // back as a literal.
+            var it: Tokenizer = .init("MM-D");
+            try std.testing.expectEqual(FormatTag.MM, it.next().?.tag);
+            try std.testing.expectEqual(@as(u8, '-'), it.next().?.char);
+            try std.testing.expectEqual(FormatTag.D, it.next().?.tag);
+            try std.testing.expectEqual(@as(?Token, null), it.next());
         }
     };
 };

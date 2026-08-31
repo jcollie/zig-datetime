@@ -21,3 +21,16 @@ pub fn writeTwelveHour(hour: Hour, case: enum { lower, upper }, writer: anytype)
         .upper => try writer.writeAll("PM"),
     }
 }
+
+test writeTwelveHour {
+    var buf: [2]u8 = undefined;
+
+    var lower = std.Io.Writer.fixed(&buf);
+    try writeTwelveHour(9, .lower, &lower);
+    try std.testing.expectEqualStrings("am", lower.buffered());
+
+    // Noon is already past the meridian, and so is every hour after it.
+    var upper = std.Io.Writer.fixed(&buf);
+    try writeTwelveHour(12, .upper, &upper);
+    try std.testing.expectEqualStrings("PM", upper.buffered());
+}

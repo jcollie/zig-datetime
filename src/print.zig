@@ -65,6 +65,24 @@ pub fn ordinal(writer: anytype, num: anytype, superscript: bool) !void {
     );
 }
 
+test ordinal {
+    var buf: [8]u8 = undefined;
+
+    var first = std.Io.Writer.fixed(&buf);
+    try ordinal(&first, @as(u16, 1), false);
+    try std.testing.expectEqualStrings("1st", first.buffered());
+
+    // The teens are the exception: 11 through 13 take "th" even though
+    // their last digit says otherwise.
+    var teen = std.Io.Writer.fixed(&buf);
+    try ordinal(&teen, @as(u16, 11), false);
+    try std.testing.expectEqualStrings("11th", teen.buffered());
+
+    var super = std.Io.Writer.fixed(&buf);
+    try ordinal(&super, @as(u16, 2), true);
+    try std.testing.expectEqualStrings("2ⁿᵈ", super.buffered());
+}
+
 test "print ordinal normal" {
     const cases = [_]struct { number: u16, result: []const u8 }{
         .{
@@ -207,7 +225,7 @@ pub fn offset(writer: anytype, seconds: i32, separator: enum { none, colon }) !v
     try writer.print("{d:0>2}", .{magnitude % std.time.s_per_hour / std.time.s_per_min});
 }
 
-test "offset" {
+test offset {
     const cases = [_]struct { seconds: i32, colon: []const u8, none: []const u8 }{
         .{ .seconds = 0, .colon = "+00:00", .none = "+0000" },
         .{ .seconds = -5 * std.time.s_per_hour, .colon = "-05:00", .none = "-0500" },

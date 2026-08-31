@@ -101,4 +101,10 @@ pub const si = @import("si.zig");
 
 test {
     std.testing.refAllDecls(@This());
+
+    // refAllDecls reaches everything this file re-exports, and through them
+    // every internal module but one: `ordinal` is named only from inside the
+    // comptime bodies of `DateTime.parseRelativeTo`, which are never
+    // instantiated by a reference alone, so its tests need asking for.
+    _ = @import("ordinal.zig");
 }

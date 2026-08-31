@@ -226,6 +226,28 @@ fn ordinalDate(cursor: *Cursor, year: Year, precision: *Precision) ParseError!Da
     return .{ .year = year, .month = month, .day = @intCast(remaining) };
 }
 
+test ordinalDate {
+    // Day 75 of 2024, which is a leap year, so the count reaches March 15
+    // rather than the 16th.
+    var precision: Precision = .year;
+    var cursor: Cursor = .{ .text = "075" };
+    try std.testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 15 },
+        try ordinalDate(&cursor, 2024, &precision),
+    );
+    try std.testing.expectEqual(Precision.day, precision);
+
+    // 366 is a day in a leap year and not in an ordinary one.
+    var last: Cursor = .{ .text = "366" };
+    try std.testing.expectEqual(
+        Date{ .year = 2024, .month = .Dec, .day = 31 },
+        try ordinalDate(&last, 2024, &precision),
+    );
+
+    var overrun: Cursor = .{ .text = "366" };
+    try std.testing.expectError(error.OutOfRange, ordinalDate(&overrun, 2025, &precision));
+}
+
 /// Reads the `Www[-D]` of a week date. `year` is the ISO week-numbering
 /// year, which near New Year is not always the calendar year of the date
 /// it produces: 2027-W01-1 is 2027-01-04, while 2026-W53-5 is 2027-01-01.
@@ -260,6 +282,36 @@ fn weekDate(cursor: *Cursor, year: Year, extended: bool, precision: *Precision) 
         (@as(Date.DaysType, weekday) - 1));
 }
 
+test weekDate {
+    var precision: Precision = .year;
+
+    // Week 11 of 2024, day 5, is Friday 15 March.
+    var cursor: Cursor = .{ .text = "11-5" };
+    try std.testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 15 },
+        try weekDate(&cursor, 2024, true, &precision),
+    );
+    try std.testing.expectEqual(Precision.day, precision);
+
+    // The week-numbering year is not always the calendar year of the date
+    // it produces: the first week of 2027 starts in the January that
+    // follows 2026's 53rd week.
+    var spanning: Cursor = .{ .text = "53-5" };
+    try std.testing.expectEqual(
+        Date{ .year = 2027, .month = .Jan, .day = 1 },
+        try weekDate(&spanning, 2026, true, &precision),
+    );
+
+    // Naming no day leaves the week as the precision, and the date on the
+    // Monday the week starts with.
+    var reduced: Cursor = .{ .text = "11" };
+    try std.testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 11 },
+        try weekDate(&reduced, 2024, true, &precision),
+    );
+    try std.testing.expectEqual(Precision.week, precision);
+}
+
 /// The number of ISO weeks in `year`. A year has 53 when it starts on a
 /// Thursday, or when it is a leap year starting on a Wednesday, and 52
 /// otherwise.
@@ -271,6 +323,18 @@ pub fn isoWeeksInYear(year: Year) u8 {
     if (weekday == .Thu) return 53;
     if (leap and weekday == .Wed) return 53;
     return 52;
+}
+
+test isoWeeksInYear {
+    // 2026 begins on a Thursday, so it has a 53rd week.
+    try std.testing.expectEqual(@as(u8, 53), isoWeeksInYear(2026));
+
+    // 2020 is a leap year beginning on a Wednesday, the other way to get
+    // one, since the extra day pushes a Thursday into the final week.
+    try std.testing.expectEqual(@as(u8, 53), isoWeeksInYear(2020));
+
+    try std.testing.expectEqual(@as(u8, 52), isoWeeksInYear(2024));
+    try std.testing.expectEqual(@as(u8, 52), isoWeeksInYear(2025));
 }
 
 const Time = struct {
@@ -375,6 +439,17 @@ fn agree(extended: *?bool, is_extended: bool) ParseError!void {
     if (known != is_extended) return error.MixedFormats;
 }
 
+test agree {
+    // The first component to say which form it is in settles it.
+    var extended: ?bool = null;
+    try agree(&extended, true);
+    try std.testing.expectEqual(@as(?bool, true), extended);
+
+    // Saying the same thing again is fine; contradicting it is not.
+    try agree(&extended, true);
+    try std.testing.expectError(error.MixedFormats, agree(&extended, false));
+}
+
 /// Reads a zone, if one is there. Either spelling of the offset is taken
 /// whatever form the rest of the representation used; see `parse`.
 fn parseZone(cursor: *Cursor) ParseError!?i32 {
@@ -404,6 +479,27 @@ fn parseZone(cursor: *Cursor) ParseError!?i32 {
         @as(i32, @intCast(minutes)) * std.time.s_per_min);
 }
 
+test parseZone {
+    // Zulu is UTC.
+    var zulu: Cursor = .{ .text = "Z" };
+    try std.testing.expectEqual(@as(?i32, 0), try parseZone(&zulu));
+
+    // Both spellings of an offset are accepted whatever form the rest of
+    // the representation was written in.
+    var extended: Cursor = .{ .text = "-05:00" };
+    try std.testing.expectEqual(@as(?i32, -5 * std.time.s_per_hour), try parseZone(&extended));
+
+    var basic: Cursor = .{ .text = "+0545" };
+    try std.testing.expectEqual(
+        @as(?i32, 5 * std.time.s_per_hour + 45 * std.time.s_per_min),
+        try parseZone(&basic),
+    );
+
+    // Null means the input named no zone, which is not the same as UTC.
+    var absent: Cursor = .{ .text = "" };
+    try std.testing.expectEqual(@as(?i32, null), try parseZone(&absent));
+}
+
 /// Turns a parsed month number into a `Month`, rejecting 0 and anything
 /// past 12.
 fn monthFrom(value: u32) ParseError!Month {
@@ -411,11 +507,29 @@ fn monthFrom(value: u32) ParseError!Month {
     return std.enums.fromInt(Month, value) orelse unreachable;
 }
 
+test monthFrom {
+    try std.testing.expectEqual(Month.Jan, try monthFrom(1));
+    try std.testing.expectEqual(Month.Dec, try monthFrom(12));
+
+    try std.testing.expectError(error.OutOfRange, monthFrom(0));
+    try std.testing.expectError(error.OutOfRange, monthFrom(13));
+}
+
 /// Turns a parsed day number into a `Day`, checking it against the length
 /// of the month it falls in, which is why the year is needed as well.
 fn dayFrom(value: u32, month: Month, year: Year) ParseError!Day {
     if (value < 1 or value > month.lastDay(year)) return error.OutOfRange;
     return @intCast(value);
+}
+
+test dayFrom {
+    try std.testing.expectEqual(@as(Day, 31), try dayFrom(31, .Jan, 2024));
+
+    // The month and year are needed because the limit moves with them.
+    try std.testing.expectEqual(@as(Day, 29), try dayFrom(29, .Feb, 2024));
+    try std.testing.expectError(error.OutOfRange, dayFrom(29, .Feb, 2025));
+    try std.testing.expectError(error.OutOfRange, dayFrom(31, .Apr, 2024));
+    try std.testing.expectError(error.OutOfRange, dayFrom(0, .Jan, 2024));
 }
 
 /// A position in the input, with the small operations the grammar is
@@ -436,9 +550,25 @@ const Cursor = struct {
         return self.index >= self.text.len;
     }
 
+    test done {
+        var cursor: Cursor = .{ .text = "5" };
+        try std.testing.expect(!cursor.done());
+
+        cursor.index = 1;
+        try std.testing.expect(cursor.done());
+    }
+
     /// The character at the cursor. The caller must have checked `done`.
     fn peek(self: Cursor) u8 {
         return self.text[self.index];
+    }
+
+    test peek {
+        var cursor: Cursor = .{ .text = "2024" };
+        try std.testing.expectEqual(@as(u8, '2'), cursor.peek());
+
+        // Peeking does not consume, so the answer does not change.
+        try std.testing.expectEqual(@as(u8, '2'), cursor.peek());
     }
 
     /// Consumes `char` if it is next, and reports whether it was.
@@ -446,6 +576,17 @@ const Cursor = struct {
         if (self.done() or self.peek() != char) return false;
         self.index += 1;
         return true;
+    }
+
+    test eat {
+        var cursor: Cursor = .{ .text = "-03" };
+        try std.testing.expect(cursor.eat('-'));
+        try std.testing.expectEqual(@as(usize, 1), cursor.index);
+
+        // A refusal leaves the position alone, which is what lets the
+        // caller try something else.
+        try std.testing.expect(!cursor.eat('-'));
+        try std.testing.expectEqual(@as(usize, 1), cursor.index);
     }
 
     /// Consumes the next character if it is any of `chars`, and reports
@@ -457,12 +598,30 @@ const Cursor = struct {
         return true;
     }
 
+    test eatAny {
+        // The date and time may be joined by either case of T, or by a
+        // space, so the separator is matched against a set.
+        var cursor: Cursor = .{ .text = "t14" };
+        try std.testing.expect(cursor.eatAny("Tt "));
+        try std.testing.expectEqual(@as(usize, 1), cursor.index);
+
+        try std.testing.expect(!cursor.eatAny("Tt "));
+    }
+
     /// The length of the run of digits at the cursor.
     fn digitsAhead(self: Cursor) usize {
         var count: usize = 0;
         while (self.index + count < self.text.len and
             std.ascii.isDigit(self.text[self.index + count])) count += 1;
         return count;
+    }
+
+    test digitsAhead {
+        // How many digits follow is what tells `2024-075` from `2024-07`,
+        // so the run is measured before any of it is consumed.
+        try std.testing.expectEqual(@as(usize, 3), (Cursor{ .text = "075" }).digitsAhead());
+        try std.testing.expectEqual(@as(usize, 2), (Cursor{ .text = "07-05" }).digitsAhead());
+        try std.testing.expectEqual(@as(usize, 0), (Cursor{ .text = "W11" }).digitsAhead());
     }
 
     /// Reads exactly `count` digits.
@@ -476,6 +635,21 @@ const Cursor = struct {
         }
         self.index += count;
         return value;
+    }
+
+    test digits {
+        var cursor: Cursor = .{ .text = "2024-03" };
+        try std.testing.expectEqual(@as(u32, 2024), try cursor.digits(4));
+        try std.testing.expect(cursor.eat('-'));
+        try std.testing.expectEqual(@as(u32, 3), try cursor.digits(2));
+
+        // Exactly `count` digits are required, so running out or hitting
+        // a non-digit is an error rather than a short read.
+        var short: Cursor = .{ .text = "20" };
+        try std.testing.expectError(error.ParseError, short.digits(4));
+
+        var letters: Cursor = .{ .text = "20xx" };
+        try std.testing.expectError(error.ParseError, letters.digits(4));
     }
 
     /// Reads a decimal fraction, if one is there, and returns it scaled
@@ -504,9 +678,64 @@ const Cursor = struct {
 
         return @intCast(numerator * unit / denominator);
     }
+
+    test fraction {
+        // The fraction is of whatever component it follows, so the same
+        // digits mean different amounts against different units.
+        var half_minute: Cursor = .{ .text = ".5" };
+        try std.testing.expectEqual(@as(?u64, std.time.ns_per_min / 2), try half_minute.fraction(std.time.ns_per_min));
+
+        // ISO 8601 allows a comma as well, and prefers it.
+        var comma: Cursor = .{ .text = ",25" };
+        try std.testing.expectEqual(@as(?u64, std.time.ns_per_s / 4), try comma.fraction(std.time.ns_per_s));
+
+        // No fraction there at all is not an error; there just isn't one.
+        var none: Cursor = .{ .text = "Z" };
+        try std.testing.expectEqual(@as(?u64, null), try none.fraction(std.time.ns_per_s));
+
+        // A separator with no digits after it is malformed.
+        var empty: Cursor = .{ .text = "." };
+        try std.testing.expectError(error.BadFraction, empty.fraction(std.time.ns_per_s));
+    }
 };
 
 const testing = std.testing;
+
+test parse {
+    // A full timestamp: date, time, and zone.
+    const full = try parse("2024-03-15T14:30:00Z");
+    try testing.expectEqual(@as(Year, 2024), full.value.year);
+    try testing.expectEqual(Month.Mar, full.value.month);
+    try testing.expectEqual(@as(Day, 15), full.value.day);
+    try testing.expectEqual(@as(Hour, 14), full.value.hour);
+    try testing.expect(full.has_offset);
+    try testing.expectEqual(Precision.second, full.precision);
+
+    // The basic form, written without separators, means the same thing.
+    const basic = try parse("20240315T143000Z");
+    try testing.expectEqual(full.value, basic.value);
+
+    // A representation may stop early, and `precision` says where. What
+    // was not written is defaulted, so this is midnight on the first.
+    const reduced = try parse("2024-03");
+    try testing.expectEqual(Precision.month, reduced.precision);
+    try testing.expectEqual(@as(Day, 1), reduced.value.day);
+    try testing.expectEqual(@as(Hour, 0), reduced.value.hour);
+
+    // A local time says nothing about its offset, which `has_offset`
+    // reports and a zero `offset` cannot.
+    const local = try parse("2024-03-15T14:30:00");
+    try testing.expect(!local.has_offset);
+
+    // Only the representation is consumed; the rest is the caller's.
+    // Note that a space is one of the separators a time may follow the
+    // date with, so trailing text has to start past a complete one.
+    const trailing = try parse("2024-03-15T14:30:00Z and then some");
+    try testing.expectEqualStrings("2024-03-15T14:30:00Z", trailing.str);
+
+    // The date and the time must agree about which form they are in.
+    try testing.expectError(error.MixedFormats, parse("2024-03-15T143000"));
+}
 
 /// Asserts that `input` parses whole, to the given value, offset flag and
 /// precision.
@@ -523,6 +752,74 @@ fn expectParse(
     // The whole of these inputs is a representation, so all of it should
     // have been consumed.
     try testing.expectEqualStrings(input, result.str);
+}
+
+test parseDate {
+    // The three forms are told apart by what follows the year: a two
+    // digit month, a three digit ordinal day, or a W.
+    var extended: ?bool = null;
+    var precision: Precision = .year;
+
+    var calendar: Cursor = .{ .text = "2024-03-15" };
+    try testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 15 },
+        try parseDate(&calendar, &extended, &precision),
+    );
+    try testing.expectEqual(@as(?bool, true), extended);
+
+    extended = null;
+    var ordinal: Cursor = .{ .text = "2024-075" };
+    try testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 15 },
+        try parseDate(&ordinal, &extended, &precision),
+    );
+
+    extended = null;
+    var week: Cursor = .{ .text = "2024-W11-5" };
+    try testing.expectEqual(
+        Date{ .year = 2024, .month = .Mar, .day = 15 },
+        try parseDate(&week, &extended, &precision),
+    );
+
+    // A bare year is too short to say which form it is in, so `extended`
+    // is left for a later component to settle, and nothing below the year
+    // was named, so `precision` is left where the caller set it.
+    extended = null;
+    precision = .year;
+    var year_only: Cursor = .{ .text = "2024" };
+    try testing.expectEqual(
+        Date{ .year = 2024, .month = .Jan, .day = 1 },
+        try parseDate(&year_only, &extended, &precision),
+    );
+    try testing.expectEqual(@as(?bool, null), extended);
+    try testing.expectEqual(Precision.year, precision);
+}
+
+test parseTime {
+    var extended: ?bool = null;
+    var precision: Precision = .year;
+
+    var cursor: Cursor = .{ .text = "14:30:05" };
+    const time = try parseTime(&cursor, &extended, &precision);
+    try testing.expectEqual(@as(Hour, 14), time.hour);
+    try testing.expectEqual(@as(Minute, 30), time.minute);
+    try testing.expectEqual(@as(Second, 5), time.second);
+    try testing.expectEqual(Precision.second, precision);
+
+    // A fraction may sit on whichever component is the last one written,
+    // so half past an hour can be spelled either way.
+    extended = null;
+    var fractional: Cursor = .{ .text = "14.5" };
+    const half = try parseTime(&fractional, &extended, &precision);
+    try testing.expectEqual(@as(Hour, 14), half.hour);
+    try testing.expectEqual(@as(Minute, 30), half.minute);
+
+    // 24:00 is the end of a day rather than the start of one, which the
+    // caller resolves by moving to the following date.
+    extended = null;
+    var end: Cursor = .{ .text = "24:00" };
+    const midnight = try parseTime(&end, &extended, &precision);
+    try testing.expect(midnight.end_of_day);
 }
 
 test "calendar dates in both forms" {

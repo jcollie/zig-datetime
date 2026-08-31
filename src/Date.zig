@@ -33,6 +33,15 @@ pub fn isRegular(self: Date) bool {
     return self.day >= 1 and self.day <= self.month.lastDay(self.year);
 }
 
+test isRegular {
+    try std.testing.expect((Date{ .year = 2024, .month = .Feb, .day = 29 }).isRegular());
+
+    // 2025 is not a leap year, so the same date is not a day in it.
+    try std.testing.expect(!(Date{ .year = 2025, .month = .Feb, .day = 29 }).isRegular());
+    try std.testing.expect(!(Date{ .year = 2024, .month = .Apr, .day = 31 }).isRegular());
+    try std.testing.expect(!(Date{ .year = 2024, .month = .Jan, .day = 0 }).isRegular());
+}
+
 /// A count of days since 1970-01-01, wide enough for every date a `Year`
 /// can hold: the whole span of years at the longest a year can be.
 pub const DaysType = std.math.IntFittingRange(
@@ -75,6 +84,23 @@ pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
         .month = @enumFromInt(month),
         .day = @intCast(day),
     };
+}
+
+test fromDaysSinceStartOfEra {
+    try std.testing.expectEqual(
+        Date{ .year = 1970, .month = .Jan, .day = 1 },
+        fromDaysSinceStartOfEra(0),
+    );
+    try std.testing.expectEqual(
+        Date{ .year = 1970, .month = .Jan, .day = 2 },
+        fromDaysSinceStartOfEra(1),
+    );
+
+    // Negative counts reach dates before the epoch.
+    try std.testing.expectEqual(
+        Date{ .year = 1969, .month = .Dec, .day = 31 },
+        fromDaysSinceStartOfEra(-1),
+    );
 }
 
 test "civilFromDays" {
@@ -154,6 +180,21 @@ pub fn toDaysSinceStartOfEra(self: Date) DaysType {
     return era * 146097 + day_of_era - 719468;
 }
 
+test toDaysSinceStartOfEra {
+    try std.testing.expectEqual(
+        @as(DaysType, 0),
+        (Date{ .year = 1970, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra(),
+    );
+    try std.testing.expectEqual(
+        @as(DaysType, -1),
+        (Date{ .year = 1969, .month = .Dec, .day = 31 }).toDaysSinceStartOfEra(),
+    );
+
+    // It is the inverse of `fromDaysSinceStartOfEra`.
+    const date: Date = .{ .year = 2024, .month = .Mar, .day = 15 };
+    try std.testing.expectEqual(date, fromDaysSinceStartOfEra(date.toDaysSinceStartOfEra()));
+}
+
 test "daysFromCivil" {
     const tests = [_]struct { date: Date, result: DaysType }{
         .{
@@ -192,4 +233,10 @@ test "daysFromCivil" {
 pub fn dayOfWeek(self: Date) DayOfWeek {
     const days = self.toDaysSinceStartOfEra();
     return DayOfWeek.fromDaysSinceStartOfEra(days);
+}
+
+test dayOfWeek {
+    // The epoch was a Thursday.
+    try std.testing.expectEqual(DayOfWeek.Thu, (Date{ .year = 1970, .month = .Jan, .day = 1 }).dayOfWeek());
+    try std.testing.expectEqual(DayOfWeek.Fri, (Date{ .year = 2024, .month = .Mar, .day = 15 }).dayOfWeek());
 }

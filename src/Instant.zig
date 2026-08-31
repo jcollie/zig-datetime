@@ -19,6 +19,9 @@ const Minute = @import("minute.zig").Minute;
 const Second = @import("second.zig").Second;
 const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
+const Year = @import("year.zig").Year;
+const Month = @import("month.zig").Month;
+const Day = @import("day.zig").Day;
 
 timestamp: i128,
 
@@ -29,11 +32,26 @@ pub fn now(io: std.Io) Instant {
     };
 }
 
+test now {
+    const instant = now(std.testing.io);
+
+    // Nothing about the reading is fixed, but the clock is a real one, so
+    // it is somewhere after the epoch.
+    try std.testing.expect(instant.timestamp > 0);
+}
+
 /// Same as `now`: the current time read from the `.real` clock of `io`, in UTC.
 pub fn utc(io: std.Io) Instant {
     return .{
         .timestamp = std.Io.Timestamp.now(io, .real).nanoseconds,
     };
+}
+
+test utc {
+    // An instant carries no zone, so this is `now` under another name,
+    // kept for callers that would rather say which they meant.
+    const instant = utc(std.testing.io);
+    try std.testing.expect(instant.timestamp > 0);
 }
 
 /// Creates an `Instant` from a count of nanoseconds since the Unix epoch, in UTC.
@@ -43,6 +61,16 @@ pub fn fromNanoTimeStamp(timestamp: i128) Instant {
     };
 }
 
+test fromNanoTimeStamp {
+    const instant: Instant = .fromNanoTimeStamp(1710512400_000000000);
+    try std.testing.expectEqual(@as(i128, 1710512400_000000000), instant.timestamp);
+
+    const datetime = instant.asDateTime();
+    try std.testing.expectEqual(@as(Year, 2024), datetime.year);
+    try std.testing.expectEqual(Month.Mar, datetime.month);
+    try std.testing.expectEqual(@as(Day, 15), datetime.day);
+}
+
 /// Creates an `Instant` from a count of microseconds since the Unix epoch, in UTC.
 pub fn fromMicroTimeStamp(timestamp: i64) Instant {
     return .{
@@ -50,11 +78,21 @@ pub fn fromMicroTimeStamp(timestamp: i64) Instant {
     };
 }
 
+test fromMicroTimeStamp {
+    const instant: Instant = .fromMicroTimeStamp(1_500_000);
+    try std.testing.expectEqual(@as(i128, 1_500_000_000), instant.timestamp);
+}
+
 /// Creates an `Instant` from a count of milliseconds since the Unix epoch, in UTC.
 pub fn fromMilliTimestamp(timestamp: i64) Instant {
     return .{
         .timestamp = timestamp * std.time.ns_per_ms,
     };
+}
+
+test fromMilliTimestamp {
+    const instant: Instant = .fromMilliTimestamp(1_500);
+    try std.testing.expectEqual(@as(i128, 1_500_000_000), instant.timestamp);
 }
 
 /// Converts this instant to a calendar `DateTime` in UTC. Timestamps
@@ -176,6 +214,23 @@ test "instantTest" {
     }
 }
 
-test "asDateTime" {
-    _ = Instant.utc(std.testing.io).asDateTime();
+test asDateTime {
+    // The epoch itself, which was a Thursday.
+    const epoch = (Instant{ .timestamp = 0 }).asDateTime();
+    try std.testing.expectEqual(@as(Year, 1970), epoch.year);
+    try std.testing.expectEqual(Month.Jan, epoch.month);
+    try std.testing.expectEqual(@as(Day, 1), epoch.day);
+    try std.testing.expectEqual(DayOfWeek.Thu, epoch.weekday);
+
+    // One nanosecond earlier is the last instant of 1969, not a negative
+    // time of day: the split rounds towards the earlier date.
+    const before = (Instant{ .timestamp = -1 }).asDateTime();
+    try std.testing.expectEqual(@as(Year, 1969), before.year);
+    try std.testing.expectEqual(Month.Dec, before.month);
+    try std.testing.expectEqual(@as(Day, 31), before.day);
+    try std.testing.expectEqual(@as(u5, 23), before.hour);
+    try std.testing.expectEqual(@as(u30, 999999999), before.nanosecond);
+
+    // The result is always UTC, so it carries no offset.
+    try std.testing.expectEqual(@as(i32, 0), epoch.offset);
 }

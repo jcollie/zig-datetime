@@ -48,6 +48,11 @@ pub const Prefix = enum(i8) {
         return @intFromEnum(self);
     }
 
+    test exponent {
+        try std.testing.expectEqual(@as(i8, 3), Prefix.kilo.exponent());
+        try std.testing.expectEqual(@as(i8, -9), Prefix.nano.exponent());
+    }
+
     /// Returns the SI symbol for this prefix (e.g. "k" for kilo, "µ" for
     /// micro). Asserts that this is one of the named SI prefixes.
     pub fn symbol(self: Prefix) []const u8 {
@@ -79,6 +84,11 @@ pub const Prefix = enum(i8) {
             _ => unreachable,
         };
     }
+
+    test symbol {
+        try std.testing.expectEqualStrings("k", Prefix.kilo.symbol());
+        try std.testing.expectEqualStrings("µ", Prefix.micro.symbol());
+    }
 };
 
 /// Converts `value` from units of prefix `from` to units of prefix `to`.
@@ -99,12 +109,7 @@ pub fn convert(from: Prefix, to: Prefix, value: i128) struct { result: i128, rem
     return .{ .result = value, .remainder = 0 };
 }
 
-test "symbol" {
-    try std.testing.expectEqualStrings("k", Prefix.kilo.symbol());
-    try std.testing.expectEqualStrings("µ", Prefix.micro.symbol());
-}
-
-test "convert-1" {
+test convert {
     const result = convert(.milli, .micro, 1);
     try std.testing.expectEqual(@as(i128, 1000), result.result);
     try std.testing.expectEqual(@as(i128, 0), result.remainder);

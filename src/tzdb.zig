@@ -32,6 +32,23 @@ pub fn validateName(name: []const u8) InvalidNameError!void {
     };
 }
 
+test validateName {
+    // Ordinary IANA names, including the `Etc/GMT+5` family and the
+    // legacy `US/Central` spellings, all pass.
+    try validateName("UTC");
+    try validateName("America/Chicago");
+    try validateName("Etc/GMT+5");
+    try validateName("US/Central");
+
+    // A name arriving from `TZ` must not be able to walk out of the zone
+    // directory or name an absolute path, since it becomes one.
+    try std.testing.expectError(error.InvalidZoneName, validateName("../../etc/passwd"));
+    try std.testing.expectError(error.InvalidZoneName, validateName("/etc/passwd"));
+    try std.testing.expectError(error.InvalidZoneName, validateName(".hidden"));
+    try std.testing.expectError(error.InvalidZoneName, validateName(""));
+    try std.testing.expectError(error.InvalidZoneName, validateName("America/Chicago\x00"));
+}
+
 /// The operating system's copy of the IANA database.
 ///
 /// Which directory holds that copy, and which zone the user wants, are
@@ -170,6 +187,26 @@ pub const system = struct {
         return .{ .name = body };
     }
 
+    test resolveTz {
+        // Unset means the machine's own zone; set but empty means UTC.
+        try std.testing.expectEqual(Tz.local, resolveTz(null));
+        try std.testing.expectEqual(Tz.utc, resolveTz(""));
+
+        // A leading colon is the tzcode convention for "implementation
+        // defined", and is dropped before the rest is classified.
+        try std.testing.expectEqualStrings("America/Chicago", resolveTz("America/Chicago").name);
+        try std.testing.expectEqualStrings("America/Chicago", resolveTz(":America/Chicago").name);
+
+        // An absolute path bypasses TZDIR entirely.
+        try std.testing.expectEqualStrings("/etc/localtime", resolveTz("/etc/localtime").path);
+
+        // A rule names no file, so there is nothing to look for. Note
+        // that `Etc/GMT+5` is a zone name and not a rule, which is what
+        // makes this more than a look at the first character.
+        try std.testing.expectEqualStrings("CST6CDT,M3.2.0,M11.1.0", resolveTz("CST6CDT,M3.2.0,M11.1.0").rule);
+        try std.testing.expectEqualStrings("Etc/GMT+5", resolveTz("Etc/GMT+5").name);
+    }
+
     /// A TZif file for a single zone is a few kilobytes at most; the
     /// largest in the 2026c release is well under 32 KiB.
     const size_limit: std.Io.Limit = .limited(1 << 20);
@@ -204,6 +241,22 @@ pub const system = struct {
         const found = std.mem.trim(u8, line[prefix.len..], " \t\r");
         if (found.len == 0) return null;
         return try gpa.dupe(u8, found);
+    }
+
+    test version {
+        // Read from the first line of `tzdata.zi`, which not every
+        // system ships, so null is an ordinary answer rather than an
+        // error. The caller owns the string when there is one.
+        for (search_directories) |directory| {
+            const found = (try version(testing.io, testing.allocator, directory)) orelse continue;
+            defer testing.allocator.free(found);
+
+            // A release is a year and a letter, such as "2026c".
+            try testing.expect(found.len >= 5);
+            try testing.expect(std.ascii.isDigit(found[0]));
+            return;
+        }
+        return error.SkipZigTest;
     }
 
     /// What `load` can fail with: a name that does not validate, anything
@@ -245,6 +298,26 @@ pub const system = struct {
         return TimeZone.fromOwnedBytes(owned_name, bytes);
     }
 
+    test load {
+        for (search_directories) |directory| {
+            var zone = load(testing.io, testing.allocator, directory, "America/Chicago") catch continue;
+            defer zone.deinit(testing.allocator);
+
+            try testing.expectEqualStrings("America/Chicago", zone.name);
+            try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), zone.offsetAt(1705320000));
+
+            // The name is validated before it is joined onto the
+            // directory, so a value taken straight from `TZ` cannot walk
+            // out of the tree.
+            try testing.expectError(
+                error.InvalidZoneName,
+                load(testing.io, testing.allocator, directory, "../../etc/passwd"),
+            );
+            return;
+        }
+        return error.SkipZigTest;
+    }
+
     /// Loads a zone from a TZif file directly, rather than by name.
     ///
     /// With `path` null this reads `/etc/localtime`, which is the
@@ -269,6 +342,18 @@ pub const system = struct {
         errdefer gpa.free(owned_name);
 
         return TimeZone.fromOwnedBytes(owned_name, bytes);
+    }
+
+    test loadLocal {
+        // Passing null reads the machine's own zone from
+        // `/etc/localtime`, which is a path rather than a name and so
+        // needs no TZDIR.
+        var zone = loadLocal(testing.io, testing.allocator, null) catch return error.SkipZigTest;
+        defer zone.deinit(testing.allocator);
+
+        // The zone it names is not knowable here, but it is a real one.
+        try testing.expectEqualStrings("localtime", zone.name);
+        _ = zone.offsetAt(0);
     }
 };
 
@@ -295,9 +380,31 @@ pub const embedded = struct {
         return buffer[0..wanted];
     }
 
+    test names {
+        // The buffer bounds how many are written, so a caller can ask for
+        // however many it has room for; `count` says how many there are.
+        var buffer: [8][]const u8 = undefined;
+        const found = names(&buffer);
+
+        try std.testing.expectEqual(@min(buffer.len, count()), found.len);
+
+        // They come back sorted, which is what makes `load` a binary
+        // search rather than a scan.
+        for (found, 0..) |name, i| {
+            if (i == 0) continue;
+            try std.testing.expect(std.mem.lessThan(u8, found[i - 1], name));
+        }
+    }
+
     /// The number of embedded zones.
     pub fn count() usize {
         return generated.entries.len;
+    }
+
+    test count {
+        // Zero unless the build asked for the data with `-Dembed-tzdata`,
+        // which is what `available` reports.
+        try std.testing.expectEqual(available, count() > 0);
     }
 
     /// Looks up a zone by name. Needs no allocator, because the data is
@@ -311,9 +418,33 @@ pub const embedded = struct {
         );
     }
 
+    test load {
+        // Null when this build embedded no data, which is the default.
+        if (!available) {
+            try std.testing.expectEqual(@as(?TimeZone, null), try load("America/Chicago"));
+            return error.SkipZigTest;
+        }
+
+        // The zone borrows the blob that is already in the binary, so no
+        // allocator is involved and there is nothing to free.
+        const zone = (try load("America/Chicago")).?;
+        try std.testing.expectEqualStrings("America/Chicago", zone.name);
+        try std.testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), zone.offsetAt(1705320000));
+
+        try std.testing.expectEqual(@as(?TimeZone, null), try load("Nowhere/Nothing"));
+    }
+
     /// Looks `name` up in the index. The generated entries are sorted by
     /// name, so this is a binary search over them.
     fn find(name: []const u8) ?generated.Entry {
+        // With no embedded data `entries` is comptime-empty, and the
+        // search below will not compile against it: indexing a slice
+        // whose length is known to be zero is an error however
+        // unreachable the index is. Returning early at comptime keeps the
+        // rest from being analyzed, which is what lets a caller name
+        // `embedded.load` in a build that did not ask for the data.
+        if (comptime generated.entries.len == 0) return null;
+
         var low: usize = 0;
         var high: usize = generated.entries.len;
         while (low < high) {
@@ -325,6 +456,18 @@ pub const embedded = struct {
             }
         }
         return null;
+    }
+
+    test find {
+        if (!available) return error.SkipZigTest;
+
+        // The entries are sorted by name, so every one of them is
+        // findable and nothing else is.
+        var buffer: [4][]const u8 = undefined;
+        for (names(&buffer)) |name| {
+            try std.testing.expect(find(name) != null);
+        }
+        try std.testing.expectEqual(@as(?generated.Entry, null), find("Nowhere/Nothing"));
     }
 };
 

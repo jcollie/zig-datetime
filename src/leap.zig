@@ -31,7 +31,7 @@ pub fn is(year: Year) bool {
     // return @rem(year, 4) == 0 and (@rem(year, 100) != 0 or @rem(year, 400) == 0);
 }
 
-test "isLeap" {
+test is {
     const testing = @import("std").testing;
     try testing.expectEqual(false, is(2005));
     try testing.expectEqual(true, is(2096));

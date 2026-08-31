@@ -50,7 +50,7 @@ pub fn digits(text: []const u8) u32 {
     return value;
 }
 
-test "digits" {
+test digits {
     try std.testing.expectEqual(@as(u32, 0), digits(""));
     try std.testing.expectEqual(@as(u32, 7), digits("7"));
     try std.testing.expectEqual(@as(u32, 7), digits("07"));
@@ -70,7 +70,16 @@ pub fn nanosecond(text: []const u8, length: usize) !Nanosecond {
         try std.math.powi(Nanosecond, 10, 9 - @as(Nanosecond, @intCast(length)));
 }
 
-test "int" {
+test nanosecond {
+    // The length is the number of digits the field was written with, so
+    // the same digits mean different amounts at different lengths.
+    try std.testing.expectEqual(@as(Nanosecond, 500000000), try nanosecond("5", 1));
+    try std.testing.expectEqual(@as(Nanosecond, 120000000), try nanosecond("12", 2));
+    try std.testing.expectEqual(@as(Nanosecond, 123456789), try nanosecond("123456789", 9));
+    try std.testing.expectError(error.TooShort, nanosecond("1", 2));
+}
+
+test int {
     // A digit run that reaches the end of the input is returned in full
     // even when it is shorter than maxlen.
     try std.testing.expectEqualStrings("5", int("5", 2));

@@ -70,6 +70,26 @@ const Counts = struct {
             @as(u64, self.isstdcnt) +
             @as(u64, self.isutcnt);
     }
+
+    test blockLength {
+        // Two transitions, two types, "CST\0CDT\0", no leap seconds and
+        // no indicators, at the 4-byte time width of a version 1 block:
+        // 2*(4+1) + 2*6 + 8 = 30.
+        const counts: Counts = .{
+            .version = .v2,
+            .isutcnt = 0,
+            .isstdcnt = 0,
+            .leapcnt = 0,
+            .timecnt = 2,
+            .typecnt = 2,
+            .charcnt = 8,
+        };
+        try testing.expectEqual(@as(u64, 30), counts.blockLength(4));
+
+        // The same counts at the 8-byte width of the second block, where
+        // each transition costs four bytes more: 2*(8+1) + 12 + 8 = 38.
+        try testing.expectEqual(@as(u64, 38), counts.blockLength(8));
+    }
 };
 
 /// A parsed TZif file, as slices into the bytes it was parsed from.
@@ -101,6 +121,14 @@ pub const Tzif = struct {
         return self.transition_times.len / self.time_size;
     }
 
+    test transitionCount {
+        const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+        defer testing.allocator.free(bytes);
+        const file = try parse(bytes);
+
+        try testing.expectEqual(@as(usize, 2), file.transitionCount());
+    }
+
     /// Returns the `index`th transition as a Unix timestamp in seconds.
     pub fn transitionAt(self: Tzif, index: usize) i64 {
         const at = index * self.time_size;
@@ -111,9 +139,29 @@ pub const Tzif = struct {
         };
     }
 
+    test transitionAt {
+        const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+        defer testing.allocator.free(bytes);
+        const file = try parse(bytes);
+
+        // Decoded from the file's own big-endian bytes on each call,
+        // which is why nothing here needs an allocator.
+        try testing.expectEqual(@as(i64, 1710057600), file.transitionAt(0));
+        try testing.expectEqual(@as(i64, 1730617200), file.transitionAt(1));
+    }
+
     /// The number of local time types in the file. Always at least one.
     pub fn typeCount(self: Tzif) usize {
         return self.type_records.len / type_record_len;
+    }
+
+    test typeCount {
+        const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+        defer testing.allocator.free(bytes);
+        const file = try parse(bytes);
+
+        // The file is built with a standard type and a daylight one.
+        try testing.expectEqual(@as(usize, 2), file.typeCount());
     }
 
     /// Returns the `index`th local time type.
@@ -129,6 +177,21 @@ pub const Tzif = struct {
         };
     }
 
+    test typeAt {
+        const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+        defer testing.allocator.free(bytes);
+        const file = try parse(bytes);
+
+        const standard = file.typeAt(0);
+        try testing.expectEqualStrings("CST", standard.designation);
+        try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), standard.offset);
+        try testing.expect(!standard.is_dst);
+
+        const daylight = file.typeAt(1);
+        try testing.expectEqualStrings("CDT", daylight.designation);
+        try testing.expect(daylight.is_dst);
+    }
+
     /// Returns the type that applies before the first transition. RFC 8536
     /// specifies the first type that is not a daylight saving time, falling
     /// back to the first type of all.
@@ -138,6 +201,16 @@ pub const Tzif = struct {
             if (!local_type.is_dst) return local_type;
         }
         return self.typeAt(0);
+    }
+
+    test defaultType {
+        const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+        defer testing.allocator.free(bytes);
+        const file = try parse(bytes);
+
+        // The first type that is not a daylight saving one, which here
+        // is the standard type rather than the one at index 0 by luck.
+        try testing.expectEqualStrings("CST", file.defaultType().designation);
     }
 
     /// A stretch of time over which one local time type applies, and that
@@ -179,6 +252,27 @@ pub const Tzif = struct {
         };
     }
 
+    test spanAtTimestamp {
+        const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+        defer testing.allocator.free(bytes);
+        const file = try parse(bytes);
+
+        // Between the two transitions, bounded by both of them.
+        const summer = file.spanAtTimestamp(1720000000).?;
+        try testing.expectEqualStrings("CDT", summer.local_type.designation);
+        try testing.expectEqual(@as(i64, 1710057600), summer.start);
+        try testing.expectEqual(@as(i64, 1730617200), summer.end);
+
+        // Before the first transition there is no lower bound.
+        const before = file.spanAtTimestamp(0).?;
+        try testing.expectEqualStrings("CST", before.local_type.designation);
+        try testing.expectEqual(@as(i64, std.math.minInt(i64)), before.start);
+
+        // At or after the last transition the file has nothing more to
+        // say and the footer takes over.
+        try testing.expectEqual(@as(?Span, null), file.spanAtTimestamp(1730617200));
+    }
+
     /// Returns the local time type in effect at `timestamp`, or null under
     /// the same condition as `spanAtTimestamp`.
     ///
@@ -201,12 +295,34 @@ pub const Tzif = struct {
         return self.typeAt(self.transition_types[low]);
     }
 
+    test typeAtTimestamp {
+        const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+        defer testing.allocator.free(bytes);
+        const file = try parse(bytes);
+
+        try testing.expectEqualStrings("CST", file.typeAtTimestamp(0).?.designation);
+        try testing.expectEqualStrings("CDT", file.typeAtTimestamp(1710057600).?.designation);
+
+        // Null once past the last stored transition; see `posixtz`.
+        try testing.expectEqual(@as(?Type, null), file.typeAtTimestamp(1730617200));
+    }
+
     /// Returns the type in effect at or after the last transition, which is
     /// what the footer's rules must agree with at the moment they take over.
     pub fn lastType(self: Tzif) Type {
         const count = self.transitionCount();
         if (count == 0) return self.defaultType();
         return self.typeAt(self.transition_types[count - 1]);
+    }
+
+    test lastType {
+        const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+        defer testing.allocator.free(bytes);
+        const file = try parse(bytes);
+
+        // The November transition returns the zone to standard time, so
+        // that is what the footer's rules have to agree with.
+        try testing.expectEqualStrings("CST", file.lastType().designation);
     }
 };
 
@@ -271,6 +387,29 @@ fn parseHeader(bytes: []const u8) ParseError!Counts {
     return counts;
 }
 
+test parseHeader {
+    const bytes = try buildFile(&.{1710057600}, &.{1}, "CST6CDT,M3.2.0,M11.1.0");
+    defer testing.allocator.free(bytes);
+
+    // This reads the first header. In a version 2 file that describes the
+    // placeholder 32-bit block, which carries the types and designations
+    // but no transitions; `parse` steps over it to reach the real one.
+    const counts = try parseHeader(bytes);
+    try testing.expectEqual(Version.v2, counts.version);
+    try testing.expectEqual(@as(u32, 0), counts.timecnt);
+    try testing.expectEqual(@as(u32, 2), counts.typecnt);
+
+    // The magic is checked before anything is read out of the header.
+    try testing.expectError(error.BadMagic, parseHeader("XZif" ++ ("\x00" ** 40)));
+    try testing.expectError(error.Truncated, parseHeader("TZif"));
+
+    // RFC 8536 requires at least one local time type and one designation.
+    var no_types = try testing.allocator.dupe(u8, bytes[0..header_len]);
+    defer testing.allocator.free(no_types);
+    std.mem.writeInt(u32, no_types[36..40], 0, .big);
+    try testing.expectError(error.BadHeader, parseHeader(no_types));
+}
+
 /// Carves the data block at the start of `bytes` into its fields.
 fn parseBlock(bytes: []const u8, counts: Counts, time_size: u8) ParseError!Tzif {
     var rest = bytes;
@@ -315,6 +454,25 @@ fn take(rest: *[]const u8, len: u64) ParseError![]const u8 {
     if (rest.len < n) return error.Truncated;
     defer rest.* = rest.*[n..];
     return rest.*[0..n];
+}
+
+test take {
+    // Each call hands back the next `len` bytes and advances `rest`, so
+    // the block's fields can be sliced off one after another.
+    var rest: []const u8 = "CST\x00CDT\x00";
+    try testing.expectEqualStrings("CST", try take(&rest, 3));
+    try testing.expectEqualStrings("\x00", try take(&rest, 1));
+    try testing.expectEqualStrings("CDT\x00", try take(&rest, 4));
+    try testing.expectEqual(@as(usize, 0), rest.len);
+
+    // Asking for more than is there is what makes a short file an error
+    // rather than an out-of-bounds read.
+    var short: []const u8 = "CS";
+    try testing.expectError(error.Truncated, take(&short, 3));
+
+    // A length too large to be a slice at all is caught the same way.
+    var any: []const u8 = "CST";
+    try testing.expectError(error.Truncated, take(&any, std.math.maxInt(u64)));
 }
 
 const testing = std.testing;
@@ -406,6 +564,47 @@ fn buildFile(transitions: []const i64, indices: []const u8, footer: ?[]const u8)
     try list.append(testing.allocator, '\n');
 
     return list.toOwnedSlice(testing.allocator);
+}
+
+test parse {
+    const bytes = try buildFile(&.{ 1710057600, 1730617200 }, &.{ 1, 0 }, "CST6CDT,M3.2.0,M11.1.0");
+    defer testing.allocator.free(bytes);
+
+    const file = try parse(bytes);
+    try testing.expectEqual(Version.v2, file.version);
+
+    // The 32-bit block is stepped over, so the transitions come from the
+    // 64-bit one and the footer is there to govern times past them.
+    try testing.expectEqual(@as(u8, 8), file.time_size);
+    try testing.expectEqual(@as(usize, 2), file.transitionCount());
+    try testing.expectEqualStrings("CST6CDT,M3.2.0,M11.1.0", file.footer);
+
+    // The result borrows `bytes` rather than copying, so it must not
+    // outlive them, and no allocator was needed to build it.
+    try testing.expectEqualStrings("CDT", file.typeAtTimestamp(1720000000).?.designation);
+
+    try testing.expectError(error.BadMagic, parse("XZif" ++ ("\x00" ** 40)));
+}
+
+test parseBlock {
+    // The block is everything after a header, and the header's counts are
+    // what say how long each of its arrays is. A version 1 file is one
+    // header and one block, so this is what `parse` does for that case.
+    const bytes = try buildFile(&.{1710057600}, &.{1}, null);
+    defer testing.allocator.free(bytes);
+
+    const counts = try parseHeader(bytes);
+    const file = try parseBlock(bytes[header_len..], counts, 4);
+
+    try testing.expectEqual(@as(usize, 1), file.transitionCount());
+    try testing.expectEqual(@as(i64, 1710057600), file.transitionAt(0));
+    try testing.expectEqual(@as(usize, 2), file.typeCount());
+
+    // Cutting the block short is caught rather than read past.
+    try testing.expectError(
+        error.Truncated,
+        parseBlock(bytes[header_len .. header_len + 2], counts, 4),
+    );
 }
 
 test "parse a version 1 file" {

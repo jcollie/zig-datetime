@@ -72,9 +72,26 @@ pub fn utc(io: std.Io) DateTime {
     return Instant.utc(io).asDateTime();
 }
 
+test utc {
+    const datetime = utc(std.testing.io);
+
+    // Nothing about the reading is fixed, but it is a real clock read as
+    // UTC, so it is past the epoch and carries no offset.
+    try std.testing.expect(datetime.year >= 1970);
+    try std.testing.expectEqual(@as(i32, 0), datetime.offset);
+}
+
 /// Writes the name at `index` in `names` to `writer`.
 fn printLongName(writer: anytype, index: u16, names: []const []const u8) !void {
     try writer.writeAll(names[index]);
+}
+
+test printLongName {
+    var buf: [16]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buf);
+
+    try printLongName(&writer, 1, &.{ "January", "February" });
+    try std.testing.expectEqualStrings("February", writer.buffered());
 }
 
 /// Wraps `val` into the range `[1, at]`, mapping a remainder of 0 to `at`
@@ -82,6 +99,16 @@ fn printLongName(writer: anytype, index: u16, names: []const []const u8) !void {
 fn wrap(val: anytype, at: @TypeOf(val)) @TypeOf(val) {
     const tmp = val % at;
     return if (tmp == 0) at else tmp;
+}
+
+test wrap {
+    // On a 12-hour clock the hours run 12, 1, 2 ... 11, so the hour that
+    // would divide exactly takes the top of the range instead of zero.
+    try std.testing.expectEqual(@as(u8, 12), wrap(@as(u8, 0), 12));
+    try std.testing.expectEqual(@as(u8, 1), wrap(@as(u8, 1), 12));
+    try std.testing.expectEqual(@as(u8, 11), wrap(@as(u8, 11), 12));
+    try std.testing.expectEqual(@as(u8, 12), wrap(@as(u8, 12), 12));
+    try std.testing.expectEqual(@as(u8, 1), wrap(@as(u8, 13), 12));
 }
 
 /// Recomputes the `weekday` field from the current `year`, `month`, and `day`.
@@ -92,6 +119,16 @@ pub fn updateDayOfWeek(self: *DateTime) void {
         .day = self.day,
     };
     self.weekday = date.dayOfWeek();
+}
+
+test updateDayOfWeek {
+    // The weekday is a stored field, so a date assembled by hand carries
+    // whatever was put there until this puts it right.
+    var datetime: DateTime = .{ .year = 2024, .month = .Mar, .day = 15 };
+    try std.testing.expectEqual(DayOfWeek.Thu, datetime.weekday);
+
+    datetime.updateDayOfWeek();
+    try std.testing.expectEqual(DayOfWeek.Fri, datetime.weekday);
 }
 
 /// Writes this date/time to `writer` according to `fmt`, a comptime format
@@ -255,13 +292,38 @@ pub fn formatAlloc(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []con
     return try buf.toOwnedSlice();
 }
 
-/// Like `formatAlloc`, but the returned slice is terminated with `sentinel`.
-pub fn formatAllocSentinel(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []const u8, comptime sentinel: u8) ![]const u8 {
+test formatAlloc {
+    const datetime: DateTime = .{ .year = 2024, .month = .Mar, .day = 15, .weekday = .Fri };
+
+    const text = try datetime.formatAlloc(std.testing.allocator, "dddd, D MMMM YYYY");
+    defer std.testing.allocator.free(text);
+
+    try std.testing.expectEqualStrings("Friday, 15 March 2024", text);
+}
+
+/// Like `formatAlloc`, but the returned slice is terminated with `sentinel`,
+/// for handing to something that expects a terminator rather than a length.
+///
+/// The sentinel is part of the return type and not of the length, so the
+/// caller frees the whole allocation the same way as for `formatAlloc`.
+pub fn formatAllocSentinel(self: DateTime, alloc: std.mem.Allocator, comptime fmt: []const u8, comptime sentinel: u8) ![:sentinel]const u8 {
     var buf: std.Io.Writer.Allocating = .init(alloc);
     errdefer buf.deinit();
 
     try self.format(fmt, &buf.writer);
     return try buf.toOwnedSliceSentinel(sentinel);
+}
+
+test formatAllocSentinel {
+    const datetime: DateTime = .{ .year = 2024, .month = .Mar, .day = 15, .weekday = .Fri };
+
+    // The sentinel is for handing the result to C, so it is written past
+    // the end rather than counted in the length.
+    const text = try datetime.formatAllocSentinel(std.testing.allocator, "YYYY-MM-DD", 0);
+    defer std.testing.allocator.free(text);
+
+    try std.testing.expectEqualStrings("2024-03-15", text);
+    try std.testing.expectEqual(@as(u8, 0), text.ptr[text.len]);
 }
 
 const AmPm = enum {
@@ -270,9 +332,11 @@ const AmPm = enum {
     pm,
 };
 
-/// What `parse` can fail with. `IllegalToken` means the format string used
-/// a sequence that cannot be parsed, such as the quarter or the week of
-/// the year, neither of which pins down a date on its own.
+/// What `parse` can fail with.
+///
+/// `IllegalToken` is the odd one out: it is raised from the comptime block
+/// that tokenizes the format string, so it is reported as a compile error
+/// and is never returned to a caller at runtime. See `parseRelativeTo`.
 pub const ParseError = error{
     IllegalToken,
     InvalidCharacter,
@@ -297,13 +361,34 @@ pub fn parse(comptime format_string: []const u8, value: []const u8) ParseError!P
     return parseRelativeTo(format_string, .unix_epoch, value);
 }
 
+test parse {
+    const result = try parse("YYYY-MM-DD", "2024-03-15");
+    try std.testing.expectEqual(@as(Year, 2024), result.value.year);
+    try std.testing.expectEqual(Month.Mar, result.value.month);
+    try std.testing.expectEqual(@as(Day, 15), result.value.day);
+
+    // The weekday is worked out from the date rather than taken on trust.
+    try std.testing.expectEqual(DayOfWeek.Fri, result.value.weekday);
+
+    // Fields the format string does not mention come from the epoch, so a
+    // date alone leaves the time of day at midnight.
+    try std.testing.expectEqual(@as(Hour, 0), result.value.hour);
+
+    // Only what was consumed is reported, so the caller can carry on.
+    try std.testing.expectEqualStrings("2024-03-15", result.str);
+}
+
 /// Parses `value` according to the comptime `format_string`, a string of
 /// `FormatTag` sequences (e.g. "MMM D H:mm:ss"). Date fields missing from
 /// the format string are taken from `relative_to`; time-of-day fields
 /// always default to zero. A parsed day of the week is checked against the
-/// computed date and `error.ParseError` is returned on mismatch. The
-/// quarter (`Q`) and week-of-year (`w`) sequences cannot be parsed and
-/// cause `error.IllegalToken`.
+/// computed date and `error.ParseError` is returned on mismatch.
+///
+/// The quarter (`Q`) and week-of-year (`w`) sequences name no date on
+/// their own and cannot be parsed. The tokenizer runs at comptime, so a
+/// format string using one is rejected while this is being compiled: the
+/// `error.IllegalToken` it raises there surfaces as a compile error and
+/// never reaches a caller.
 pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime, value: []const u8) ParseError!ParseResult {
     const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
         @setEvalBranchQuota(200000);
@@ -774,8 +859,18 @@ pub fn dayOfThisYear(self: DateTime) u9 {
     return self.month.daysBefore(self.year) + self.day;
 }
 
+test dayOfThisYear {
+    try std.testing.expectEqual(@as(u9, 1), (DateTime{ .year = 2024, .month = .Jan, .day = 1 }).dayOfThisYear());
+
+    // 2024 is a leap year, so from March on it runs one day ahead of 2025.
+    try std.testing.expectEqual(@as(u9, 75), (DateTime{ .year = 2024, .month = .Mar, .day = 15 }).dayOfThisYear());
+    try std.testing.expectEqual(@as(u9, 74), (DateTime{ .year = 2025, .month = .Mar, .day = 15 }).dayOfThisYear());
+
+    try std.testing.expectEqual(@as(u9, 366), (DateTime{ .year = 2024, .month = .Dec, .day = 31 }).dayOfThisYear());
+}
+
 /// Returns the same point in time expressed in UTC, that is with the
-/// fields shifted back by `offset` minutes and `offset` itself set to
+/// fields shifted back by `offset` seconds and `offset` itself set to
 /// zero. The shift rolls over into the neighbouring day, month, and year
 /// as needed, and `weekday` is recomputed to match. Seconds and
 /// nanoseconds are carried through untouched, so a value holding a leap
@@ -1274,6 +1369,31 @@ test "parseTest" {
     }
 }
 
+test parseRelativeTo {
+    // A format string that names no year gets one from `relative_to`
+    // rather than from the epoch, which is what makes syslog timestamps
+    // and the like resolvable.
+    const relative_to: DateTime = .{ .year = 2024, .month = .Jan, .day = 1 };
+
+    const result = try parseRelativeTo("MMM D HH:mm:ss", relative_to, "Mar 22 12:40:39");
+    try std.testing.expectEqual(@as(Year, 2024), result.value.year);
+    try std.testing.expectEqual(Month.Mar, result.value.month);
+    try std.testing.expectEqual(@as(Day, 22), result.value.day);
+    try std.testing.expectEqual(@as(Hour, 12), result.value.hour);
+
+    // A weekday in the input is checked against the date rather than
+    // believed, so one that disagrees is a parse error.
+    _ = try parseRelativeTo("ddd, D MMM YYYY", relative_to, "Fri, 15 Mar 2024");
+    try std.testing.expectError(
+        error.ParseError,
+        parseRelativeTo("ddd, D MMM YYYY", relative_to, "Mon, 15 Mar 2024"),
+    );
+
+    // Sequences that pin down no date cannot be parsed at all. That is
+    // settled while the format string is being tokenized, so asking for
+    // one is a compile error rather than something to catch here.
+}
+
 test "parseRelativeToTest" {
     const cases = [_]struct {
         value: []const u8,
@@ -1307,6 +1427,35 @@ test "parseRelativeToTest" {
         const actual = try DateTime.parseRelativeTo(case.fmt, case.relative_to, case.value);
         try std.testing.expectEqual(case.expected, actual.value);
     }
+}
+
+test format {
+    const datetime: DateTime = .{
+        .year = 2024,
+        .month = .Mar,
+        .day = 15,
+        .hour = 14,
+        .minute = 30,
+        .second = 5,
+        .nanosecond = 123456789,
+        .weekday = .Fri,
+    };
+
+    var buf: [64]u8 = undefined;
+
+    var iso = std.Io.Writer.fixed(&buf);
+    try datetime.format("YYYY-MM-DDTHH:mm:ss", &iso);
+    try std.testing.expectEqualStrings("2024-03-15T14:30:05", iso.buffered());
+
+    // Names, ordinals and a 12-hour clock, and a fraction cut to however
+    // many digits the sequence asks for.
+    var words = std.Io.Writer.fixed(&buf);
+    try datetime.format("dddd, Do MMMM YYYY, h:mma", &words);
+    try std.testing.expectEqualStrings("Friday, 15th March 2024, 2:30pm", words.buffered());
+
+    var millis = std.Io.Writer.fixed(&buf);
+    try datetime.format("ss.SSS", &millis);
+    try std.testing.expectEqualStrings("05.123", millis.buffered());
 }
 
 test "formatTest" {
@@ -1429,6 +1578,41 @@ test "formatTest" {
 
         try std.testing.expectEqualStrings(case.result, buf.written());
     }
+}
+
+test toUtc {
+    const local: DateTime = .{
+        .year = 1994,
+        .month = .Nov,
+        .day = 6,
+        .hour = 8,
+        .minute = 49,
+        .second = 37,
+        .weekday = .Sun,
+        .offset = -5 * std.time.s_per_hour,
+    };
+
+    const utc_time = local.toUtc();
+    try std.testing.expectEqual(@as(Hour, 13), utc_time.hour);
+    try std.testing.expectEqual(@as(i32, 0), utc_time.offset);
+
+    // The shift rolls over the end of a day, and the weekday is
+    // recomputed to match rather than carried across.
+    const evening: DateTime = .{
+        .year = 2024,
+        .month = .Mar,
+        .day = 15,
+        .hour = 20,
+        .weekday = .Fri,
+        .offset = -5 * std.time.s_per_hour,
+    };
+    const next_day = evening.toUtc();
+    try std.testing.expectEqual(@as(Day, 16), next_day.day);
+    try std.testing.expectEqual(@as(Hour, 1), next_day.hour);
+    try std.testing.expectEqual(DayOfWeek.Sat, next_day.weekday);
+
+    // A value that is already UTC is returned untouched.
+    try std.testing.expectEqual(utc_time, utc_time.toUtc());
 }
 
 test "toUtcTest" {

@@ -44,16 +44,49 @@ pub const DayOfWeek = enum(u3) {
         return parseWithMap(DayOfWeek.very_short_map, left);
     }
 
+    test parseVeryShortStr {
+        const result = try parseVeryShortStr("We");
+        try std.testing.expectEqual(DayOfWeek.Wed, result.value);
+        try std.testing.expectEqualStrings("We", result.str);
+
+        // Only the two letters are consumed; the rest is the caller's.
+        const trailing = try parseVeryShortStr("Sa, 06 Nov 1994");
+        try std.testing.expectEqual(DayOfWeek.Sat, trailing.value);
+        try std.testing.expectEqualStrings("Sa", trailing.str);
+
+        try std.testing.expectError(error.ParseError, parseVeryShortStr("Xx"));
+    }
+
     /// Parses a three-letter day name ("Sun" ... "Sat") at the start of
     /// `left`, case-insensitively.
     pub fn parseShortStr(left: []const u8) ParseError!ParseStringResult {
         return parseWithMap(DayOfWeek.short_map, left);
     }
 
+    test parseShortStr {
+        const result = try parseShortStr("Sun");
+        try std.testing.expectEqual(DayOfWeek.Sun, result.value);
+        try std.testing.expectEqualStrings("Sun", result.str);
+
+        // Matching ignores case, so any spelling of the name is accepted.
+        try std.testing.expectEqual(DayOfWeek.Fri, (try parseShortStr("FRI")).value);
+        try std.testing.expectEqual(DayOfWeek.Fri, (try parseShortStr("fri")).value);
+    }
+
     /// Parses a full day name ("Sunday" ... "Saturday") at the start of
     /// `left`, case-insensitively.
     pub fn parseLongStr(left: []const u8) ParseError!ParseStringResult {
         return parseWithMap(DayOfWeek.long_map, left);
+    }
+
+    test parseLongStr {
+        const result = try parseLongStr("Wednesday");
+        try std.testing.expectEqual(DayOfWeek.Wed, result.value);
+        try std.testing.expectEqualStrings("Wednesday", result.str);
+
+        // The long map holds only whole names, so an abbreviation of one
+        // is not a match.
+        try std.testing.expectError(error.ParseError, parseLongStr("Wed"));
     }
 
     /// Returns the shortest prefix of `left` found in `map` along with its
@@ -70,6 +103,16 @@ pub const DayOfWeek = enum(u3) {
         return error.ParseError;
     }
 
+    test parseWithMap {
+        // The shortest matching prefix wins, which is why each caller
+        // passes the map for the one length it means to accept.
+        const short = try parseWithMap(short_map, "Sunday");
+        try std.testing.expectEqualStrings("Sun", short.str);
+
+        const long = try parseWithMap(long_map, "Sunday");
+        try std.testing.expectEqualStrings("Sunday", long.str);
+    }
+
     /// Returns the day after this one, wrapping from Saturday to Sunday.
     pub fn next(self: DayOfWeek) DayOfWeek {
         return switch (self) {
@@ -81,6 +124,12 @@ pub const DayOfWeek = enum(u3) {
             .Fri => .Sat,
             .Sat => .Sun,
         };
+    }
+
+    test next {
+        try std.testing.expectEqual(DayOfWeek.Mon, DayOfWeek.Sun.next());
+        // Saturday wraps round to Sunday.
+        try std.testing.expectEqual(DayOfWeek.Sun, DayOfWeek.Sat.next());
     }
 
     /// Returns the day before this one, wrapping from Sunday to Saturday.
@@ -96,6 +145,12 @@ pub const DayOfWeek = enum(u3) {
         };
     }
 
+    test prev {
+        try std.testing.expectEqual(DayOfWeek.Fri, DayOfWeek.Sat.prev());
+        // Sunday wraps back to Saturday.
+        try std.testing.expectEqual(DayOfWeek.Sat, DayOfWeek.Sun.prev());
+    }
+
     /// Returns the two-letter English name ("Su" ... "Sa").
     pub fn veryShortName(self: DayOfWeek) []const u8 {
         return switch (self) {
@@ -107,6 +162,11 @@ pub const DayOfWeek = enum(u3) {
             .Fri => "Fr",
             .Sat => "Sa",
         };
+    }
+
+    test veryShortName {
+        try std.testing.expectEqualStrings("Su", DayOfWeek.Sun.veryShortName());
+        try std.testing.expectEqualStrings("Th", DayOfWeek.Thu.veryShortName());
     }
 
     /// Returns the three-letter English name ("Sun" ... "Sat").
@@ -122,6 +182,11 @@ pub const DayOfWeek = enum(u3) {
         };
     }
 
+    test shortName {
+        try std.testing.expectEqualStrings("Sun", DayOfWeek.Sun.shortName());
+        try std.testing.expectEqualStrings("Sat", DayOfWeek.Sat.shortName());
+    }
+
     /// Returns the full English name ("Sunday" ... "Saturday").
     pub fn longName(self: DayOfWeek) []const u8 {
         return switch (self) {
@@ -135,14 +200,32 @@ pub const DayOfWeek = enum(u3) {
         };
     }
 
+    test longName {
+        try std.testing.expectEqualStrings("Sunday", DayOfWeek.Sun.longName());
+        try std.testing.expectEqualStrings("Wednesday", DayOfWeek.Wed.longName());
+    }
+
     /// Returns the weekday number, Sunday = 0 through Saturday = 6.
     pub fn weekdayNumber(self: DayOfWeek) u3 {
         return @intFromEnum(self);
     }
 
+    test weekdayNumber {
+        try std.testing.expectEqual(@as(u3, 0), DayOfWeek.Sun.weekdayNumber());
+        try std.testing.expectEqual(@as(u3, 6), DayOfWeek.Sat.weekdayNumber());
+    }
+
     /// Returns the ISO 8601 weekday number, Monday = 1 through Sunday = 7.
     pub fn isoWeekdayNumber(self: DayOfWeek) u3 {
         return if (self == .Sun) 7 else @intFromEnum(self);
+    }
+
+    test isoWeekdayNumber {
+        // ISO 8601 starts its week on Monday, so Sunday moves from the
+        // front of the week to the back of it.
+        try std.testing.expectEqual(@as(u3, 1), DayOfWeek.Mon.isoWeekdayNumber());
+        try std.testing.expectEqual(@as(u3, 6), DayOfWeek.Sat.isoWeekdayNumber());
+        try std.testing.expectEqual(@as(u3, 7), DayOfWeek.Sun.isoWeekdayNumber());
     }
 
     /// Returns the day of the week that falls `days` days after 1970-01-01
@@ -154,6 +237,16 @@ pub const DayOfWeek = enum(u3) {
             @rem(days + 5, 7) + 6;
         std.debug.assert(result >= 0 and result <= 6);
         return @enumFromInt(result);
+    }
+
+    test fromDaysSinceStartOfEra {
+        // The epoch itself was a Thursday.
+        try std.testing.expectEqual(DayOfWeek.Thu, fromDaysSinceStartOfEra(0));
+        try std.testing.expectEqual(DayOfWeek.Fri, fromDaysSinceStartOfEra(1));
+        try std.testing.expectEqual(DayOfWeek.Thu, fromDaysSinceStartOfEra(7));
+
+        // Negative counts run backwards into the days before it.
+        try std.testing.expectEqual(DayOfWeek.Wed, fromDaysSinceStartOfEra(-1));
     }
 
     /// The type the name maps below are built from. Comparison ignores
@@ -264,6 +357,14 @@ pub const DayOfWeek = enum(u3) {
 pub fn weekdayDifference(start: DayOfWeek, end: DayOfWeek) u3 {
     const d = @as(i4, end.weekdayNumber()) - @as(i4, start.weekdayNumber());
     return if (d >= 0) @intCast(d) else @intCast(d + 7);
+}
+
+test weekdayDifference {
+    try std.testing.expectEqual(@as(u3, 2), weekdayDifference(.Sun, .Tue));
+    try std.testing.expectEqual(@as(u3, 0), weekdayDifference(.Wed, .Wed));
+
+    // Counting is always forwards, so going back a day is six days on.
+    try std.testing.expectEqual(@as(u3, 6), weekdayDifference(.Tue, .Mon));
 }
 
 test "weekdayDifference" {

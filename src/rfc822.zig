@@ -164,14 +164,35 @@ const Cursor = struct {
         return self.text[self.index..];
     }
 
+    test rest {
+        var cursor: Cursor = .{ .text = "06 Nov 1994" };
+        try std.testing.expectEqualStrings("06 Nov 1994", cursor.rest());
+
+        cursor.index = 3;
+        try std.testing.expectEqualStrings("Nov 1994", cursor.rest());
+    }
+
     /// Whether the input is exhausted.
     fn done(self: Cursor) bool {
         return self.index >= self.text.len;
     }
 
+    test done {
+        var cursor: Cursor = .{ .text = "Z" };
+        try std.testing.expect(!cursor.done());
+
+        cursor.index = 1;
+        try std.testing.expect(cursor.done());
+    }
+
     /// The character at the cursor. The caller must have checked `done`.
     fn peek(self: Cursor) u8 {
         return self.text[self.index];
+    }
+
+    test peek {
+        const cursor: Cursor = .{ .text = "GMT" };
+        try std.testing.expectEqual(@as(u8, 'G'), cursor.peek());
     }
 
     /// Consumes `char` if it is next, and reports whether it was.
@@ -181,9 +202,29 @@ const Cursor = struct {
         return true;
     }
 
+    test eat {
+        // The comma after the day name is optional, so it is tried
+        // rather than required, and a refusal costs the caller nothing.
+        var cursor: Cursor = .{ .text = ", 06 Nov" };
+        try std.testing.expect(cursor.eat(','));
+        try std.testing.expectEqual(@as(usize, 1), cursor.index);
+
+        try std.testing.expect(!cursor.eat(','));
+        try std.testing.expectEqual(@as(usize, 1), cursor.index);
+    }
+
     /// Consumes `char`, which must be next.
     fn literal(self: *Cursor, char: u8) ParseError!void {
         if (!self.eat(char)) return error.ParseError;
+    }
+
+    test literal {
+        // The colon between the hour and the minute is not optional.
+        var cursor: Cursor = .{ .text = ":49" };
+        try cursor.literal(':');
+        try std.testing.expectEqual(@as(usize, 1), cursor.index);
+
+        try std.testing.expectError(error.ParseError, cursor.literal(':'));
     }
 
     /// Consumes any run of spaces and tabs.
@@ -191,11 +232,31 @@ const Cursor = struct {
         while (!self.done() and (self.peek() == ' ' or self.peek() == '\t')) self.index += 1;
     }
 
+    test skipSpace {
+        // RFC 822 allows runs of spaces and tabs between components.
+        var cursor: Cursor = .{ .text = "  \tNov" };
+        cursor.skipSpace();
+        try std.testing.expectEqualStrings("Nov", cursor.rest());
+
+        // Finding none is not a failure here.
+        cursor.skipSpace();
+        try std.testing.expectEqualStrings("Nov", cursor.rest());
+    }
+
     /// Consumes a run of spaces and tabs, requiring at least one.
     fn skipRequiredSpace(self: *Cursor) ParseError!void {
         const before = self.index;
         self.skipSpace();
         if (self.index == before) return error.ParseError;
+    }
+
+    test skipRequiredSpace {
+        var cursor: Cursor = .{ .text = " Nov" };
+        try cursor.skipRequiredSpace();
+        try std.testing.expectEqualStrings("Nov", cursor.rest());
+
+        // Where the grammar needs a separator, having none is an error.
+        try std.testing.expectError(error.ParseError, cursor.skipRequiredSpace());
     }
 
     /// Consumes between `min_len` and `max_len` ASCII digits and returns
@@ -217,6 +278,27 @@ const Cursor = struct {
 
         self.index += len;
         return .{ .value = value, .len = len };
+    }
+
+    test digits {
+        // The length is reported as well as the value, because it is what
+        // tells a two digit year from a four digit one.
+        var cursor: Cursor = .{ .text = "1994" };
+        const four = try cursor.digits(1, 4);
+        try std.testing.expectEqual(@as(u16, 1994), four.value);
+        try std.testing.expectEqual(@as(usize, 4), four.len);
+
+        var short: Cursor = .{ .text = "82 " };
+        const two = try short.digits(1, 4);
+        try std.testing.expectEqual(@as(u16, 82), two.value);
+        try std.testing.expectEqual(@as(usize, 2), two.len);
+
+        // Reading stops at `max_len` even when more digits follow.
+        var capped: Cursor = .{ .text = "123456" };
+        try std.testing.expectEqual(@as(u16, 1234), (try capped.digits(1, 4)).value);
+
+        var none: Cursor = .{ .text = "Nov" };
+        try std.testing.expectError(error.ParseError, none.digits(1, 4));
     }
 
     /// Parses a zone and returns it as seconds east of UTC. Both the
@@ -253,6 +335,22 @@ const Cursor = struct {
         };
         self.index += len;
         return offset;
+    }
+
+    test zone {
+        var numeric: Cursor = .{ .text = "-0600" };
+        try std.testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), try numeric.zone());
+
+        var named: Cursor = .{ .text = "GMT" };
+        try std.testing.expectEqual(@as(i32, 0), try named.zone());
+
+        // The whole run of letters is taken, so this is Mountain Standard
+        // Time and not the military zone `M` with `ST` left over.
+        var three: Cursor = .{ .text = "MST" };
+        try std.testing.expectEqual(@as(i32, -7 * std.time.s_per_hour), try three.zone());
+
+        var military: Cursor = .{ .text = "Z" };
+        try std.testing.expectEqual(@as(i32, 0), try military.zone());
     }
 };
 
@@ -291,6 +389,48 @@ fn militaryZone(letter: u8) ?i32 {
         else => return null,
     };
     return hours * std.time.s_per_hour;
+}
+
+test militaryZone {
+    // RFC 822 gives these letters the opposite sign to the military
+    // standard they came from, and that is what is implemented.
+    try std.testing.expectEqual(@as(?i32, 0), militaryZone('Z'));
+    try std.testing.expectEqual(@as(?i32, -1 * std.time.s_per_hour), militaryZone('A'));
+    try std.testing.expectEqual(@as(?i32, -12 * std.time.s_per_hour), militaryZone('M'));
+    try std.testing.expectEqual(@as(?i32, 1 * std.time.s_per_hour), militaryZone('N'));
+
+    // Matching ignores case, and `J` is deliberately unassigned.
+    try std.testing.expectEqual(@as(?i32, -1 * std.time.s_per_hour), militaryZone('a'));
+    try std.testing.expectEqual(@as(?i32, null), militaryZone('J'));
+    try std.testing.expectEqual(@as(?i32, null), militaryZone('0'));
+}
+
+test parse {
+    const result = try parse("Sun, 06 Nov 1994 08:49:37 GMT");
+    try std.testing.expectEqual(@as(Year, 1994), result.value.year);
+    try std.testing.expectEqual(Month.Nov, result.value.month);
+    try std.testing.expectEqual(@as(Day, 6), result.value.day);
+    try std.testing.expectEqual(@as(Hour, 8), result.value.hour);
+    try std.testing.expectEqual(DayOfWeek.Sun, result.value.weekday);
+    try std.testing.expectEqual(@as(i32, 0), result.value.offset);
+
+    // The day name, its comma and the seconds are all optional, and a two
+    // digit year is the obsolete RFC 822 form windowed into this century.
+    const terse = try parse("20 Jun 82 12:34 -0500");
+    try std.testing.expectEqual(@as(Year, 1982), terse.value.year);
+    try std.testing.expectEqual(@as(Second, 0), terse.value.second);
+    try std.testing.expectEqual(@as(i32, -5 * std.time.s_per_hour), terse.value.offset);
+
+    // Only the date is consumed, so a header with more after it can carry
+    // on from where this stopped.
+    try std.testing.expectEqualStrings(
+        "Sun, 06 Nov 1994 08:49:37 GMT",
+        (try parse("Sun, 06 Nov 1994 08:49:37 GMT (comment)")).str,
+    );
+
+    // A day name that disagrees with the date is rejected rather than
+    // believed.
+    try std.testing.expectError(error.ParseError, parse("Mon, 06 Nov 1994 08:49:37 GMT"));
 }
 
 test "parse" {

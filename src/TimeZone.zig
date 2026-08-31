@@ -47,9 +47,33 @@ pub fn fromBytes(name: []const u8, bytes: []const u8) Error!TimeZone {
     return init(name, bytes, false);
 }
 
+test fromBytes {
+    // The zone borrows the bytes, so nothing is allocated and nothing has
+    // to be freed. This is the shape `tzdb.embedded` uses, where the data
+    // is already in the binary.
+    const bytes = try bytesForTest("America/Chicago");
+    defer testing.allocator.free(bytes);
+
+    const zone = try fromBytes("America/Chicago", bytes);
+    try testing.expectEqualStrings("America/Chicago", zone.name);
+    try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), zone.offsetAt(0));
+}
+
 /// Builds a zone that takes ownership of `bytes`, which `deinit` frees.
 pub fn fromOwnedBytes(name: []const u8, bytes: []const u8) Error!TimeZone {
     return init(name, bytes, true);
+}
+
+test fromOwnedBytes {
+    // The zone takes the bytes over, so `deinit` is what frees them. This
+    // is the shape `tzdb.system` uses, having just read a file.
+    var zone = try fromOwnedBytes(
+        try testing.allocator.dupe(u8, "America/Chicago"),
+        try bytesForTest("America/Chicago"),
+    );
+    defer zone.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("America/Chicago", zone.name);
 }
 
 /// Parses `bytes` into a zone. The footer is parsed here rather than on
@@ -66,6 +90,20 @@ fn init(name: []const u8, bytes: []const u8, owned: bool) Error!TimeZone {
     };
 }
 
+test init {
+    const bytes = try bytesForTest("America/Chicago");
+    defer testing.allocator.free(bytes);
+
+    // The footer is parsed here and not on demand, so a zone that builds
+    // at all has a usable rule for the times past its last transition.
+    const zone = try init("America/Chicago", bytes, false);
+    try testing.expect(zone.rule != null);
+    try testing.expect(!zone.owned);
+
+    // Bad bytes fail here rather than at some later lookup.
+    try testing.expectError(error.BadMagic, init("x", "XZif" ++ ("\x00" ** 40), false));
+}
+
 /// Frees the bytes of a zone built by `fromOwnedBytes`, and the copy of
 /// its name. Does nothing for a zone built by `fromBytes`.
 pub fn deinit(self: *TimeZone, gpa: std.mem.Allocator) void {
@@ -74,6 +112,23 @@ pub fn deinit(self: *TimeZone, gpa: std.mem.Allocator) void {
         gpa.free(self.name);
     }
     self.* = undefined;
+}
+
+test deinit {
+    // An owned zone frees its bytes and its name; the testing allocator
+    // is what checks that this happened.
+    var owned = try fromOwnedBytes(
+        try testing.allocator.dupe(u8, "America/Chicago"),
+        try bytesForTest("America/Chicago"),
+    );
+    owned.deinit(testing.allocator);
+
+    // A borrowed one frees nothing, so its bytes outlive it.
+    const bytes = try bytesForTest("America/Chicago");
+    defer testing.allocator.free(bytes);
+
+    var borrowed = try fromBytes("America/Chicago", bytes);
+    borrowed.deinit(testing.allocator);
 }
 
 /// Returns the local time type in effect at `timestamp`, a Unix time in
@@ -87,9 +142,36 @@ pub fn typeAt(self: TimeZone, timestamp: i64) Type {
     return self.data.lastType();
 }
 
+test typeAt {
+    var zone = try loadForTest("America/Chicago");
+    defer zone.deinit(testing.allocator);
+
+    // Midwinter and midsummer 2024, either side of the switch.
+    const winter = zone.typeAt(1704067200);
+    try testing.expectEqualStrings("CST", winter.designation);
+    try testing.expect(!winter.is_dst);
+
+    const summer = zone.typeAt(1720000000);
+    try testing.expectEqualStrings("CDT", summer.designation);
+    try testing.expect(summer.is_dst);
+
+    // Far past the last stored transition the footer's rule answers, so
+    // a slim file keeps working rather than running out.
+    const distant = zone.typeAt(4102444800);
+    try testing.expect(distant.designation.len > 0);
+}
+
 /// Returns the offset from UTC in seconds in effect at `timestamp`.
 pub fn offsetAt(self: TimeZone, timestamp: i64) i32 {
     return self.typeAt(timestamp).offset;
+}
+
+test offsetAt {
+    var zone = try loadForTest("America/Chicago");
+    defer zone.deinit(testing.allocator);
+
+    try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), zone.offsetAt(1704067200));
+    try testing.expectEqual(@as(i32, -5 * std.time.s_per_hour), zone.offsetAt(1720000000));
 }
 
 /// A stretch of time over which one local time type applies.
@@ -153,9 +235,36 @@ pub fn atInstant(self: TimeZone, instant: Instant) DateTime {
     return datetime;
 }
 
+test atInstant {
+    var zone = try loadForTest("America/Chicago");
+    defer zone.deinit(testing.allocator);
+
+    // 2024-07-03T09:46:40Z, in the middle of daylight saving time, reads
+    // five hours earlier on a Chicago clock.
+    const local = zone.atInstant(.fromNanoTimeStamp(1720000000 * @as(i128, std.time.ns_per_s)));
+    try testing.expectEqual(@as(i32, -5 * std.time.s_per_hour), local.offset);
+    try testing.expectEqual(Month.Jul, local.month);
+    try testing.expectEqual(@as(u5, 4), local.hour);
+    try testing.expectEqual(@as(u6, 46), local.minute);
+
+    // The offset comes back on the value, so the reading can be turned
+    // round again without the zone.
+    try testing.expectEqual(@as(u5, 9), local.toUtc().hour);
+}
+
 /// Converts a Unix timestamp in seconds to local wall-clock time.
 pub fn atTimestamp(self: TimeZone, timestamp: i64) DateTime {
     return self.atInstant(.fromNanoTimeStamp(@as(i128, timestamp) * std.time.ns_per_s));
+}
+
+test atTimestamp {
+    var zone = try loadForTest("America/Chicago");
+    defer zone.deinit(testing.allocator);
+
+    // The same as `atInstant`, for callers holding whole seconds.
+    const local = zone.atTimestamp(1720000000);
+    try testing.expectEqual(@as(u5, 4), local.hour);
+    try testing.expectEqual(@as(i32, -5 * std.time.s_per_hour), local.offset);
 }
 
 /// What a local wall-clock reading corresponds to in UTC.
@@ -190,6 +299,19 @@ pub const Resolved = union(enum) {
         };
     }
 
+    test earliest {
+        try testing.expectEqual(@as(i64, 100), (Resolved{ .unique = 100 }).earliest());
+
+        // For a repeated reading this is the first of the two instants,
+        // the one before the clocks went back.
+        const twice: Resolved = .{ .ambiguous = .{ .earlier = 100, .later = 3700 } };
+        try testing.expectEqual(@as(i64, 100), twice.earliest());
+
+        // A skipped reading names one instant either way.
+        const skipped: Resolved = .{ .gap = .{ .at = 100, .before = 0, .after = 3600 } };
+        try testing.expectEqual(@as(i64, 100), skipped.earliest());
+    }
+
     /// The latest instant matching the reading, taking the post-transition
     /// offset for a reading that falls in a gap.
     pub fn latest(self: Resolved) i64 {
@@ -198,6 +320,14 @@ pub const Resolved = union(enum) {
             .gap => |g| g.at,
             .ambiguous => |a| a.later,
         };
+    }
+
+    test latest {
+        try testing.expectEqual(@as(i64, 100), (Resolved{ .unique = 100 }).latest());
+
+        // The second of the two instants a repeated reading names.
+        const twice: Resolved = .{ .ambiguous = .{ .earlier = 100, .later = 3700 } };
+        try testing.expectEqual(@as(i64, 3700), twice.latest());
     }
 };
 
@@ -279,6 +409,24 @@ fn localSeconds(local: DateTime) i64 {
         @as(i64, local.second);
 }
 
+test localSeconds {
+    // The reading is counted as though it were UTC, which is what makes
+    // it comparable against a span's bounds shifted by that span's
+    // offset. The `offset` field is deliberately not applied here.
+    try testing.expectEqual(
+        @as(i64, 0),
+        localSeconds(.{ .year = 1970, .month = .Jan, .day = 1 }),
+    );
+    try testing.expectEqual(
+        @as(i64, 3600),
+        localSeconds(.{ .year = 1970, .month = .Jan, .day = 1, .hour = 1 }),
+    );
+    try testing.expectEqual(
+        localSeconds(.{ .year = 2024, .month = .Mar, .day = 15 }),
+        localSeconds(.{ .year = 2024, .month = .Mar, .day = 15, .offset = -5 * std.time.s_per_hour }),
+    );
+}
+
 const testing = std.testing;
 
 /// Directories that different systems keep the TZif tree in.
@@ -289,24 +437,84 @@ const test_directories = [_][]const u8{
     "/usr/share/lib/zoneinfo",
 };
 
-/// Loads a zone for a test from whichever copy of the database this
-/// machine has, or skips the test when it has none.
-fn loadForTest(name: []const u8) !TimeZone {
+/// Reads the TZif bytes of a named zone from whichever copy of the
+/// database this machine has, or skips the test when it has none. The
+/// caller owns the bytes.
+fn bytesForTest(name: []const u8) ![]u8 {
     for (test_directories) |directory| {
         const path = try std.fs.path.join(testing.allocator, &.{ directory, name });
         defer testing.allocator.free(path);
 
-        const bytes = std.Io.Dir.cwd().readFileAlloc(
+        return std.Io.Dir.cwd().readFileAlloc(
             testing.io,
             path,
             testing.allocator,
             .limited(1 << 20),
         ) catch continue;
-        errdefer testing.allocator.free(bytes);
-
-        return fromOwnedBytes(try testing.allocator.dupe(u8, name), bytes);
     }
     return error.SkipZigTest;
+}
+
+/// Loads a zone for a test from whichever copy of the database this
+/// machine has, or skips the test when it has none.
+fn loadForTest(name: []const u8) !TimeZone {
+    const bytes = try bytesForTest(name);
+    errdefer testing.allocator.free(bytes);
+
+    return fromOwnedBytes(try testing.allocator.dupe(u8, name), bytes);
+}
+
+test spanAt {
+    var zone = try loadForTest("America/Chicago");
+    defer zone.deinit(testing.allocator);
+
+    // Midsummer 2024 sits inside daylight saving time, bounded by the
+    // March and November switches.
+    const summer = zone.spanAt(1720000000);
+    try testing.expectEqualStrings("CDT", summer.local_type.designation);
+    try testing.expectEqual(@as(i64, 1710057600), summer.start);
+    try testing.expectEqual(@as(i64, 1730617200), summer.end);
+
+    // The bounds are what save a second lookup: any instant inside them
+    // is governed by the same type.
+    try testing.expectEqual(
+        summer.local_type.offset,
+        zone.typeAt(summer.end - 1).offset,
+    );
+
+    // Past the last stored transition the footer's rule answers, and it
+    // cannot report a span reaching back before the handover.
+    const distant = zone.spanAt(4102444800);
+    try testing.expect(distant.start > 0);
+}
+
+test resolve {
+    var zone = try loadForTest("America/Chicago");
+    defer zone.deinit(testing.allocator);
+
+    // An ordinary reading names exactly one instant. The `offset` field
+    // of the input is ignored; the zone is what decides it.
+    const ordinary = zone.resolve(.{ .year = 2024, .month = .Jul, .day = 3, .hour = 12 });
+    try testing.expectEqual(@as(i64, 1720026000), ordinary.unique);
+
+    // The hour the clocks skip forward over never happens, so there is no
+    // reading to name. `at` is where it would have fallen, between the
+    // offsets either side of the switch.
+    const skipped = zone.resolve(.{ .year = 2024, .month = .Mar, .day = 10, .hour = 2, .minute = 30 });
+    try testing.expectEqual(@as(i32, -6 * std.time.s_per_hour), skipped.gap.before);
+    try testing.expectEqual(@as(i32, -5 * std.time.s_per_hour), skipped.gap.after);
+
+    // The hour the clocks repeat happens twice, an hour apart.
+    const repeated = zone.resolve(.{ .year = 2024, .month = .Nov, .day = 3, .hour = 1, .minute = 30 });
+    try testing.expectEqual(
+        @as(i64, std.time.s_per_hour),
+        repeated.ambiguous.later - repeated.ambiguous.earlier,
+    );
+
+    // `earliest` and `latest` pick one without the caller switching on
+    // which case it was.
+    try testing.expectEqual(repeated.ambiguous.earlier, repeated.earliest());
+    try testing.expectEqual(repeated.ambiguous.later, repeated.latest());
 }
 
 test "the offset in effect at an instant" {
