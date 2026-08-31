@@ -633,7 +633,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             for (1..left.len + 1) |l| {
                                 if (map.get(left[0..l])) |_| {
                                     left = left[l..];
-                                    break :day day;
+                                    break :day @intCast(day);
                                 }
                             }
                             return error.ParseError;
@@ -943,6 +943,13 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
         datetime.day = @intCast(remaining);
     }
 
+    // A day number is checked against 31 as it is read, because the month
+    // it belongs to may not have been parsed yet, so it has to be checked
+    // against that month once everything is in. Without this, a date like
+    // 2024-02-31 reaches `updateDayOfWeek` and trips the assertion in
+    // `Date.toDaysSinceStartOfEra`.
+    if (!datetime.asDate().isRegular()) return error.ParseError;
+
     // Every sequence that moves the date leaves the weekday stale, so it
     // is recomputed once here rather than after each of them.
     datetime.updateDayOfWeek();
@@ -1103,6 +1110,33 @@ pub fn toUtc(self: DateTime) DateTime {
         .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
         .offset = 0,
     };
+}
+
+test "a day is checked against the month it landed in" {
+    // A day number is read before the month it belongs to is necessarily
+    // known, so it is checked against 31 there and against the real month
+    // afterwards. Without the second check this reached `updateDayOfWeek`
+    // and tripped an assertion rather than returning an error.
+    try std.testing.expectError(error.ParseError, parse("YYYY-MM-DD", "2024-02-31"));
+    try std.testing.expectError(error.ParseError, parse("YYYY-MM-DD", "2025-02-29"));
+    try std.testing.expectError(error.ParseError, parse("YYYY-MM-DD", "2024-04-31"));
+
+    // The leap day itself is fine in a leap year.
+    _ = try parse("YYYY-MM-DD", "2024-02-29");
+}
+
+test "the ordinal day of the month parses" {
+    // This arm had never been compiled, because nothing parsed a `Do`.
+    const result = try parse("Do MMMM YYYY", "15th March 2024");
+    try std.testing.expectEqual(@as(Day, 15), result.value.day);
+    try std.testing.expectEqual(Month.Mar, result.value.month);
+    try std.testing.expectEqual(@as(Year, 2024), result.value.year);
+
+    try std.testing.expectEqual(@as(Day, 1), (try parse("Do", "1st")).value.day);
+    try std.testing.expectEqual(@as(Day, 22), (try parse("Do", "22nd")).value.day);
+
+    // The suffix is required, though which one it is does not matter.
+    try std.testing.expectError(error.ParseError, parse("Do", "15"));
 }
 
 test "parseTest" {
