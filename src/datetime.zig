@@ -38,6 +38,8 @@ pub const Second = @import("second.zig").Second;
 pub const Nanosecond = @import("nanosecond.zig").Nanosecond;
 /// A day of the week, Sunday = 0 through Saturday = 6.
 pub const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
+/// A zone abbreviation such as "CDT", stored by value on a `DateTime`.
+pub const Designation = @import("designation.zig").Designation;
 /// A calendar date: a year, a month and a day.
 pub const Date = @import("Date.zig");
 /// A date with a time of day and an offset from UTC.

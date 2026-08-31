@@ -236,6 +236,13 @@ pub fn atInstant(self: TimeZone, instant: Instant) DateTime {
     };
     var datetime = shifted.asDateTime();
     datetime.offset = local_type.offset;
+
+    // The one place a `DateTime` can learn what its zone calls itself: it
+    // is asking a zone, which is the only thing that knows. The bytes are
+    // copied into the value rather than borrowed, so the result does not
+    // depend on this zone outliving it. See `Designation`.
+    datetime.designation = .from(local_type.designation);
+
     return datetime;
 }
 
@@ -254,6 +261,18 @@ test atInstant {
     // The offset comes back on the value, so the reading can be turned
     // round again without the zone.
     try testing.expectEqual(@as(u5, 9), local.toUtc().hour);
+
+    // And so does what the zone calls itself, which is the only way to
+    // get at it: no format sequence writes it.
+    try testing.expect(local.designation.eql("CDT"));
+
+    // Midwinter is the other one.
+    const winter = zone.atInstant(.fromNanoTimeStamp(1704067200 * @as(i128, std.time.ns_per_s)));
+    try testing.expect(winter.designation.eql("CST"));
+
+    // Turning the reading back to UTC drops it, because the result is no
+    // longer a reading in that zone.
+    try testing.expect(local.toUtc().designation.eql(""));
 }
 
 /// Converts a Unix timestamp in seconds to local wall-clock time.

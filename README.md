@@ -264,8 +264,18 @@ Two places it does not follow moment, both deliberate:
 - **`z` and `zz` are constant**, `UTC` and `Coordinated Universal Time`,
   whatever the offset. That is moment's own behaviour rather than a gap:
   it has no zone names at all, and real abbreviations come from
-  moment-timezone, a separate package. For a real one, read the
-  designation off `TimeZone.typeAt`.
+  moment-timezone, a separate package. The real one is on the value
+  instead, put there by the zone that knows it:
+
+  ```zig
+  const local = zone.atTimestamp(1720000000);
+  std.debug.print("{s}\n", .{local.designation.slice()});   // CDT
+  ```
+
+  It is six bytes stored in the `DateTime` rather than a slice into the
+  zone, so the reading does not depend on the zone outliving it. Empty
+  means not known, which is what a parsed date or `Instant.asDateTime`
+  gives you: neither has a zone to ask.
 
 The locale is `en`, which is moment's default and the only one here, so
 the localized sequences `L`, `LL`, `LT` and the rest expand to their

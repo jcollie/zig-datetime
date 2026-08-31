@@ -36,6 +36,7 @@ const formatsequence = @import("formatsequence.zig");
 const FormatTag = formatsequence.FormatTag;
 const writeTwelveHour = @import("hour.zig").writeTwelveHour;
 const ordinal = @import("ordinal.zig");
+const Designation = @import("designation.zig").Designation;
 const print = @import("print.zig");
 const read = @import("read.zig");
 
@@ -52,6 +53,18 @@ weekday: DayOfWeek = .Thu,
 /// rather than minutes because historical local mean time offsets are not
 /// whole minutes: America/Chicago's is -5:50:36.
 offset: i32 = 0,
+/// What the zone this reading was made in calls itself at this instant,
+/// such as "CDT", or empty when it is not known.
+///
+/// Only `TimeZone.atInstant` and `atTimestamp` set it, because only a
+/// zone knows it: an offset does not name one, and neither a parsed date
+/// nor `Instant.asDateTime` has a zone to ask. Read it with
+/// `designation.slice()` or compare it with `designation.eql`.
+///
+/// No format sequence writes it. `z` prints a constant, which is what
+/// moment.js does and is documented on the sequence itself; this is where
+/// the real answer lives.
+designation: Designation = .{},
 
 /// The Unix epoch, 1970-01-01T00:00:00Z. Used as the default for the date
 /// fields a format string does not mention; see `parse`.
@@ -1509,6 +1522,9 @@ test dayOfThisYear {
 /// as needed, and `weekday` is recomputed to match. Seconds and
 /// nanoseconds are carried through untouched, so a value holding a leap
 /// second keeps it.
+///
+/// The designation is not carried through. It named the zone the reading
+/// was made in, and the result is not a reading in that zone any more.
 pub fn toUtc(self: DateTime) DateTime {
     if (self.offset == 0) return self;
 
