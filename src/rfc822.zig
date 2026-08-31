@@ -20,7 +20,6 @@ const Minute = @import("minute.zig").Minute;
 const Month = @import("month.zig").Month;
 const Second = @import("second.zig").Second;
 const Year = @import("year.zig").Year;
-const read = @import("read.zig");
 
 pub const ParseError = error{ParseError};
 
@@ -43,41 +42,42 @@ pub const ParseResult = struct {
 /// requires, a day of the week that disagrees with the date it precedes is
 /// `error.ParseError` rather than being ignored.
 pub fn parse(value: []const u8) ParseError!ParseResult {
-    var left = value;
+    var cursor: Cursor = .{ .text = value };
 
-    skipSpace(&left);
+    cursor.skipSpace();
 
     // [ day-of-week [ "," ] ] -- no day name begins with a digit, so a
     // leading name is never ambiguous with the day of the month.
     const day_of_week: ?DayOfWeek = day_of_week: {
-        const result = DayOfWeek.parseShortStr(left) catch break :day_of_week null;
-        left = left[result.str.len..];
-        if (left.len > 0 and left[0] == ',') left = left[1..];
-        try skipRequiredSpace(&left);
+        const result = DayOfWeek.parseShortStr(cursor.rest()) catch break :day_of_week null;
+        cursor.index += result.str.len;
+        _ = cursor.eat(',');
+        try cursor.skipRequiredSpace();
         break :day_of_week result.value;
     };
 
     // date = day month year
     const day: Day = day: {
-        const parsed = try digits(&left, 1, 2);
+        const parsed = try cursor.digits(1, 2);
         if (parsed.value < 1 or parsed.value > 31) return error.ParseError;
         break :day @intCast(parsed.value);
     };
-    try skipRequiredSpace(&left);
+    try cursor.skipRequiredSpace();
 
     const month: Month = month: {
-        for (1..left.len + 1) |l| {
-            if (Month.short_map.get(left[0..l])) |month| {
-                left = left[l..];
+        const rest = cursor.rest();
+        for (1..rest.len + 1) |l| {
+            if (Month.short_map.get(rest[0..l])) |month| {
+                cursor.index += l;
                 break :month month;
             }
         }
         return error.ParseError;
     };
-    try skipRequiredSpace(&left);
+    try cursor.skipRequiredSpace();
 
     const year: Year = year: {
-        const parsed = try digits(&left, 2, 4);
+        const parsed = try cursor.digits(2, 4);
         // RFC 5322 section 4.3 obs-year: a two digit year in 00-49 means
         // 2000-2049 and one in 50-99 means 1950-1999, while a three digit
         // year is an offset from 1900.
@@ -90,33 +90,32 @@ pub fn parse(value: []const u8) ParseError!ParseResult {
     };
 
     if (day > month.lastDay(year)) return error.ParseError;
-    try skipRequiredSpace(&left);
+    try cursor.skipRequiredSpace();
 
     // time = hour ":" minute [ ":" second ] zone
     const hour: Hour = hour: {
-        const parsed = try digits(&left, 1, 2);
+        const parsed = try cursor.digits(1, 2);
         if (parsed.value > 23) return error.ParseError;
         break :hour @intCast(parsed.value);
     };
-    try literal(&left, ':');
+    try cursor.literal(':');
 
     const minute: Minute = minute: {
-        const parsed = try digits(&left, 2, 2);
+        const parsed = try cursor.digits(2, 2);
         if (parsed.value > 59) return error.ParseError;
         break :minute @intCast(parsed.value);
     };
 
     const second: Second = second: {
-        if (left.len == 0 or left[0] != ':') break :second 0;
-        left = left[1..];
+        if (!cursor.eat(':')) break :second 0;
         // 60 is allowed so that a leap second parses.
-        const parsed = try digits(&left, 2, 2);
+        const parsed = try cursor.digits(2, 2);
         if (parsed.value > 60) return error.ParseError;
         break :second @intCast(parsed.value);
     };
-    try skipRequiredSpace(&left);
+    try cursor.skipRequiredSpace();
 
-    const offset = try zone(&left);
+    const offset = try cursor.zone();
 
     var datetime: DateTime = .{
         .year = year,
@@ -136,30 +135,9 @@ pub fn parse(value: []const u8) ParseError!ParseResult {
     }
 
     return .{
-        .str = value[0 .. value.len - left.len],
+        .str = value[0..cursor.index],
         .value = datetime,
     };
-}
-
-/// Consumes any run of spaces and tabs at the start of `left`.
-fn skipSpace(left: *[]const u8) void {
-    var index: usize = 0;
-    while (index < left.len and (left.*[index] == ' ' or left.*[index] == '\t')) index += 1;
-    left.* = left.*[index..];
-}
-
-/// Consumes a run of spaces and tabs at the start of `left`, requiring at
-/// least one of them.
-fn skipRequiredSpace(left: *[]const u8) ParseError!void {
-    const before = left.len;
-    skipSpace(left);
-    if (left.len == before) return error.ParseError;
-}
-
-/// Consumes `char` from the start of `left`.
-fn literal(left: *[]const u8, char: u8) ParseError!void {
-    if (left.len == 0 or left.*[0] != char) return error.ParseError;
-    left.* = left.*[1..];
 }
 
 const Digits = struct {
@@ -167,16 +145,109 @@ const Digits = struct {
     len: usize,
 };
 
-/// Consumes between `min_len` and `max_len` ASCII digits from the start of
-/// `left` and returns their value along with how many were read. `max_len`
-/// must be at most 4 so that the value always fits in a `u16`.
-fn digits(left: *[]const u8, min_len: usize, max_len: usize) ParseError!Digits {
-    std.debug.assert(max_len <= 4);
-    const str = read.int(left.*, max_len);
-    if (str.len < min_len) return error.ParseError;
-    left.* = left.*[str.len..];
-    return .{ .value = @intCast(read.digits(str)), .len = str.len };
-}
+/// A position in the text being parsed.
+///
+/// The position is an index rather than a shrinking slice, so that
+/// advancing is an addition to one integer instead of rebuilding a
+/// pointer and a length each time.
+const Cursor = struct {
+    text: []const u8,
+    index: usize = 0,
+
+    /// The text from the cursor onwards.
+    fn rest(self: Cursor) []const u8 {
+        return self.text[self.index..];
+    }
+
+    fn done(self: Cursor) bool {
+        return self.index >= self.text.len;
+    }
+
+    fn peek(self: Cursor) u8 {
+        return self.text[self.index];
+    }
+
+    /// Consumes `char` if it is next, and reports whether it was.
+    fn eat(self: *Cursor, char: u8) bool {
+        if (self.done() or self.peek() != char) return false;
+        self.index += 1;
+        return true;
+    }
+
+    /// Consumes `char`, which must be next.
+    fn literal(self: *Cursor, char: u8) ParseError!void {
+        if (!self.eat(char)) return error.ParseError;
+    }
+
+    /// Consumes any run of spaces and tabs.
+    fn skipSpace(self: *Cursor) void {
+        while (!self.done() and (self.peek() == ' ' or self.peek() == '\t')) self.index += 1;
+    }
+
+    /// Consumes a run of spaces and tabs, requiring at least one.
+    fn skipRequiredSpace(self: *Cursor) ParseError!void {
+        const before = self.index;
+        self.skipSpace();
+        if (self.index == before) return error.ParseError;
+    }
+
+    /// Consumes between `min_len` and `max_len` ASCII digits and returns
+    /// their value along with how many were read. `max_len` must be at
+    /// most 4 so that the value always fits in a `u16`.
+    fn digits(self: *Cursor, min_len: usize, max_len: usize) ParseError!Digits {
+        // At most four digits, so the value cannot overflow a u16, and
+        // the run is measured and accumulated in the same pass rather
+        // than scanned once to find its length and again to read it.
+        std.debug.assert(max_len <= 4);
+
+        const from = self.rest();
+        var len: usize = 0;
+        var value: u16 = 0;
+        while (len < max_len and len < from.len and std.ascii.isDigit(from[len])) : (len += 1) {
+            value = value * 10 + (from[len] - '0');
+        }
+        if (len < min_len) return error.ParseError;
+
+        self.index += len;
+        return .{ .value = value, .len = len };
+    }
+
+    /// Parses a zone and returns it as seconds east of UTC. Both the
+    /// numeric `("+" / "-") 4DIGIT` form and the named forms are accepted.
+    /// A name is taken to be the whole run of letters that follows, so
+    /// `MST` is read as Mountain Standard Time rather than as the military
+    /// zone `M` with a stray `ST` after it.
+    fn zone(self: *Cursor) ParseError!i32 {
+        if (self.done()) return error.ParseError;
+
+        if (self.peek() == '+' or self.peek() == '-') {
+            const sign: i32 = if (self.peek() == '-') -1 else 1;
+            self.index += 1;
+
+            const parsed = try self.digits(4, 4);
+            if (!self.done() and std.ascii.isDigit(self.peek())) return error.ParseError;
+
+            const hours = parsed.value / 100;
+            const minutes = parsed.value % 100;
+            if (hours > 23 or minutes > 59) return error.ParseError;
+
+            return sign * @as(i32, @intCast(hours)) * std.time.s_per_hour +
+                sign * @as(i32, @intCast(minutes)) * std.time.s_per_min;
+        }
+
+        const from = self.rest();
+        var len: usize = 0;
+        while (len < from.len and std.ascii.isAlphabetic(from[len])) len += 1;
+
+        const offset = switch (len) {
+            1 => militaryZone(from[0]) orelse return error.ParseError,
+            2, 3 => zone_map.get(from[0..len]) orelse return error.ParseError,
+            else => return error.ParseError,
+        };
+        self.index += len;
+        return offset;
+    }
+};
 
 /// The named zones of RFC 822 section 5.1, as seconds east of UTC, plus
 /// `UTC`, which the RFC spells `UT` but which is common enough in real
@@ -194,39 +265,6 @@ const zone_map = std.StaticStringMapWithEql(i32, std.ascii.eqlIgnoreCase).initCo
     .{ "PST", -8 * std.time.s_per_hour },
     .{ "PDT", -7 * std.time.s_per_hour },
 });
-
-/// Parses a zone at the start of `left` and returns it as seconds east of
-/// UTC. Both the numeric `("+" / "-") 4DIGIT` form and the named forms are
-/// accepted. A name is taken to be the whole run of letters that follows,
-/// so `MST` is read as Mountain Standard Time rather than as the military
-/// zone `M` with a stray `ST` after it.
-fn zone(left: *[]const u8) ParseError!i32 {
-    if (left.len == 0) return error.ParseError;
-
-    if (left.*[0] == '+' or left.*[0] == '-') {
-        const sign: i32 = if (left.*[0] == '-') -1 else 1;
-        var rest = left.*[1..];
-        const parsed = try digits(&rest, 4, 4);
-        if (rest.len > 0 and std.ascii.isDigit(rest[0])) return error.ParseError;
-        const hours = parsed.value / 100;
-        const minutes = parsed.value % 100;
-        if (hours > 23 or minutes > 59) return error.ParseError;
-        left.* = rest;
-        return sign * @as(i32, @intCast(hours)) * std.time.s_per_hour +
-            sign * @as(i32, @intCast(minutes)) * std.time.s_per_min;
-    }
-
-    var len: usize = 0;
-    while (len < left.len and std.ascii.isAlphabetic(left.*[len])) len += 1;
-
-    const offset = switch (len) {
-        1 => militaryZone(left.*[0]) orelse return error.ParseError,
-        2, 3 => zone_map.get(left.*[0..len]) orelse return error.ParseError,
-        else => return error.ParseError,
-    };
-    left.* = left.*[len..];
-    return offset;
-}
 
 /// Returns the offset in seconds east of UTC of a single letter military
 /// zone, or null if `letter` is not one.
