@@ -21,10 +21,10 @@
 //! is the `node` named in `flake.nix`. It is part of `zig build test`,
 //! because the two agree.
 //!
-//! `zig build oracle-parse` does the same for parsing, against both of
-//! moment's parsing modes at once. That one is a survey rather than a
-//! gate: the two do not agree yet, so it reports and returns success, and
-//! `test` does not depend on it.
+//! `zig build oracle-parse` does the same for parsing. `DateTime.Mode` has
+//! the same two settings moment's strict flag chooses between, and each is
+//! held to the matching mode of moment. It carries a short list of known
+//! divergences and fails on anything else, and is part of `test` too.
 //!
 //! `-Dno-system-tzdata` is a testing knob rather than a build variant. The
 //! tests that read the operating system's copy of the database skip when
@@ -254,9 +254,9 @@ pub fn build(b: *std.Build) void {
         oracle_step.dependOn(&run_oracle.step);
         test_step.dependOn(&run_oracle.step);
 
-        // The same idea for parsing, which is a survey rather than a gate:
-        // the two have not been made to agree yet, so this reports where
-        // they stand instead of failing, and `test` does not depend on it.
+        // The same idea for parsing. It carries a short list of known
+        // divergences, documented in the script, and fails on anything
+        // else, so it is a gate against regressions rather than a survey.
         const parse_dump = b.addExecutable(.{
             .name = "oracle-parse-dump",
             .root_module = b.createModule(.{
@@ -279,9 +279,10 @@ pub fn build(b: *std.Build) void {
 
         const parse_step = b.step(
             "oracle-parse",
-            "Survey this library's parsing against moment.js",
+            "Check parsing against moment.js, in both of its modes",
         );
         parse_step.dependOn(&run_parse_oracle.step);
+        test_step.dependOn(&run_parse_oracle.step);
     }
 }
 

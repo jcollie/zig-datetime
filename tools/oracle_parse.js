@@ -7,11 +7,9 @@
 // string, the input, whether this library parsed it, and either what it
 // parsed to or why it refused -- and this asks moment the same question.
 //
-// moment parses in two modes and they disagree about most of the awkward
-// cases, so every record is checked against both rather than one being
-// picked in advance. That is the point of running this now: the report
-// says which mode this library resembles, case by case, which is the thing
-// worth knowing before deciding which to match.
+// This library has the same two parsing modes moment does, so each record
+// says which mode it was read in and is held to the matching mode of
+// moment. A divergence is a divergence now rather than a survey finding.
 //
 // Usage: node oracle_parse.js <path to moment.js> <path to the dump>
 //
@@ -67,18 +65,19 @@ const lines = fs.readFileSync(dumpPath, 'utf8').split('\n').filter((l) => l.leng
 
 const rows = [];
 for (const line of lines) {
-    const first = line.indexOf('\t');
-    const second = line.indexOf('\t', first + 1);
-    const third = line.indexOf('\t', second + 1);
-    if (first < 0 || second < 0 || third < 0) {
-        console.error(`oracle: malformed record: ${JSON.stringify(line)}`);
-        process.exit(2);
+    const parts = [];
+    let at = 0;
+    for (let i = 0; i < 4; i++) {
+        const next = line.indexOf('\t', at);
+        if (next < 0) {
+            console.error(`oracle: malformed record: ${JSON.stringify(line)}`);
+            process.exit(2);
+        }
+        parts.push(line.slice(at, next));
+        at = next + 1;
     }
-
-    const format = line.slice(0, first);
-    const input = line.slice(first + 1, second);
-    const status = line.slice(second + 1, third);
-    const detail = line.slice(third + 1);
+    const [format, input, mode, status] = parts;
+    const detail = line.slice(at);
 
     let ours;
     if (status === 'ok') {
@@ -88,74 +87,72 @@ for (const line of lines) {
         ours = { ok: false, error: detail };
     }
 
-    rows.push({
-        format,
-        input,
-        ours,
-        lenient: ask(input, format, false),
-        strict: ask(input, format, true),
-    });
-}
-
-const tally = { both: 0, lenientOnly: 0, strictOnly: 0, neither: 0 };
-for (const r of rows) {
-    const l = agrees(r.ours, r.lenient);
-    const s = agrees(r.ours, r.strict);
-    if (l && s) tally.both += 1;
-    else if (l) tally.lenientOnly += 1;
-    else if (s) tally.strictOnly += 1;
-    else tally.neither += 1;
+    rows.push({ format, input, mode, ours, theirs: ask(input, format, mode === 'strict') });
 }
 
 const show = (r) => (r.ok ? `${r.value} (${r.consumed} used)` : `refused${r.error ? ' ' + r.error : ''}`);
 
-console.log(`oracle: ${rows.length} parses against moment ${moment.version}`);
-console.log(`  agree with both modes        ${tally.both}`);
-console.log(`  agree with lenient only      ${tally.lenientOnly}`);
-console.log(`  agree with strict only       ${tally.strictOnly}`);
-console.log(`  agree with neither           ${tally.neither}`);
+// The one thing lenient parsing does not follow moment on.
+//
+// moment's lenient mode does not read a format string left to right
+// against the input: for each sequence it searches the rest of the input
+// for something that sequence's pattern matches, skips whatever came
+// before, and skips the sequence entirely when nothing matches. So a
+// separator that does not match is stepped over, and an input that runs
+// out is padded with whatever the sequences would have defaulted to.
+//
+// This library reads left to right in both modes and refuses instead.
+// These are the cases in the corpus where that shows. Anything else is a
+// regression, and fails the build.
+const KNOWN = [
+    ['YYYY-MM-DD', '2024/03/15', 'lenient'],
+    ['YYYY-MM-DD', '2024-03', 'lenient'],
+    ['HH:mm', '14', 'lenient'],
+];
 
-const disputed = rows.filter((r) => !agrees(r.ours, r.lenient) || !agrees(r.ours, r.strict));
+const isKnown = (r) => KNOWN.some(([f, i, m]) => r.format === f && r.input === i && r.mode === m);
+
+const disputed = rows.filter((r) => !agrees(r.ours, r.theirs) && !isKnown(r));
+
+const knownSeen = rows.filter((r) => isKnown(r) && !agrees(r.ours, r.theirs)).length;
+if (knownSeen !== KNOWN.length) {
+    console.log(
+        `oracle: ${knownSeen} of ${KNOWN.length} known divergences still diverge` +
+            ' -- if one was fixed, take it out of KNOWN'
+    );
+}
+
+console.log(`oracle: ${rows.length} parses against moment ${moment.version}, in both modes`);
+
 if (disputed.length === 0) {
-    console.log('oracle: no divergence in either mode');
+    console.log(`oracle: no divergence beyond the ${KNOWN.length} known and documented`);
     process.exit(0);
 }
 
-console.log(`\noracle: ${disputed.length} cases where the three do not all agree\n`);
+console.log(`oracle: ${disputed.length} differ\n`);
 
-// Group by the format string and by which modes agreed, so that a
-// disagreement that holds for every instant is reported once with a count
-// rather than once per instant.
+// Group by format string and mode, since a disagreement usually holds for
+// every instant a round trip walks.
 const groups = new Map();
 for (const r of disputed) {
-    const shape = `${agrees(r.ours, r.lenient) ? 'L' : '-'}${agrees(r.ours, r.strict) ? 'S' : '-'}`;
-    const key = `${r.format}\u0000${shape}`;
-    if (!groups.has(key)) groups.set(key, { format: r.format, shape, cases: [] });
+    const key = `${r.format}\u0000${r.mode}`;
+    if (!groups.has(key)) groups.set(key, { format: r.format, mode: r.mode, cases: [] });
     groups.get(key).cases.push(r);
 }
 
-const label = { '--': 'we match neither mode', 'L-': 'we match lenient only', '-S': 'we match strict only' };
-
 for (const g of groups.values()) {
-    console.log(`  ${JSON.stringify(g.format)} -- ${label[g.shape]} (${g.cases.length} case${g.cases.length === 1 ? '' : 's'})`);
+    console.log(`  ${JSON.stringify(g.format)} ${g.mode} (${g.cases.length})`);
     const seen = new Set();
     for (const r of g.cases) {
-        // One example per distinct disagreement, since the round trip
-        // repeats the same shape across every instant it walks.
-        const signature = `${show(r.ours)}|${show(r.lenient)}|${show(r.strict)}`.replace(/\d/g, '#');
+        const signature = `${show(r.ours)}|${show(r.theirs)}`.replace(/\d/g, '#');
         if (seen.has(signature)) continue;
         seen.add(signature);
         if (seen.size > 3) break;
-
         console.log(`      ${JSON.stringify(r.input)}`);
-        console.log(`          ours    ${show(r.ours)}`);
-        console.log(`          lenient ${show(r.lenient)}`);
-        console.log(`          strict  ${show(r.strict)}`);
+        console.log(`          ours   ${show(r.ours)}`);
+        console.log(`          moment ${show(r.theirs)}`);
     }
     console.log();
 }
 
-// Reporting is the job for now: this is a survey of where the two stand,
-// not a gate, so a divergence is not yet a failure. `zig build test` does
-// not depend on this step.
-process.exit(0);
+process.exit(1);

@@ -491,11 +491,57 @@ pub const ParseResult = struct {
     value: DateTime,
 };
 
-/// Parses `value` according to the comptime `format_string`, relative to the
-/// Unix epoch: date fields missing from the format string default to
-/// 1970-01-01 and time fields default to zero. See `parseRelativeTo`.
+/// How closely the input has to match the format string.
+///
+/// moment.js takes the same choice as a flag, and the two behave the same
+/// way here. The difference is worth having because the two are wanted for
+/// different things: reading a field out of a protocol message, where
+/// anything unexpected is an error, against reading something a person
+/// typed, where it is not.
+pub const Mode = enum {
+    /// Every sequence takes what it can. A padded sequence such as `MM`
+    /// accepts one digit as well as two, `MMM` accepts a full month name
+    /// as well as a short one, and text after the date is left for the
+    /// caller rather than refused. This is moment's default.
+    lenient,
+    /// Every sequence takes exactly what it says, and the whole input has
+    /// to be used: `MM` wants two digits, `MMM` wants three letters, and
+    /// anything left over is an error rather than the caller's.
+    strict,
+};
+
+/// What to parse against, beyond the format string itself.
+pub const Options = struct {
+    /// Where the date fields the format string does not mention come from.
+    /// See `parseWith` for how they are filled in.
+    relative_to: DateTime = .unix_epoch,
+    /// How closely the input has to match. See `Mode`.
+    mode: Mode = .lenient,
+};
+
+/// Parses `value` according to the comptime `format_string`, leniently and
+/// relative to the Unix epoch. See `parseWith`.
 pub fn parse(comptime format_string: []const u8, value: []const u8) ParseError!ParseResult {
-    return parseRelativeTo(format_string, .unix_epoch, value);
+    return parseWith(format_string, value, .{});
+}
+
+/// Parses `value` according to the comptime `format_string`, requiring an
+/// exact match and the whole input. See `parseWith`.
+pub fn parseStrict(comptime format_string: []const u8, value: []const u8) ParseError!ParseResult {
+    return parseWith(format_string, value, .{ .mode = .strict });
+}
+
+test parseStrict {
+    // The whole input has to be used, and each sequence takes exactly what
+    // it says.
+    _ = try parseStrict("YYYY-MM-DD", "2024-03-15");
+
+    try std.testing.expectError(error.ParseError, parseStrict("YYYY-MM-DD", "2024-3-15"));
+    try std.testing.expectError(error.ParseError, parseStrict("YYYY-MM-DD", "2024-03-15 and then some"));
+
+    // Where `parse` takes all three.
+    _ = try parse("YYYY-MM-DD", "2024-3-15");
+    _ = try parse("YYYY-MM-DD", "2024-03-15 and then some");
 }
 
 test parse {
@@ -534,6 +580,17 @@ test parse {
 /// being compiled: the `error.IllegalToken` it raises there surfaces as a
 /// compile error and never reaches a caller.
 pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime, value: []const u8) ParseError!ParseResult {
+    return parseWith(format_string, value, .{ .relative_to = relative_to });
+}
+
+/// Parses `value` according to the comptime `format_string`, a string of
+/// `FormatTag` sequences (e.g. "MMM D H:mm:ss"), under `options`.
+pub fn parseWith(
+    comptime format_string: []const u8,
+    value: []const u8,
+    options: Options,
+) ParseError!ParseResult {
+    const relative_to = options.relative_to;
     const expanded = comptime formatsequence.expandLocalized(format_string);
 
     const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
@@ -648,7 +705,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                 switch (tag) {
                     .YY => {
                         const str = read.int(left, 2);
-                        if (str.len != 2) return error.ParseError;
+                        if (options.mode == .strict and str.len != 2) return error.ParseError;
 
                         // moment's window: 69 through 99 are the twentieth
                         // century and 00 through 68 are this one, which is
@@ -661,10 +718,18 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         datetime.year = year: {
                             const str = read.int(left, 4);
                             if (str.len == 0) return error.ParseError;
-                            if (tag == .YYYY and str.len != 4) return error.ParseError;
-                            const year: Year = @intCast(read.digits(str));
+                            if (options.mode == .strict and tag == .YYYY and str.len != 4) return error.ParseError;
+                            const digits = @as(Year, @intCast(read.digits(str)));
                             left = left[str.len..];
-                            break :year year;
+
+                            // Two characters against `YYYY` are a two
+                            // digit year and are windowed like one, which
+                            // is moment's rule and only reachable
+                            // leniently, since strict wants four.
+                            break :year if (tag == .YYYY and str.len == 2)
+                                digits + (if (digits > 68) @as(Year, 1900) else 2000)
+                            else
+                                digits;
                         };
                     },
                     .MMMM => {
@@ -675,11 +740,32 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                                     break :month m;
                                 }
                             }
+                            // And a short name where a long one was asked
+                            // for, which moment also takes leniently.
+                            if (options.mode == .lenient) {
+                                for (1..left.len + 1) |l| {
+                                    if (Month.short_map.get(left[0..l])) |m| {
+                                        left = left[l..];
+                                        break :month m;
+                                    }
+                                }
+                            }
                             return error.ParseError;
                         };
                     },
                     .MMM => {
                         datetime.month = month: {
+                            // Leniently a full name is taken too, longest
+                            // first so that "March" is not read as "Mar"
+                            // with "ch" left over.
+                            if (options.mode == .lenient) {
+                                for (1..left.len + 1) |l| {
+                                    if (Month.long_map.get(left[0..l])) |m| {
+                                        left = left[l..];
+                                        break :month m;
+                                    }
+                                }
+                            }
                             for (1..left.len + 1) |l| {
                                 if (Month.short_map.get(left[0..l])) |m| {
                                     left = left[l..];
@@ -693,7 +779,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         datetime.month = month: {
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
-                            if (tag == .MM and str.len != 2) return error.ParseError;
+                            if (options.mode == .strict and tag == .MM and str.len != 2) return error.ParseError;
                             defer left = left[str.len..];
                             break :month try Month.parseInt(str);
                         };
@@ -718,7 +804,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         datetime.day = day: {
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
-                            if (tag == .DD and str.len != 2) return error.ParseError;
+                            if (options.mode == .strict and tag == .DD and str.len != 2) return error.ParseError;
                             const day = read.digits(str);
                             if (day < 1 or day > 31) return error.ParseError;
                             left = left[str.len..];
@@ -746,7 +832,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         day_of_year = doy: {
                             const str = read.int(left, 3);
                             if (str.len == 0) return error.ParseError;
-                            if (tag == .DDDD and str.len != 3) return error.ParseError;
+                            if (options.mode == .strict and tag == .DDDD and str.len != 3) return error.ParseError;
                             const doy = read.digits(str);
                             if (doy < 1 or doy > 366) return error.ParseError;
                             left = left[str.len..];
@@ -772,7 +858,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
                             switch (tag) {
-                                .HH, .hh => if (str.len != 2) return error.ParseError,
+                                .HH, .hh => if (options.mode == .strict and str.len != 2) return error.ParseError,
                                 .H, .h => {},
                                 else => unreachable,
                             }
@@ -784,7 +870,15 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                                 // the minutes and seconds are known to be
                                 // zero, which is moment's rule.
                                 .HH, .H => if (hour > 24) return error.ParseError,
-                                .hh, .h => if (hour < 1 or hour > 12) return error.ParseError,
+                                // Strictly this is a twelve hour clock and
+                                // has to read like one. Leniently moment
+                                // bounds it no more tightly than `H` and
+                                // lets the meridiem make what it can of
+                                // the result, so "13:30 pm" is 13:30.
+                                .hh, .h => switch (options.mode) {
+                                    .strict => if (hour < 1 or hour > 12) return error.ParseError,
+                                    .lenient => if (hour > 24) return error.ParseError,
+                                },
                                 else => unreachable,
                             }
                             left = left[str.len..];
@@ -795,7 +889,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         datetime.hour = hour: {
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
-                            if (tag == .kk and str.len != 2) return error.ParseError;
+                            if (options.mode == .strict and tag == .kk and str.len != 2) return error.ParseError;
                             var hour = read.digits(str);
                             if (hour > 24) return error.ParseError;
                             if (hour == 24) hour = 0;
@@ -807,7 +901,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         datetime.minute = minute: {
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
-                            if (tag == .mm and str.len != 2) return error.ParseError;
+                            if (options.mode == .strict and tag == .mm and str.len != 2) return error.ParseError;
                             const minute = read.digits(str);
                             if (minute > 59) return error.ParseError;
                             left = left[str.len..];
@@ -818,7 +912,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         datetime.second = second: {
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
-                            if (tag == .ss and str.len != 2) return error.ParseError;
+                            if (options.mode == .strict and tag == .ss and str.len != 2) return error.ParseError;
                             const second = read.digits(str);
                             if (second > 60) return error.ParseError;
                             left = left[str.len..];
@@ -892,7 +986,14 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                     .ddd,
                     .dd,
                     => {
-                        const result = switch (tag) {
+                        // Leniently any of the three lengths is taken
+                        // whichever was asked for, longest first so that
+                        // "Sunday" is not read as "Sun" with "day" over.
+                        const result = if (options.mode == .lenient)
+                            DayOfWeek.parseLongStr(left) catch
+                                DayOfWeek.parseShortStr(left) catch
+                                try DayOfWeek.parseVeryShortStr(left)
+                        else switch (tag) {
                             .dddd => try DayOfWeek.parseLongStr(left),
                             .ddd => try DayOfWeek.parseShortStr(left),
                             .dd => try DayOfWeek.parseVeryShortStr(left),
@@ -907,7 +1008,7 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                             const str = read.int(left, 2);
                             if (str.len == 0) return error.ParseError;
                             switch (tag) {
-                                .ww, .WW => if (str.len != 2) return error.ParseError,
+                                .ww, .WW => if (options.mode == .strict and str.len != 2) return error.ParseError,
                                 else => {},
                             }
                             left = left[str.len..];
@@ -939,7 +1040,8 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         };
 
                         const str = read.int(left, width);
-                        if (str.len != width) return error.ParseError;
+                        if (str.len == 0) return error.ParseError;
+                        if (options.mode == .strict and str.len != width) return error.ParseError;
                         left = left[str.len..];
 
                         const parsed = @as(Year, @intCast(read.digits(str)));
@@ -1085,15 +1187,15 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
 
     switch (am_pm) {
         .none => {},
-        .am => {
-            if (datetime.hour == 0) return error.ParseError;
-            if (datetime.hour > 12) return error.ParseError;
-            if (datetime.hour == 12) datetime.hour = 0;
+        // An hour outside the twelve only arrives here leniently, and is
+        // left as it is rather than refused: a zero reads as the twelve it
+        // would have been written as, so "0:30 pm" is half past noon, and
+        // "13:30 pm" is simply half past one.
+        .am => if (datetime.hour == 12) {
+            datetime.hour = 0;
         },
-        .pm => {
-            if (datetime.hour == 0) return error.ParseError;
-            if (datetime.hour > 12) return error.ParseError;
-            if (datetime.hour < 12) datetime.hour += 12;
+        .pm => if (datetime.hour < 12) {
+            datetime.hour += 12;
         },
     }
 
@@ -1161,6 +1263,11 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
     if (day_of_week) |dow| {
         if (datetime.weekday != dow) return error.ParseError;
     }
+
+    // Strict takes the whole input or none of it. Lenient leaves whatever
+    // it did not need, and says how much that was, which is what lets a
+    // caller carry on from where this stopped.
+    if (options.mode == .strict and left.len != 0) return error.ParseError;
 
     return .{
         .str = value[0 .. value.len - left.len],
@@ -1316,6 +1423,41 @@ pub fn toUtc(self: DateTime) DateTime {
     };
 }
 
+test "the two parsing modes" {
+    // Strictly a padded sequence wants its padding and a name sequence
+    // wants the length it asked for; leniently either will do.
+    _ = try parseStrict("YYYY-MM-DD", "2024-03-15");
+    try std.testing.expectError(error.ParseError, parseStrict("MMM D YYYY", "March 15 2024"));
+    _ = try parse("MMM D YYYY", "March 15 2024");
+    _ = try parse("MMMM D YYYY", "Mar 15 2024");
+
+    // Strictly the whole input has to be used.
+    const trailing = try parse("YYYY-MM-DD", "2024-03-15 and then some");
+    try std.testing.expectEqualStrings("2024-03-15", trailing.str);
+    try std.testing.expectError(
+        error.ParseError,
+        parseStrict("YYYY-MM-DD", "2024-03-15 and then some"),
+    );
+
+    // Two characters against YYYY are a two digit year, windowed, which
+    // only strict refuses.
+    try std.testing.expectEqual(@as(Year, 2024), (try parse("YYYY", "24")).value.year);
+    try std.testing.expectError(error.ParseError, parseStrict("YYYY", "24"));
+
+    // The twelve hour clock is only a twelve hour clock strictly.
+    try std.testing.expectEqual(@as(Hour, 12), (try parse("h:mm a", "0:30 pm")).value.hour);
+    try std.testing.expectEqual(@as(Hour, 13), (try parse("h:mm a", "13:30 pm")).value.hour);
+    try std.testing.expectError(error.ParseError, parseStrict("h:mm a", "0:30 pm"));
+
+    // The mode rides along with the reference, so both can be set at once.
+    const both = try parseWith("MM-DD", "03-15", .{
+        .relative_to = .{ .year = 2001, .month = .Sep, .day = 9 },
+        .mode = .strict,
+    });
+    try std.testing.expectEqual(@as(Year, 2001), both.value.year);
+    try std.testing.expectEqual(Month.Mar, both.value.month);
+}
+
 test "the ISO weekday sequence numbers the week from Monday" {
     // `E` is Monday 1 through Sunday 7, which is not how `DayOfWeek`
     // numbers itself, and the conversion used to be off by a day.
@@ -1399,8 +1541,10 @@ test "a two digit year is windowed the way moment windows it" {
     try std.testing.expectEqual(@as(Year, 2068), (try parse("YY", "68")).value.year);
     try std.testing.expectEqual(@as(Year, 2000), (try parse("YY", "00")).value.year);
 
-    // Two digits, not one and not three.
-    try std.testing.expectError(error.ParseError, parse("YY", "7"));
+    // One digit is accepted leniently, the way moment accepts it, and
+    // windowed the same way. Strict wants both digits.
+    try std.testing.expectEqual(@as(Year, 2007), (try parse("YY", "7")).value.year);
+    try std.testing.expectError(error.ParseError, parseStrict("YY", "7"));
 }
 
 test "either spelling of an offset parses, for both sequences" {

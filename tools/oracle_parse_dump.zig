@@ -19,8 +19,12 @@
 //! separator that does not match, and values outside their range.
 //!
 //! Output is one record per line, tab separated: the format string, the
-//! input, `ok` or `err`, and then either how many bytes were consumed and
-//! the result rendered canonically, or the name of the error.
+//! input, which of the two parsing modes it was read in, `ok` or `err`,
+//! and then either how many bytes were consumed and the result rendered
+//! canonically, or the name of the error.
+//!
+//! Every case is written twice, once per mode, and the checker holds each
+//! to the matching mode of moment.
 //!
 //! Fields that the format string does not mention are taken from
 //! `relative_to`, so the reference instant is fixed here and pinned to the
@@ -186,20 +190,37 @@ pub fn main(init: std.process.Init) !void {
     try out.flush();
 }
 
-/// Parses `input` against `fmt` and writes the one record it produces.
+/// Parses `input` against `fmt` in both modes and writes a record for
+/// each.
 fn report(
     out: *std.Io.Writer,
     comptime fmt: []const u8,
     input: []const u8,
     base: DateTime,
 ) !void {
+    inline for (.{ DateTime.Mode.lenient, DateTime.Mode.strict }) |mode| {
+        try reportOne(out, fmt, input, base, mode);
+    }
+}
+
+/// Parses `input` against `fmt` in one mode and writes the record.
+fn reportOne(
+    out: *std.Io.Writer,
+    comptime fmt: []const u8,
+    input: []const u8,
+    base: DateTime,
+    mode: DateTime.Mode,
+) !void {
     // A tab or a newline would make the record ambiguous. Nothing in the
     // corpus holds either, so this guards against one growing them.
     std.debug.assert(std.mem.indexOfAny(u8, fmt, "\t\n") == null);
     std.debug.assert(std.mem.indexOfAny(u8, input, "\t\n") == null);
 
-    const result = DateTime.parseRelativeTo(fmt, base, input) catch |err| {
-        try out.print("{s}\t{s}\terr\t{t}\n", .{ fmt, input, err });
+    const result = DateTime.parseWith(fmt, input, .{
+        .relative_to = base,
+        .mode = mode,
+    }) catch |err| {
+        try out.print("{s}\t{s}\t{t}\terr\t{t}\n", .{ fmt, input, mode, err });
         return;
     };
 
@@ -207,5 +228,5 @@ fn report(
     var writer = std.Io.Writer.fixed(&rendered);
     try result.value.format(canonical, &writer);
 
-    try out.print("{s}\t{s}\tok\t{d} {s}\n", .{ fmt, input, result.str.len, writer.buffered() });
+    try out.print("{s}\t{s}\t{t}\tok\t{d} {s}\n", .{ fmt, input, mode, result.str.len, writer.buffered() });
 }
