@@ -284,7 +284,23 @@ pub const FormatTag = enum {
     X,
     /// 1710513005000 (milliseconds since the Unix epoch)
     x,
-    // z, // EST CST ... MST PST
+    /// UTC (zone abbreviation)
+    ///
+    /// This is always "UTC", whatever the offset, which looks wrong and is
+    /// what moment.js does: its `z` reports the abbreviation of a moment
+    /// built in UTC mode, and a moment carrying an explicit offset counts
+    /// as one. `moment.parseZone("2024-03-15T09:30:00-05:00").format("z")`
+    /// is "UTC" there too.
+    ///
+    /// Every `DateTime` here carries an explicit offset and there is no
+    /// ambient local mode, so all of them answer to that case. A real
+    /// abbreviation such as "CDT" is not available: a `DateTime` holds an
+    /// offset and no designation, and moment does not have one either
+    /// without the separate moment-timezone package. Read the designation
+    /// off `TimeZone.typeAt` if that is what is wanted.
+    z,
+    /// Coordinated Universal Time (zone name). The same caveat as `z`.
+    zz,
     /// -07:00 -06:00 ... +06:00 +07:00 (offset from UTC). Note that this
     /// makes a bare `Z` in a format string an offset rather than the
     /// literal Zulu marker of ISO 8601.

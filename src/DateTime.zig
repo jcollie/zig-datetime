@@ -332,6 +332,11 @@ pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) 
                 //     }
                 // },
 
+                // Constant, which is moment.js's behaviour rather than an
+                // oversight: see the sequences' own documentation.
+                .z => try writer.writeAll("UTC"),
+                .zz => try writer.writeAll("Coordinated Universal Time"),
+
                 .Z => try print.offset(writer, self.offset, .colon),
                 .ZZ => try print.offset(writer, self.offset, .none),
 
@@ -490,6 +495,8 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                         .hmmss,
                         .X,
                         .x,
+                        .z,
+                        .zz,
                         .ggggg,
                         .GGGGG,
                         .w,
@@ -874,6 +881,8 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
                     .hmmss,
                     .X,
                     .x,
+                    .z,
+                    .zz,
                     .ggggg,
                     .GGGGG,
                     .w,
