@@ -31,8 +31,6 @@
         system:
         let
           pkgs = makePackages system;
-        in
-        {
           default = pkgs.mkShell {
             name = "zig-datetime";
             nativeBuildInputs = [
@@ -60,6 +58,28 @@
               # behaviour is read from. See tools/oracle_go.go.
               pkgs.go
             ];
+          };
+        in
+        {
+          inherit default;
+
+          # The Windows half of `src/tzdb.zig` calls into Win32 and so can
+          # only be run on Windows, which here means under Wine:
+          #
+          #     nix develop .#windows -c zig build test \
+          #         -Dtarget=x86_64-windows -Dembed-tzdata -fwine
+          #
+          # Wine is a large thing to carry for one file, and nothing else
+          # here needs it, so it is a shell of its own rather than part of
+          # the one everyone uses. `wine64` rather than `wine` because the
+          # target above is 64-bit; note that Wine builds a prefix for the
+          # first architecture it sees and then refuses the other, so a
+          # `~/.wine` left over from 32-bit use has to be pointed away from
+          # with WINEPREFIX. See .forgejo/workflows/test.yaml.
+          windows = pkgs.mkShell {
+            name = "zig-datetime-windows";
+            inputsFrom = [ default ];
+            nativeBuildInputs = [ pkgs.wine64 ];
           };
         }
       );

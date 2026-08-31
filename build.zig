@@ -31,6 +31,12 @@
 //! held to the matching mode of moment. It carries a short list of known
 //! divergences and fails on anything else, and is part of `test` too.
 //!
+//! `zig build windowszones` regenerates `src/windowszones.zig`, the table
+//! that gets from a Windows zone name to an IANA one. Unlike the timezone
+//! database that table is checked into the tree, so that the Windows path
+//! costs no dependency and no network; this step is only for refreshing it
+//! when CLDR publishes a new release.
+//!
 //! `-Dno-system-tzdata` is a testing knob rather than a build variant. The
 //! tests that read the operating system's copy of the database skip when
 //! there is none, and those skips are where a mistake can hide on a
@@ -42,6 +48,13 @@ const std = @import("std");
 /// The IANA release that `build.zig.zon` pins. Kept here so the generated
 /// data can record which release it came from.
 const tz_release = "2026c";
+
+/// The CLDR release `src/windowszones.zig` was generated from, recorded in
+/// the generated file and reported as `tzdb.windows.cldr_version`. The file
+/// to feed `zig build windowszones` is:
+///
+///   https://raw.githubusercontent.com/unicode-org/cldr/release-48-2/common/supplemental/windowsZones.xml
+const cldr_release = "release-48-2";
 
 /// How zic should pack the embedded data.
 const Packing = enum { slim, fat };
@@ -122,10 +135,42 @@ pub fn build(b: *std.Build) void {
 
     module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
 
+    // Windows has no zoneinfo tree, so `tzdb.windows` asks it which zone
+    // the machine is set to instead. Lazy, and only for that target, so a
+    // build for anything else neither fetches nor compiles the bindings.
+    if (target.result.os.tag == .windows) {
+        if (b.lazyDependency("zigwin32", .{})) |zigwin32| {
+            module.addImport("win32", zigwin32.module("win32"));
+        }
+    }
+
     const options = b.addOptions();
     options.addOption(bool, "no_system_tzdata", no_system_tzdata);
     options.addOption(usize, "fuzz_iterations", fuzz_iterations);
     module.addImport("build_options", options.createModule());
+
+    // The oracles below run on the machine doing the build, so they need
+    // an instance of the library built for it: a cross-compiled one
+    // cannot be linked into a host executable, and `zig build test
+    // -Dtarget=...` would then fail on the oracle steps rather than on
+    // anything to do with what is being tested. What they check --
+    // formatting, parsing, the layouts -- is the same whatever the target,
+    // so checking the host build is checking the same code.
+    const host_module = if (target.query.isNative()) module else host: {
+        const copy = b.createModule(.{
+            .root_source_file = b.path("src/datetime.zig"),
+            .target = b.graph.host,
+            .optimize = optimize,
+        });
+        copy.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+        copy.addImport("build_options", options.createModule());
+        if (b.graph.host.result.os.tag == .windows) {
+            if (b.lazyDependency("zigwin32", .{})) |zigwin32| {
+                copy.addImport("win32", zigwin32.module("win32"));
+            }
+        }
+        break :host copy;
+    };
 
     const tests = b.addTest(.{
         .root_module = module,
@@ -196,6 +241,11 @@ pub fn build(b: *std.Build) void {
     });
     bench_datetime.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
     bench_datetime.addImport("build_options", options.createModule());
+    if (target.result.os.tag == .windows) {
+        if (b.lazyDependency("zigwin32", .{})) |zigwin32| {
+            bench_datetime.addImport("win32", zigwin32.module("win32"));
+        }
+    }
 
     const bench_exe = b.addExecutable(.{
         .name = "bench",
@@ -216,6 +266,62 @@ pub fn build(b: *std.Build) void {
 
     const bench_step = b.step("bench", "Run the benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // CLDR's table of Windows zone names against IANA ones, which is what
+    // `tzdb.windows` reads. It is checked into the tree rather than
+    // generated on every build: it is a few kilobytes of names that change
+    // about once a year, and fetching it would put a dependency and a
+    // network round trip in front of every Windows build for that.
+    //
+    // Refreshing it is therefore a deliberate step rather than something
+    // the build does on its own, and it takes the file rather than
+    // downloading it, because a build step that reaches the network is not
+    // reproducible:
+    //
+    //     curl -O https://raw.githubusercontent.com/unicode-org/cldr/\
+    //         release-48-2/common/supplemental/windowsZones.xml
+    //     zig build windowszones -Dwindowszones-xml=windowsZones.xml
+    //
+    // Then update `cldr_release` above to match what was downloaded.
+    const gen_windowszones = b.addExecutable(.{
+        .name = "gen-windowszones",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/gen_windowszones.zig"),
+            // Built for the machine running the build: it runs here, now,
+            // and never ships anywhere.
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+
+    // The generator has tests of its own; without this they would never run.
+    test_step.dependOn(&b.addRunArtifact(
+        b.addTest(.{ .root_module = gen_windowszones.root_module }),
+    ).step);
+
+    const windowszones_step = b.step(
+        "windowszones",
+        "Regenerate src/windowszones.zig from CLDR's windowsZones.xml",
+    );
+
+    if (b.option(
+        []const u8,
+        "windowszones-xml",
+        "Path to CLDR's windowsZones.xml, for `zig build windowszones`",
+    )) |xml_path| {
+        const run_gen = b.addRunArtifact(gen_windowszones);
+        run_gen.addFileArg(.{ .cwd_relative = xml_path });
+        const generated_table = run_gen.addOutputFileArg("windowszones.zig");
+        run_gen.addArg(cldr_release);
+
+        const update = b.addUpdateSourceFiles();
+        update.addCopyFileToSource(generated_table, "src/windowszones.zig");
+        windowszones_step.dependOn(&update.step);
+    } else {
+        windowszones_step.dependOn(&b.addFail(
+            "windowszones needs the CLDR file: -Dwindowszones-xml=path/to/windowsZones.xml",
+        ).step);
+    }
 
     // The format strings are modelled on moment.js, so moment is what
     // says whether they behave. `tools/oracle_dump.zig` formats a corpus
@@ -240,7 +346,7 @@ pub fn build(b: *std.Build) void {
                 // check, and never ships anywhere.
                 .target = b.graph.host,
                 .imports = &.{
-                    .{ .name = "datetime", .module = module },
+                    .{ .name = "datetime", .module = host_module },
                 },
             }),
         });
@@ -276,7 +382,7 @@ pub fn build(b: *std.Build) void {
                 .root_source_file = b.path("tools/oracle_parse_dump.zig"),
                 .target = b.graph.host,
                 .imports = &.{
-                    .{ .name = "datetime", .module = module },
+                    .{ .name = "datetime", .module = host_module },
                 },
             }),
         });
@@ -308,7 +414,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("tools/oracle_go_dump.zig"),
             .target = b.graph.host,
             .imports = &.{
-                .{ .name = "datetime", .module = module },
+                .{ .name = "datetime", .module = host_module },
             },
         }),
     });

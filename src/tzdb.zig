@@ -8,11 +8,18 @@
 //! `embedded` reads a copy compiled into the binary at build time, which
 //! needs no filesystem and no allocator but has to be asked for with
 //! `-Dembed-tzdata`. See `build.zig`.
+//!
+//! Windows has no such tree, and `system.available` says so. It keeps its
+//! own zones under its own names, so `windows` asks it which one the
+//! machine is set to and translates the answer to an IANA name; the data
+//! itself still has to come from `embedded`.
 
+const builtin = @import("builtin");
 const std = @import("std");
 
 const TimeZone = @import("TimeZone.zig");
 const generated = @import("tzdata");
+const windowszones = @import("windowszones.zig");
 
 /// What `validateName` rejects a zone name with.
 pub const InvalidNameError = error{InvalidZoneName};
@@ -78,25 +85,56 @@ test validateName {
 /// See `resolveTz` for what the `TZ` variable can hold, and `load` and
 /// `loadLocal` for the two ways in.
 pub const system = struct {
+    /// Whether this target keeps a TZif tree at all.
+    ///
+    /// False on Windows, which has no such tree: it holds its own zone
+    /// data in the registry, in its own format, under its own names. Every
+    /// path named here is a Unix one, so on Windows there is nothing for
+    /// them to point at, `search_directories` is empty, and `load`,
+    /// `loadLocal` and `version` refuse rather than opening a path that
+    /// cannot exist.
+    ///
+    /// A program that has to work on both branches at comptime rather
+    /// than finding out at run time:
+    ///
+    /// ```zig
+    /// var zone = if (datetime.tzdb.system.available)
+    ///     try datetime.tzdb.system.loadLocal(io, gpa, null)
+    /// else
+    ///     try datetime.tzdb.windows.loadLocal();
+    /// ```
+    ///
+    /// See `windows` for the other half of that, and note that it needs
+    /// `-Dembed-tzdata`, since the data has to come from somewhere.
+    pub const available = builtin.os.tag != .windows;
+
     /// Where the TZif tree lives on most Unix systems, used when `TZDIR`
     /// is unset. Some systems put it elsewhere: NixOS uses
     /// `/etc/zoneinfo`, and a few older Unixes use `/usr/lib/zoneinfo` or
     /// `/usr/share/lib/zoneinfo`. A program that wants to work on all of
     /// them should read `TZDIR` first and fall back to trying these in
     /// turn, as `search_directories` lists them.
+    ///
+    /// Named on every target, so that a program can print what it would
+    /// have looked for; it is only somewhere to look when `available`.
     pub const default_directory = "/usr/share/zoneinfo";
 
     /// The places a TZif tree is commonly found, in the order worth
     /// trying when `TZDIR` is unset and the first guess misses.
-    pub const search_directories = [_][]const u8{
+    ///
+    /// Empty where `available` is false, so that a program written as a
+    /// loop over this list does nothing at all rather than failing four
+    /// times over on paths that no target of that kind has.
+    pub const search_directories: []const []const u8 = if (available) &.{
         "/usr/share/zoneinfo",
         "/etc/zoneinfo",
         "/usr/lib/zoneinfo",
         "/usr/share/lib/zoneinfo",
-    };
+    } else &.{};
 
     /// Where the symlink or copy naming the machine's own zone lives,
-    /// used by `loadLocal` when `TZ` is unset.
+    /// used by `loadLocal` when `TZ` is unset. As with
+    /// `default_directory`, it is only a real path when `available`.
     pub const default_localtime = "/etc/localtime";
 
     /// What a `TZ` environment variable is asking for.
@@ -219,12 +257,15 @@ pub const system = struct {
     /// zoneinfo tree that names the release is the first line of
     /// `tzdata.zi`, the single file form of zic's own input, which most
     /// distributions ship alongside the compiled zones. Systems that
-    /// leave it out cannot be asked.
+    /// leave it out cannot be asked, and neither can a target with no
+    /// tree at all, so both answer null.
     pub fn version(
         io: std.Io,
         gpa: std.mem.Allocator,
         directory: []const u8,
     ) (std.mem.Allocator.Error || error{})!?[]const u8 {
+        if (!available) return null;
+
         const path = try std.fs.path.join(gpa, &.{ directory, "tzdata.zi" });
         defer gpa.free(path);
 
@@ -259,10 +300,17 @@ pub const system = struct {
         return error.SkipZigTest;
     }
 
-    /// What `load` can fail with: a name that does not validate, anything
-    /// that goes wrong reading the file, anything wrong with its contents,
-    /// or a failed allocation.
-    pub const LoadError = InvalidNameError ||
+    /// Returned by `load` and `loadLocal` on a target where `available`
+    /// is false, in place of the file-not-found that opening a Unix path
+    /// on Windows would otherwise produce. The failure is the platform
+    /// rather than the request, and it says so.
+    pub const UnavailableError = error{NoSystemDatabase};
+
+    /// What `load` can fail with: a target with no database at all, a
+    /// name that does not validate, anything that goes wrong reading the
+    /// file, anything wrong with its contents, or a failed allocation.
+    pub const LoadError = UnavailableError ||
+        InvalidNameError ||
         std.Io.Dir.ReadFileAllocError ||
         TimeZone.Error ||
         std.mem.Allocator.Error;
@@ -276,6 +324,9 @@ pub const system = struct {
     /// `name` is validated before it is joined onto `directory`, so a
     /// value taken straight from `TZ` cannot walk out of the tree.
     ///
+    /// Fails with `error.NoSystemDatabase` where `system.available` is
+    /// false, without touching the filesystem.
+    ///
     /// The returned zone owns its data and must be released with
     /// `TimeZone.deinit`.
     pub fn load(
@@ -284,6 +335,8 @@ pub const system = struct {
         directory: []const u8,
         name: []const u8,
     ) LoadError!TimeZone {
+        if (!available) return error.NoSystemDatabase;
+
         try validateName(name);
 
         const path = try std.fs.path.join(gpa, &.{ directory, name });
@@ -328,11 +381,16 @@ pub const system = struct {
     /// file does not record which zone it is a copy of. A caller that
     /// needs the real name has to get it from `TZ`, or by reading where
     /// `/etc/localtime` points.
+    ///
+    /// Fails with `error.NoSystemDatabase` where `system.available` is
+    /// false; `windows.loadLocal` is what asks the same question there.
     pub fn loadLocal(
         io: std.Io,
         gpa: std.mem.Allocator,
         path: ?[]const u8,
     ) LoadError!TimeZone {
+        if (!available) return error.NoSystemDatabase;
+
         const from = path orelse default_localtime;
 
         const bytes = try std.Io.Dir.cwd().readFileAlloc(io, from, gpa, size_limit);
@@ -360,6 +418,232 @@ pub const system = struct {
 
         // The zone it names is not knowable here, but it is a real one.
         try testing.expectEqualStrings("localtime", zone.name);
+        _ = zone.offsetAt(0);
+    }
+};
+
+/// The machine's own zone on Windows.
+///
+/// Windows does not use the IANA database. It keeps its own zone data in
+/// the registry, under its own names -- "Central Standard Time" rather
+/// than "America/Chicago" -- and in its own binary format, with none of
+/// the history IANA carries. So this is a name lookup rather than a data
+/// source: it asks Windows which zone the machine is set to, translates
+/// that name to an IANA one, and hands it to `embedded.load`.
+///
+/// Three pieces have to line up, and each can be used on its own:
+///
+/// 1. `localKeyName` calls `GetDynamicTimeZoneInformation` and returns
+///    the `TimeZoneKeyName` it fills in, which is the registry key under
+///    `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Time Zones`
+///    and is the same string in every locale, unlike the display names
+///    beside it.
+/// 2. `ianaName` looks that up in CLDR's table, the only published
+///    correspondence between the two sets of names.
+/// 3. `embedded.load` supplies the data, which means a build without
+///    `-Dembed-tzdata` gets as far as the name and no further. There is
+///    nothing else to fall back on: `system` cannot work here.
+///
+/// ```zig
+/// var zone = try datetime.tzdb.windows.loadLocal();
+/// ```
+///
+/// The registry is never read. Windows' own zone data would be a second
+/// format to parse for less history than the IANA copy already in the
+/// binary, and the two would disagree about the past.
+pub const windows = struct {
+    /// Whether this target can be asked. True only on Windows; every
+    /// function here fails with `error.NotWindows` elsewhere, except
+    /// `ianaName`, which is a table lookup and works anywhere.
+    pub const available = builtin.os.tag == .windows;
+
+    /// Win32 bindings, imported only on the target that has them, so that
+    /// a build for anything else neither fetches nor compiles them.
+    const win32 = if (available) @import("win32").everything else struct {};
+
+    /// The CLDR release the name table was generated from.
+    pub const cldr_version = windowszones.cldr_version;
+
+    /// Enough room for any name `localKeyName` can return.
+    ///
+    /// `TimeZoneKeyName` is 128 UTF-16 code units including its
+    /// terminator, and a code unit outside a surrogate pair becomes at
+    /// most three bytes of UTF-8. Real names are ASCII and under forty
+    /// bytes, but the buffer is sized for what the field can hold rather
+    /// than for what has been seen in it.
+    pub const key_name_max = 127 * 3;
+
+    /// What the name lookups can fail with.
+    pub const NameError = error{
+        /// Not Windows, so there is nothing to ask.
+        NotWindows,
+        /// Windows would not say which zone it is set to. It reports this
+        /// as `TIME_ZONE_ID_INVALID`, or by leaving the key name empty,
+        /// which is what a machine whose settings do not correspond to
+        /// any registry zone does.
+        NoTimeZone,
+        /// Windows named a zone that CLDR's table does not map. A zone
+        /// added to Windows since the table was generated looks like
+        /// this; see `cldr_version` for which release that was.
+        UnknownWindowsZone,
+    };
+
+    /// What `loadLocal` can fail with, which is the above plus the data
+    /// not being there.
+    pub const LoadError = NameError || TimeZone.Error || error{
+        /// The zone was named, but this build has no copy of it. Only
+        /// `-Dembed-tzdata` puts one in reach here, since `system` cannot
+        /// work on Windows.
+        ZoneNotEmbedded,
+    };
+
+    /// Reads the machine's own Windows zone name, such as
+    /// "Central Standard Time", into `buffer`.
+    ///
+    /// This is `TimeZoneKeyName` from `GetDynamicTimeZoneInformation`,
+    /// which names the registry key the setting came from. It is the
+    /// invariant name: `StandardName` beside it is translated for the
+    /// machine's locale and so cannot be looked up in any table.
+    ///
+    /// The name comes back as UTF-16 and is converted in place, which is
+    /// the only reason a buffer is needed.
+    pub fn localKeyName(buffer: *[key_name_max]u8) NameError![]const u8 {
+        if (!available) return error.NotWindows;
+
+        var info: win32.DYNAMIC_TIME_ZONE_INFORMATION = undefined;
+        if (win32.GetDynamicTimeZoneInformation(&info) == win32.TIME_ZONE_ID_INVALID) {
+            return error.NoTimeZone;
+        }
+
+        const name = std.mem.sliceTo(&info.TimeZoneKeyName, 0);
+        if (name.len == 0) return error.NoTimeZone;
+
+        // Ill-formed UTF-16 in a registry-backed field would mean
+        // something is badly wrong, and it is not a different problem
+        // from the field being empty: either way there is no name here.
+        const len = std.unicode.utf16LeToUtf8(buffer, name) catch return error.NoTimeZone;
+        return buffer[0..len];
+    }
+
+    /// Returns the IANA zone CLDR calls the world-wide default for the
+    /// Windows zone `key_name`, or null when it maps none.
+    ///
+    /// A Windows zone usually covers several IANA ones -- "Central
+    /// Standard Time" is Chicago in the United States, Winnipeg in Canada
+    /// and Mexico City in Mexico -- and CLDR lists a mapping per
+    /// territory. This is the `001` row, the answer that does not need to
+    /// know where the machine is. It is the same choice ICU makes for a
+    /// bare Windows name, and the offsets agree; the differences are in
+    /// history and in the names the zones print.
+    ///
+    /// The table is sorted by Windows name, so this is a binary search
+    /// over it. It works on every target, since it is only a table.
+    pub fn ianaName(key_name: []const u8) ?[]const u8 {
+        var low: usize = 0;
+        var high: usize = windowszones.entries.len;
+        while (low < high) {
+            const mid = low + (high - low) / 2;
+            switch (std.mem.order(u8, windowszones.entries[mid].windows, key_name)) {
+                .lt => low = mid + 1,
+                .gt => high = mid,
+                .eq => return windowszones.entries[mid].iana,
+            }
+        }
+        return null;
+    }
+
+    test ianaName {
+        // The name Windows reports for the United States central zone,
+        // and the IANA zone CLDR calls its default.
+        try std.testing.expectEqualStrings("America/Chicago", ianaName("Central Standard Time").?);
+        try std.testing.expectEqualStrings("Europe/Berlin", ianaName("W. Europe Standard Time").?);
+        try std.testing.expectEqualStrings("Asia/Calcutta", ianaName("India Standard Time").?);
+
+        // Windows has a name for UTC itself.
+        try std.testing.expectEqualStrings("Etc/UTC", ianaName("UTC").?);
+
+        // The match is exact: this is a key name, not a display name, and
+        // nothing here guesses at a near miss.
+        try std.testing.expectEqual(@as(?[]const u8, null), ianaName("Central Standard Time (Mexico) "));
+        try std.testing.expectEqual(@as(?[]const u8, null), ianaName("America/Chicago"));
+        try std.testing.expectEqual(@as(?[]const u8, null), ianaName(""));
+    }
+
+    test localKeyName {
+        var buffer: [key_name_max]u8 = undefined;
+
+        // There is nothing to ask anywhere else, and saying so is the
+        // point: the answer is a refusal rather than a zone that happens
+        // to be wrong.
+        if (!available) {
+            try std.testing.expectError(error.NotWindows, localKeyName(&buffer));
+            return error.SkipZigTest;
+        }
+
+        const name = try localKeyName(&buffer);
+
+        // A registry key name, such as "Central Standard Time". Printable
+        // ASCII throughout, which is what makes it a key rather than a
+        // display name.
+        try std.testing.expect(name.len > 0);
+        for (name) |char| try std.testing.expect(char >= ' ' and char < 0x7f);
+    }
+
+    /// Returns the IANA name of the machine's own zone.
+    ///
+    /// `localKeyName` and `ianaName` in one step. The result is a string
+    /// from the table rather than from the buffer, so it outlives the
+    /// call and there is nothing to keep.
+    pub fn localName() NameError![]const u8 {
+        var buffer: [key_name_max]u8 = undefined;
+        return ianaName(try localKeyName(&buffer)) orelse error.UnknownWindowsZone;
+    }
+
+    test localName {
+        if (!available) {
+            try std.testing.expectError(error.NotWindows, localName());
+            return error.SkipZigTest;
+        }
+
+        // Whatever the machine is set to, the answer is an IANA name this
+        // library would accept, and it outlives the buffer it was read
+        // through because it comes from the table.
+        const name = try localName();
+        try validateName(name);
+    }
+
+    /// Loads the machine's own zone, from the copy of the database
+    /// compiled into this binary.
+    ///
+    /// Needs `-Dembed-tzdata`, and fails with `error.ZoneNotEmbedded`
+    /// without it, because `system` cannot work on Windows and so there
+    /// is nowhere else for the data to come from. The zone borrows the
+    /// blob that is already in the binary, so no allocator is involved.
+    pub fn loadLocal() LoadError!TimeZone {
+        const name = try localName();
+        return (try embedded.load(name)) orelse error.ZoneNotEmbedded;
+    }
+
+    test loadLocal {
+        if (!available) {
+            try std.testing.expectError(error.NotWindows, loadLocal());
+            return error.SkipZigTest;
+        }
+
+        // The name is only half of it: without `-Dembed-tzdata` there is
+        // no copy of the database to read, and that is a different failure
+        // from not knowing which zone to look for.
+        if (!embedded.available) {
+            try std.testing.expectError(error.ZoneNotEmbedded, loadLocal());
+            return error.SkipZigTest;
+        }
+
+        var zone = try loadLocal();
+        // The zone borrows the blob already in the binary, so no allocator
+        // was involved and there is nothing to free.
+        defer zone.deinit(std.testing.allocator);
+
+        try std.testing.expectEqualStrings(try localName(), zone.name);
         _ = zone.offsetAt(0);
     }
 };
@@ -490,7 +774,36 @@ const testing = std.testing;
 const test_directories: []const []const u8 = if (@import("build_options").no_system_tzdata)
     &.{}
 else
-    &system.search_directories;
+    system.search_directories;
+
+test "the Windows name table is a table this library can use" {
+    // Sorted and without repeats, which is what makes `ianaName` a binary
+    // search, and what a regenerated table has to stay.
+    for (windowszones.entries[1..], windowszones.entries[0 .. windowszones.entries.len - 1]) |entry, previous| {
+        try testing.expect(std.mem.lessThan(u8, previous.windows, entry.windows));
+    }
+
+    // Every Windows name it holds is findable, and every IANA name it
+    // gives back is one `load` would accept rather than refuse.
+    for (windowszones.entries) |entry| {
+        try testing.expectEqualStrings(entry.iana, windows.ianaName(entry.windows).?);
+        try validateName(entry.iana);
+    }
+
+    // And, when there is a database to check against, every one of them
+    // names a zone that is really in it. CLDR mapped these against the
+    // 2021a release, so this is what would notice a name that has since
+    // been dropped -- which would leave `windows.loadLocal` failing for
+    // whoever is in that zone.
+    if (!embedded.available) return error.SkipZigTest;
+    for (windowszones.entries) |entry| {
+        var zone = (try embedded.load(entry.iana)) orelse {
+            std.debug.print("no embedded zone for {s} -> {s}\n", .{ entry.windows, entry.iana });
+            return error.MissingZone;
+        };
+        zone.deinit(testing.allocator);
+    }
+}
 
 test "zone names are checked before they become paths" {
     for ([_][]const u8{

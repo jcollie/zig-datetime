@@ -5,3 +5,5 @@
 /zig-out
 /result*
 /zig-pkg
+# A Wine prefix, for `zig build test -Dtarget=x86_64-windows -fwine`.
+/.wine

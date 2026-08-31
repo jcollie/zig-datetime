@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 # SPDX-License-Identifier: MIT
 
-# Runs the test suite on every push, and publishes the API documentation
-# to https://jeff.ocj.page/zig-datetime/ when the push was to main.
+# Runs the test suite on every push, on this machine and again as a
+# Windows binary under Wine, and publishes the API documentation to
+# https://jeff.ocj.page/zig-datetime/ when the push was to main.
 #
 # The documentation is only published from main, so that a branch build
 # cannot replace the site with a work in progress. Everything goes
@@ -31,7 +32,10 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check formatting
-        run: nix develop .#default -c zig fmt --check .
+        # `zig-pkg` is where fetched dependencies land when the Zig cache
+        # is inside the tree, and zigwin32 is a hundred thousand generated
+        # lines that are not this project's to format.
+        run: nix develop .#default -c zig fmt --check . --exclude zig-pkg
 
       - name: Check REUSE compliance
         run: nix develop .#default -c reuse lint
@@ -52,6 +56,28 @@ jobs:
         # database, which is the only thing that exercises the embedded
         # loader and the agreement between it and the system's copy.
         run: nix develop .#default -c zig build test -Dembed-tzdata
+
+  windows:
+    runs-on: nixos
+    steps:
+      - name: Check out
+        uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run the tests as a Windows binary, under Wine
+        # `tzdb.windows` calls into Win32 and so cannot run anywhere else,
+        # which would leave the whole Windows path never executed. Wine is
+        # in a shell of its own because nothing else here needs it; see
+        # flake.nix. `-Dembed-tzdata` because that is the only source of
+        # data on Windows, so without it `windows.loadLocal` gets as far as
+        # the name and stops, and the half worth testing is the other half.
+        #
+        # The prefix is put in the checkout rather than left to default,
+        # because Wine builds one for the first architecture it sees and
+        # then refuses the other, and a runner's home directory is not
+        # this job's to guess about.
+        run: |
+          export WINEPREFIX="$PWD/.wine"
+          nix develop .#windows -c zig build test -Dtarget=x86_64-windows -Dembed-tzdata -fwine
 
   docs:
     needs: test

@@ -143,7 +143,8 @@ Zone names taken from `TZ` are attacker-controlled in some deployments, so
 ### Embedding the database instead
 
 If you would rather not depend on the host having timezone data — a
-scratch container, a cross-compiled binary, Windows — build with
+scratch container, a cross-compiled binary — or if you are targeting
+Windows, which has none of the kind this reads, build with
 `-Dembed-tzdata` and the database goes into the binary:
 
 ```sh
@@ -171,6 +172,71 @@ reference implementation produces.
 Without `-Dembed-tzdata` nothing is fetched and no C is compiled, so an
 ordinary build stays fast and offline. `tzdb.embedded.available` tells you
 at comptime whether a build has data.
+
+### Windows
+
+Windows has no zoneinfo tree. It keeps its own zone data in the registry,
+under its own names — `Central Standard Time` rather than
+`America/Chicago` — in its own format, with none of the history IANA
+carries. So `tzdb.system` cannot work there at all, and says so:
+`tzdb.system.available` is false, `search_directories` is empty, and
+`load` and `loadLocal` fail with `error.NoSystemDatabase` rather than
+opening a Unix path that was never going to exist.
+
+What does work is `tzdb.windows`, which asks Windows which zone the
+machine is set to and translates the name:
+
+```zig
+// Needs -Dembed-tzdata: the name comes from Windows, the data does not.
+var zone = try datetime.tzdb.windows.loadLocal();
+```
+
+That is three steps, and each is available on its own.
+`windows.localKeyName` calls `GetDynamicTimeZoneInformation` and returns
+its `TimeZoneKeyName`, which is the registry key the setting came from and
+is the same string in every locale, unlike the display names beside it.
+`windows.ianaName` looks that up in CLDR's table — the only published
+correspondence between the two sets of names — and is a plain table lookup
+that works on any target. `tzdb.embedded.load` then supplies the data,
+which is why `-Dembed-tzdata` is not optional here.
+
+A Windows zone usually covers several IANA ones: `Central Standard Time`
+is Chicago in the United States, Winnipeg in Canada and Mexico City in
+Mexico. The table takes CLDR's world-wide default, the answer that does
+not need to know where the machine is, which is the same choice ICU makes
+for a bare Windows name.
+
+The registry is never read. Windows' own zone data would be a second
+binary format to parse, for less history than the copy already in the
+binary, and the two would disagree about the past.
+
+Code written to work on both looks like this:
+
+```zig
+var zone = if (datetime.tzdb.system.available)
+    try datetime.tzdb.system.loadLocal(io, gpa, null)
+else
+    try datetime.tzdb.windows.loadLocal();
+```
+
+The Win32 call comes from [zigwin32], fetched lazily and only when the
+target is Windows, so builds for anything else neither fetch nor compile
+it. The name table is checked into the tree as `src/windowszones.zig`
+rather than fetched, so the Windows path costs no network and no second
+dependency; `zig build windowszones -Dwindowszones-xml=…` regenerates it
+when CLDR publishes a new release.
+
+The Windows path is not left to be right by inspection: CI cross-compiles
+the test suite to Windows and runs it under Wine, which is where
+`localKeyName` actually calls into Win32 and the name it returns is
+actually looked up. To do the same locally:
+
+```sh
+nix develop .#windows -c zig build test \
+    -Dtarget=x86_64-windows -Dembed-tzdata -fwine
+```
+
+[zigwin32]: https://github.com/marlersoft/zigwin32
 
 ### Local times that are ambiguous or do not exist
 
