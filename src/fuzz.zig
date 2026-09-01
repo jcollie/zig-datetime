@@ -32,6 +32,7 @@ const Month = @import("month.zig").Month;
 const TimeZone = @import("TimeZone.zig");
 const Year = @import("year.zig").Year;
 const iso8601 = @import("iso8601.zig");
+const locale = @import("locale.zig");
 const posixtz = @import("posixtz.zig");
 const rfc822 = @import("rfc822.zig");
 const tzif = @import("tzif.zig");
@@ -276,6 +277,400 @@ test "mutate DateTime.parseWith" {
     try overMutations(formatStringProperty, &format_string_seeds);
 }
 
+// Locales --------------------------------------------------------------
+
+/// Cuts fuzzer bytes into the runs a locale is made of.
+///
+/// Where a run starts and how long it is both come out of the input, so
+/// that the fuzzer decides the shape of a locale as well as its contents:
+/// empty names, names that are prefixes of one another, and names that
+/// are not valid UTF-8 all arrive without being asked for.
+const Carver = struct {
+    text: []const u8,
+    at: usize = 0,
+
+    /// Returns the next run, of at most `max` bytes.
+    fn next(self: *Carver, max: usize) []const u8 {
+        if (self.text.len == 0) return "";
+
+        // One byte says how long the run is, and the run follows it.
+        const header = self.at % self.text.len;
+        const wanted = self.text[header] % (max + 1);
+        const from = (header + 1) % self.text.len;
+        const len = @min(wanted, self.text.len - from);
+        self.at = from + len;
+        return self.text[from..][0..len];
+    }
+};
+
+test Carver {
+    // One byte of length, then that many bytes, then the next length.
+    var carver: Carver = .{ .text = "\x03abc\x02ef" };
+    try std.testing.expectEqualStrings("abc", carver.next(8));
+    try std.testing.expectEqualStrings("ef", carver.next(8));
+
+    // A run is never longer than asked for, and an empty input yields
+    // nothing however often it is asked.
+    var short: Carver = .{ .text = "\xffabcdef" };
+    try std.testing.expect(short.next(2).len <= 2);
+
+    var empty: Carver = .{ .text = "" };
+    try std.testing.expectEqualStrings("", empty.next(8));
+    try std.testing.expectEqualStrings("", empty.next(8));
+}
+
+/// A `Locale` carved out of fuzzer bytes.
+///
+/// Everything a locale holds is a string this library did not write, and
+/// ten of them are format strings: the `L` family stands for another
+/// format string rather than for a value, and the locale supplies it. So
+/// those reach the tokenizer at run time, where before a locale every
+/// format string was comptime and a bad one was a compile error. That is
+/// the new untrusted surface, and this is what points the fuzzer at it.
+///
+/// The arrays live here so that the `Locale` can borrow them; a `Locale`
+/// built by `asLocale` must not outlive the `FuzzLocale` it came from.
+const FuzzLocale = struct {
+    months: [12][]const u8 = undefined,
+    months_short: [12][]const u8 = undefined,
+    weekdays: [7][]const u8 = undefined,
+    weekdays_short: [7][]const u8 = undefined,
+    weekdays_min: [7][]const u8 = undefined,
+    long: locale.LongDateFormat = undefined,
+
+    fn init(text: []const u8) FuzzLocale {
+        var carver: Carver = .{ .text = text };
+        var built: FuzzLocale = .{};
+
+        for (&built.months) |*name| name.* = carver.next(16);
+        for (&built.months_short) |*name| name.* = carver.next(8);
+        for (&built.weekdays) |*name| name.* = carver.next(16);
+        for (&built.weekdays_short) |*name| name.* = carver.next(8);
+        for (&built.weekdays_min) |*name| name.* = carver.next(4);
+
+        built.long = .{
+            .LT = carver.next(24),
+            .LTS = carver.next(24),
+            .L = carver.next(24),
+            .LL = carver.next(24),
+            .LLL = carver.next(32),
+            .LLLL = carver.next(32),
+            // Left to be derived half the time, so that both ways through
+            // `LongDateFormat.get` are reached.
+            .l = if (text.len > 0 and text[0] & 1 == 0) carver.next(24) else null,
+            .llll = if (text.len > 1 and text[1] & 1 == 0) carver.next(32) else null,
+        };
+
+        return built;
+    }
+
+    fn asLocale(self: *const FuzzLocale, text: []const u8) locale.Locale {
+        return .{
+            .tag = "fuzz",
+            .months = &self.months,
+            .months_short = &self.months_short,
+            .weekdays = &self.weekdays,
+            .weekdays_short = &self.weekdays_short,
+            .weekdays_min = &self.weekdays_min,
+            .long_date_format = self.long,
+            .week = .{
+                // Any rule at all, including the ones whose first week
+                // opens in the December before.
+                .starts_on = @enumFromInt(if (text.len > 2) text[2] % 7 else 0),
+                .january_day_in_first_week = if (text.len > 3) @as(i8, @bitCast(text[3])) else 1,
+            },
+            .months_decline = .{
+                .day_then_month = text.len > 4 and text[4] & 1 == 1,
+                .month_then_ordinal = text.len > 4 and text[4] & 2 == 2,
+            },
+        };
+    }
+};
+
+/// The sequences a locale can reach, including every localized one, since
+/// those are the ones whose expansion the locale controls.
+const locale_formats = [_][]const u8{
+    "L",                "LL",         "LLL",                "LLLL",
+    "l",                "ll",         "lll",                "llll",
+    "LT",               "LTS",        "A a",                "Do Mo wo DDDo do Wo",
+    "dddd D MMMM YYYY", "ddd MMM dd", "e d E w ww gg gggg", "[x] LLLL [y] L",
+};
+
+/// Writing a date in a locale nobody sanitized has to be safe, whatever
+/// the locale says a sequence stands for.
+fn localeFormatProperty(text: []const u8) !void {
+    var built: FuzzLocale = .init(text);
+    const in = built.asLocale(text);
+
+    const dates = [_]DateTime{
+        .{ .year = 2024, .month = .Mar, .day = 5, .hour = 13, .minute = 7, .weekday = .Tue },
+        .{ .year = 1900, .month = .Jan, .day = 1, .hour = 0, .minute = 0, .weekday = .Mon },
+        .{ .year = 2024, .month = .Dec, .day = 31, .hour = 23, .minute = 59, .weekday = .Tue },
+    };
+
+    var buffer: [4096]u8 = undefined;
+    for (dates) |value| {
+        inline for (locale_formats) |fmt| {
+            var writer = std.Io.Writer.fixed(&buffer);
+            // A locale can name an expansion longer than any buffer, so
+            // running out of room is an answer rather than a failure.
+            value.formatWith(fmt, in, &writer) catch {};
+        }
+    }
+}
+
+/// And reading one back. Whatever a locale lets through still has to be a
+/// real date, which is the promise `parseWith` makes to every caller and
+/// which a locale is in no position to change.
+fn localeParseProperty(text: []const u8) !void {
+    var built: FuzzLocale = .init(text);
+    const in = built.asLocale(text);
+
+    inline for (.{ DateTime.Mode.lenient, DateTime.Mode.strict }) |mode| {
+        inline for (.{ "LLLL", "L", "llll", "dddd D MMMM YYYY", "Do MMM A" }) |fmt| {
+            if (DateTime.parseWith(fmt, text, .{ .locale = in, .mode = mode })) |result| {
+                try isWellFormed(result.value);
+                try std.testing.expect(result.skipped <= result.str.len);
+                try std.testing.expect(result.str.len <= text.len);
+            } else |_| {}
+        }
+    }
+}
+
+/// The same against the locales that ship, which have real names rather
+/// than carved ones: what this looks for is an input that gets a real
+/// table to misbehave.
+fn localeTableProperty(text: []const u8) !void {
+    const shipped: []const locale.Locale = if (locale.embedded) locale.all else &.{locale.en};
+
+    // One of them per input rather than all of them, chosen by the input.
+    // Walking a hundred and thirty-seven tables for every input spends
+    // the run on the same answers over and over; letting the fuzzer pick
+    // gets through far more inputs, and it reaches every locale soon
+    // enough over a run of any length.
+    const in = shipped[(if (text.len > 0) text[text.len - 1] else 0) % shipped.len];
+
+    inline for (.{ DateTime.Mode.lenient, DateTime.Mode.strict }) |mode| {
+        if (DateTime.parseWith("dddd D MMMM YYYY", text, .{ .locale = in, .mode = mode })) |result| {
+            try isWellFormed(result.value);
+        } else |_| {}
+    }
+
+    // And the name lookups on their own, which is where a name that is a
+    // prefix of another one has to lose to the longer one.
+    if (in.matchMonth(text, .MMMM)) |found| {
+        try std.testing.expect(found.len <= text.len);
+        try std.testing.expect(found.len > 0);
+    }
+    if (in.matchWeekday(text, .dddd)) |found| {
+        try std.testing.expect(found.len <= text.len);
+        try std.testing.expect(found.len > 0);
+    }
+    if (in.matchMeridiem(text)) |found| {
+        try std.testing.expect(found.len <= text.len);
+    }
+
+    _ = locale.byName(text);
+}
+
+const locale_seeds = [_][]const u8{
+    "",
+    // A locale's worth of plausible runs: names, then the `L` family.
+    "\x03Jan\x03Feb\x03Mar\x03Apr\x03May\x03Jun\x03Jul\x03Aug\x03Sep\x03Oct\x03Nov\x03Dec",
+    // Format strings where a locale expects them, including ones that
+    // name a localized sequence and so would expand for ever if nothing
+    // stopped them.
+    "\x0aMM/DD/YYYY\x0aD MMMM YYYY\x04LLLL\x01L",
+    "\x04LLLL\x04LLLL\x04LLLL\x04LLLL\x04LLLL\x04LLLL",
+    // Empty names throughout, which match everywhere and consume nothing.
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    // Bracketed and escaped text in an expansion, which the tokenizer
+    // treats specially and which a locale can now leave unbalanced.
+    "\x06[abc]\x02\\\\\x05[a[b]\x03[ab",
+    // Real dates, for the parsing half.
+    "Tuesday 5 March 2024",
+    "mardi 5 mars 2024",
+    "\u{432}\u{442}\u{43e}\u{440}\u{43d}\u{438}\u{43a} 5 \u{43c}\u{430}\u{440}\u{442}\u{430} 2024",
+    "5th Mar PM",
+    "\xff\xff\xff\xff\xff\xff\xff\xff",
+};
+
+test "DateTime.formatWith over the locale seeds" {
+    try overSeeds(localeFormatProperty, &locale_seeds);
+}
+
+test "fuzz DateTime.formatWith with a locale" {
+    try overFuzzer(localeFormatProperty);
+}
+
+test "mutate DateTime.formatWith with a locale" {
+    try overMutations(localeFormatProperty, &locale_seeds);
+}
+
+test "DateTime.parseWith over the locale seeds" {
+    try overSeeds(localeParseProperty, &locale_seeds);
+}
+
+test "fuzz DateTime.parseWith with a locale" {
+    try overFuzzer(localeParseProperty);
+}
+
+test "mutate DateTime.parseWith with a locale" {
+    try overMutations(localeParseProperty, &locale_seeds);
+}
+
+test "the shipped locales over the locale seeds" {
+    try overSeeds(localeTableProperty, &locale_seeds);
+}
+
+test "fuzz the shipped locales" {
+    try overFuzzer(localeTableProperty);
+}
+
+test "mutate the shipped locales" {
+    try overMutations(localeTableProperty, &locale_seeds);
+}
+
+/// A locale that ships has to be able to read back what it wrote, for any
+/// date and in any language.
+///
+/// The properties above are weak on purpose: they ask that nothing falls
+/// over, because a locale carved out of fuzzer bytes has no business
+/// round tripping. This is the strong one, and it is only possible
+/// because the shipped tables are real: a name written in a language has
+/// to be a name readable in that language, whatever the date and whatever
+/// the alphabet. An asymmetry between the two sides -- a name that is a
+/// prefix of another and wins when it should lose, a form written that is
+/// not among the forms matched -- shows up here and nowhere else.
+///
+/// The date comes out of the input rather than out of a list, so this
+/// explores the calendar as well as the languages.
+fn localeRoundTripProperty(text: []const u8) !void {
+    if (text.len < 6) return;
+
+    const shipped: []const locale.Locale = if (locale.embedded) locale.all else &.{locale.en};
+    const in = shipped[text[0] % shipped.len];
+
+    // moment's pseudo-locale wraps its names in tildes, which are not
+    // letters in any alphabet and which moment's own name pattern does
+    // not accept either. It is for making untranslated text obvious on
+    // screen, not for reading back.
+    if (std.mem.eql(u8, in.tag, "x-pseudo")) return;
+
+    // Any day of a wide span, kept inside what a four digit year can
+    // write since the format string below cannot express anything wider.
+    const span = 3_000_000;
+    const days: Date.DaysType = @mod(std.mem.readInt(i32, text[1..5], .little), span) - span / 3;
+    const date = Date.fromDaysSinceStartOfEra(days);
+    if (!date.isRegular() or date.year < 1 or date.year > 9999) return;
+
+    const value: DateTime = .{
+        .year = date.year,
+        .month = date.month,
+        .day = date.day,
+        .weekday = date.dayOfWeek(),
+    };
+
+    // Separated by a character no language uses in a name, so that what
+    // is being tested is the names rather than where one ends.
+    var buffer: [256]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    try value.formatWith("dddd|D|MMMM|YYYY", in, &writer);
+    const written = writer.buffered();
+
+    const parsed = DateTime.parseWith("dddd|D|MMMM|YYYY", written, .{
+        .locale = in,
+        .mode = .strict,
+    }) catch |err| {
+        std.debug.print("fuzz: {s} wrote {s} and could not read it: {}\n", .{ in.tag, written, err });
+        return err;
+    };
+
+    try std.testing.expectEqual(value.year, parsed.value.year);
+    try std.testing.expectEqual(value.month, parsed.value.month);
+    try std.testing.expectEqual(value.day, parsed.value.day);
+    try std.testing.expectEqual(value.weekday, parsed.value.weekday);
+}
+
+const locale_round_trip_seeds = [_][]const u8{
+    // A locale index and four bytes of day number, which is what the
+    // property reads; the rest are what mutating these produces.
+    "\x00\x00\x00\x00\x00\x00",
+    "\x01\x40\x4c\x00\x00\x00",
+    "\x2a\xff\xff\xff\x7f\x00",
+    "\x55\x00\x00\x00\x80\x00",
+    "\x7f\x9c\x1f\x00\x00\x00",
+};
+
+test "the shipped locales round trip over the seeds" {
+    try overSeeds(localeRoundTripProperty, &locale_round_trip_seeds);
+}
+
+test "fuzz the shipped locales round trip" {
+    try overFuzzer(localeRoundTripProperty);
+}
+
+test "mutate the shipped locales round trip" {
+    try overMutations(localeRoundTripProperty, &locale_round_trip_seeds);
+}
+
+// Week rules -----------------------------------------------------------
+
+/// A week rule is two numbers a locale hands over, and both of them reach
+/// the calendar arithmetic.
+///
+/// The day the week starts on is one of seven, but the day that anchors
+/// week one is signed and can name a day of the December before -- eight
+/// of moment's locales use one that does. So the arithmetic has to hold
+/// for an anchor nobody would write as well as for the four ISO 8601
+/// uses.
+fn weekRuleProperty(text: []const u8) !void {
+    if (text.len < 6) return;
+
+    const year: Year = @bitCast(std.mem.readInt(u32, text[0..4], .little));
+    const starts_on: DayOfWeek = @enumFromInt(text[4] % 7);
+    const anchor: i8 = @bitCast(text[5]);
+
+    const weeks = Date.weeksInYear(year, starts_on, anchor);
+    try std.testing.expect(weeks >= 1);
+
+    // Every week the rule admits names a real date, and that date is back
+    // in the week it came from.
+    var week: u16 = 1;
+    while (week <= @as(u16, @intCast(@min(weeks, 60)))) : (week += 1) {
+        const date = Date.fromWeek(year, week, starts_on, starts_on, anchor);
+        if (!date.isRegular()) continue;
+
+        const found = date.weekOfYear(starts_on, anchor);
+        try std.testing.expect(found.week >= 1);
+    }
+}
+
+const week_rule_seeds = [_][]const u8{
+    // 2024, Monday, the fourth: ISO 8601.
+    "\xe8\x07\x00\x00\x01\x04",
+    // 2024, Sunday, the first: what moment's `en` uses.
+    "\xe8\x07\x00\x00\x00\x01",
+    // 2024, Sunday, five days before it: what a `doy` of 12 comes to.
+    "\xe8\x07\x00\x00\x00\xfb",
+    // The ends of the calendar, where the arithmetic saturates.
+    "\x00\x00\x00\x80\x01\x04",
+    "\xff\xff\xff\x7f\x01\x04",
+    "\x00\x00\x00\x00\x00\x00",
+};
+
+test "the week rules over the seeds" {
+    try overSeeds(weekRuleProperty, &week_rule_seeds);
+}
+
+test "fuzz the week rules" {
+    try overFuzzer(weekRuleProperty);
+}
+
+test "mutate the week rules" {
+    try overMutations(weekRuleProperty, &week_rule_seeds);
+}
+
 // POSIX TZ rules -------------------------------------------------------
 
 /// A rule that parses has to answer for any instant without falling over,
@@ -478,9 +873,9 @@ test "fuzz the calendar round trips" {
             try std.testing.expectEqual(date, Date.fromWeek(iso.year, iso.week, date.dayOfWeek(), .Mon, 4));
             try std.testing.expect(iso.week >= 1 and iso.week <= 53);
 
-            const locale = date.localeWeek();
-            try std.testing.expectEqual(date, Date.fromWeek(locale.year, locale.week, date.dayOfWeek(), .Sun, 1));
-            try std.testing.expect(locale.week >= 1 and locale.week <= 54);
+            const english = date.localeWeek();
+            try std.testing.expectEqual(date, Date.fromWeek(english.year, english.week, date.dayOfWeek(), .Sun, 1));
+            try std.testing.expect(english.week >= 1 and english.week <= 54);
         }
     };
     try std.testing.fuzz({}, driver.one, .{});

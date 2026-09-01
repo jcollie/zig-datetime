@@ -445,7 +445,7 @@ pub fn weekOfYear(
     const week = @divFloor(day_of_year - offset - 1, 7) + 1;
 
     if (week < 1) {
-        const previous = self.year - 1;
+        const previous = self.year -| 1;
         return .{
             .year = previous,
             .week = @intCast(week + weeksInYear(previous, week_starts_on, january_day_in_first_week)),
@@ -453,7 +453,9 @@ pub fn weekOfYear(
     }
 
     const in_year = weeksInYear(self.year, week_starts_on, january_day_in_first_week);
-    if (week > in_year) return .{ .year = self.year + 1, .week = @intCast(week - in_year) };
+    // Saturating for the same reason `fromDayOfYear` saturates: the last
+    // year a `Year` can hold has no year after it to put the week in.
+    if (week > in_year) return .{ .year = self.year +| 1, .week = @intCast(week - in_year) };
 
     return .{ .year = self.year, .week = @intCast(week) };
 }
@@ -486,9 +488,62 @@ fn firstWeekOffset(year: Year, week_starts_on: DayOfWeek, january_day_in_first_w
 /// is a real week of some years and not of others.
 pub fn weeksInYear(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: i8) i32 {
     const offset = firstWeekOffset(year, week_starts_on, january_day_in_first_week);
-    const next = firstWeekOffset(year + 1, week_starts_on, january_day_in_first_week);
+    // Saturating, so that the last year a `Year` can hold can still be
+    // asked. It answers about itself twice over, which is a week count
+    // rather than a crash.
+    const next = firstWeekOffset(year +| 1, week_starts_on, january_day_in_first_week);
     const days: i32 = if (leap.is(year)) 366 else 365;
     return @divTrunc(days - offset + next, 7);
+}
+
+test "the week rules answer at the ends of the calendar" {
+    // Carrying a week into the year before or after has no year to carry
+    // into at the first and last a `Year` can hold. Fuzzing found this
+    // as an integer overflow reached from `DateTime.parseWith`, whose
+    // `relative_to` is the caller's and can hold any year at all.
+    const first = std.math.minInt(Year);
+    const last = std.math.maxInt(Year);
+
+    for ([_]Year{ first, first + 1, last - 1, last }) |year| {
+        for ([_]DayOfWeek{ .Sun, .Mon, .Sat }) |starts_on| {
+            // Including an anchor that puts week one in the December
+            // before, which is what a `doy` of 12 comes to, and one that
+            // puts it late enough that the first days of January fall in
+            // the year before's last week.
+            for ([_]i8{ 1, 4, 7, -5 }) |anchor| {
+                const weeks = weeksInYear(year, starts_on, anchor);
+                try std.testing.expect(weeks >= 1);
+
+                // The first and last day of the year, which are the two
+                // that can fall into a neighbouring year's week.
+                for ([_]Date{
+                    .{ .year = year, .month = .Jan, .day = 1 },
+                    .{ .year = year, .month = .Jan, .day = 2 },
+                    .{ .year = year, .month = .Dec, .day = 30 },
+                    .{ .year = year, .month = .Dec, .day = 31 },
+                }) |date| {
+                    const found = date.weekOfYear(starts_on, anchor);
+                    try std.testing.expect(found.week >= 1);
+                }
+
+                // And back the other way, which is where the day of the
+                // year runs off the end.
+                _ = fromWeek(year, 1, starts_on, starts_on, anchor);
+                _ = fromWeek(year, @intCast(weeks), starts_on, starts_on, anchor);
+            }
+        }
+    }
+
+    // A day of the year outside the year is carried into its neighbour,
+    // and clamped rather than carried when there is no neighbour.
+    try std.testing.expectEqual(
+        Date{ .year = first, .month = .Jan, .day = 1 },
+        fromDayOfYear(first, -1000),
+    );
+    try std.testing.expectEqual(
+        Date{ .year = last, .month = .Dec, .day = 31 },
+        fromDayOfYear(last, 1000),
+    );
 }
 
 test weeksInYear {
@@ -553,12 +608,21 @@ test isoWeek {
 pub fn fromDayOfYear(year: Year, day_of_year: i32) Date {
     const length: i32 = if (leap.is(year)) 366 else 365;
 
+    // Saturating, because carrying into a neighbour has no neighbour to
+    // carry into at the first and last year a `Year` can hold. Stepping
+    // to the same year again would recur for ever, so the day is clamped
+    // into the year instead and the answer stays inside the calendar.
     if (day_of_year <= 0) {
-        const previous = year - 1;
+        const previous = year -| 1;
+        if (previous == year) return .{ .year = year, .month = .Jan, .day = 1 };
         const before: i32 = if (leap.is(previous)) 366 else 365;
         return fromDayOfYear(previous, before + day_of_year);
     }
-    if (day_of_year > length) return fromDayOfYear(year + 1, day_of_year - length);
+    if (day_of_year > length) {
+        const next = year +| 1;
+        if (next == year) return .{ .year = year, .month = .Dec, .day = 31 };
+        return fromDayOfYear(next, day_of_year - length);
+    }
 
     var month: Month = .Jan;
     var remaining = day_of_year;
