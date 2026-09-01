@@ -106,6 +106,14 @@ pub fn build(b: *std.Build) void {
             "`zig build test` quick; raise it for a longer hunt (default: 2000)",
     ) orelse 2000;
 
+    const embed_locales = b.option(
+        bool,
+        "embed-locales",
+        "Compile moment.js's locales into the library, so that a locale " ++
+            "can be chosen by name at run time. English is built in either " ++
+            "way; this adds the other hundred and thirty-six (default: false)",
+    ) orelse false;
+
     const no_system_tzdata = b.option(
         bool,
         "no-system-tzdata",
@@ -124,6 +132,11 @@ pub fn build(b: *std.Build) void {
         },
     );
 
+    const locales_source = if (embed_locales)
+        generateLocales(b)
+    else
+        b.path("src/locales/stub.zig");
+
     // The stub sits in a directory of its own because a module takes its
     // whole containing directory with it. Left in src/ it would make a
     // second module out of every file here, which turns up in the
@@ -134,6 +147,7 @@ pub fn build(b: *std.Build) void {
         b.path("src/tzdata/stub.zig");
 
     module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+    module.addAnonymousImport("locales", .{ .root_source_file = locales_source });
 
     // Windows has no zoneinfo tree, so `tzdb.windows` asks it which zone
     // the machine is set to instead. Lazy, and only for that target, so a
@@ -163,6 +177,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
         copy.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+        copy.addAnonymousImport("locales", .{ .root_source_file = locales_source });
         copy.addImport("build_options", options.createModule());
         if (b.graph.host.result.os.tag == .windows) {
             if (b.lazyDependency("zigwin32", .{})) |zigwin32| {
@@ -240,6 +255,7 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseFast,
     });
     bench_datetime.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+    bench_datetime.addAnonymousImport("locales", .{ .root_source_file = locales_source });
     bench_datetime.addImport("build_options", options.createModule());
     if (target.result.os.tag == .windows) {
         if (b.lazyDependency("zigwin32", .{})) |zigwin32| {
@@ -402,6 +418,48 @@ pub fn build(b: *std.Build) void {
         );
         parse_step.dependOn(&run_parse_oracle.step);
         test_step.dependOn(&run_parse_oracle.step);
+
+        // And the locales themselves, which are moment's own data read
+        // out by `tools/gen_locales.js`. Only worth running when they
+        // are there to check, so this asks for them rather than
+        // depending on how the rest of the build was invoked: what it
+        // compares is the table against its source, and that answer does
+        // not change with `-Dembed-locales`.
+        const locales_module = b.createModule(.{
+            .root_source_file = b.path("src/datetime.zig"),
+            .target = b.graph.host,
+        });
+        locales_module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+        locales_module.addAnonymousImport("locales", .{ .root_source_file = generateLocales(b) });
+        locales_module.addImport("build_options", options.createModule());
+
+        const locale_dump = b.addExecutable(.{
+            .name = "oracle-locale-dump",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tools/oracle_locale_dump.zig"),
+                .target = b.graph.host,
+                .optimize = .ReleaseFast,
+                .imports = &.{
+                    .{ .name = "datetime", .module = locales_module },
+                },
+            }),
+        });
+
+        const run_locale_dump = b.addRunArtifact(locale_dump);
+
+        const run_locale_oracle = b.addSystemCommand(&.{"node"});
+        run_locale_oracle.addFileArg(b.path("tools/oracle_locale.js"));
+        run_locale_oracle.addDirectoryArg(moment.path(""));
+        run_locale_oracle.addFileArg(run_locale_dump.captureStdOut(.{ .basename = "locales.tsv" }));
+        run_locale_oracle.stdio = .inherit;
+        run_locale_oracle.setEnvironmentVariable("TZ", "UTC");
+
+        const locale_step = b.step(
+            "oracle-locale",
+            "Check the embedded locales against moment.js's own",
+        );
+        locale_step.dependOn(&run_locale_oracle.step);
+        test_step.dependOn(&run_locale_oracle.step);
     }
 
     // And the same again for Go's time layouts, against Go's own package.
@@ -436,6 +494,29 @@ pub fn build(b: *std.Build) void {
     const go_step = b.step("oracle-go", "Check the Go layouts against Go's time package");
     go_step.dependOn(&run_go_oracle.step);
     test_step.dependOn(&run_go_oracle.step);
+}
+
+/// Builds the embedded locale table and returns the path of the generated
+/// Zig source holding it.
+///
+/// The data is moment.js's own, read out of the locale files in the
+/// package `build.zig.zon` pins, because moment is what this library's
+/// formatting is checked against: a locale transcribed by hand would be a
+/// divergence built in at the source. `tools/gen_locales.js` is where the
+/// reading happens, and it needs the `node` the dev shell carries.
+///
+/// Nothing is fetched or run without `-Dembed-locales`, and `locale.en`
+/// is built into the library rather than generated, so an ordinary build
+/// neither needs moment nor node.
+fn generateLocales(b: *std.Build) std.Build.LazyPath {
+    const moment = b.lazyDependency("moment", .{}) orelse return b.path("src/locales/stub.zig");
+
+    const run = b.addSystemCommand(&.{"node"});
+    run.addFileArg(b.path("tools/gen_locales.js"));
+    run.addDirectoryArg(moment.path(""));
+    const generated = run.addOutputFileArg("locales.zig");
+
+    return generated;
 }
 
 /// Builds the embedded timezone database and returns the path of the

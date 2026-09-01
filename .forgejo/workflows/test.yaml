@@ -51,6 +51,13 @@ jobs:
         # from either kind of machine and each is checked on both.
         run: nix develop .#default -c zig build test -Dno-system-tzdata
 
+      - name: Run tests with the locales compiled in
+        # `zig build test` already runs the locale oracle, which builds
+        # its own copy of the data. This is the other half: that the
+        # hundred and thirty-seven of them compile into the library and
+        # that every one reads back what it wrote.
+        run: nix develop .#default -c zig build test -Dembed-locales
+
       - name: Run tests against the embedded timezone database
         # Builds zic from the IANA sources and regenerates the whole
         # database, which is the only thing that exercises the embedded

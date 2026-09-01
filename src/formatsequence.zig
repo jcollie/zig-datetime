@@ -16,115 +16,6 @@ const std = @import("std");
 
 /// One sequence of a format string. The field names are the sequences
 /// themselves, which is what `Tokenizer` matches against.
-/// The localized format sequences, which stand for a whole format string
-/// rather than for one value, paired with what each stands for.
-///
-/// These are the `en` locale's, which is the only locale there is here and
-/// is moment.js's default. The lower-case spellings are the upper-case
-/// ones with the padding taken off the month, day and weekday, which is
-/// how moment derives them rather than listing them.
-///
-/// Longest first, because `LLLL` has to be recognized before `LLL`.
-const localized = [_]struct { sequence: []const u8, expansion: []const u8 }{
-    .{ .sequence = "LTS", .expansion = "h:mm:ss A" },
-    .{ .sequence = "LT", .expansion = "h:mm A" },
-    .{ .sequence = "LLLL", .expansion = "dddd, MMMM D, YYYY h:mm A" },
-    .{ .sequence = "LLL", .expansion = "MMMM D, YYYY h:mm A" },
-    .{ .sequence = "LL", .expansion = "MMMM D, YYYY" },
-    .{ .sequence = "L", .expansion = "MM/DD/YYYY" },
-    .{ .sequence = "llll", .expansion = "ddd, MMM D, YYYY h:mm A" },
-    .{ .sequence = "lll", .expansion = "MMM D, YYYY h:mm A" },
-    .{ .sequence = "ll", .expansion = "MMM D, YYYY" },
-    .{ .sequence = "l", .expansion = "M/D/YYYY" },
-};
-
-/// Replaces every localized sequence in `format_string` with what it
-/// stands for, leaving everything else alone.
-///
-/// This runs before tokenizing because a localized sequence is not a value
-/// but a shorthand for other sequences, so `LT` has to become `h:mm A`
-/// before anything tries to read an `L`. Bracketed text and anything after
-/// a backslash are stepped over rather than expanded, so `[LT]` stays the
-/// two letters it looks like.
-///
-/// The replacement runs until nothing changes, bounded so that a locale
-/// whose expansion contained its own sequence could not spin. moment.js
-/// bounds it the same way and for the same reason.
-pub fn expandLocalized(comptime format_string: []const u8) []const u8 {
-    comptime {
-        // Every character of every pass is a backwards branch, and the
-        // default allowance is a thousand. Set here rather than left to
-        // the caller so that this is usable on its own.
-        @setEvalBranchQuota(100000);
-
-        var current: []const u8 = format_string;
-
-        for (0..6) |_| {
-            var out: []const u8 = "";
-            var index: usize = 0;
-            var changed = false;
-
-            scan: while (index < current.len) {
-                const rest = current[index..];
-
-                if (rest[0] == '[') {
-                    if (std.mem.indexOfAny(u8, rest[1..], "[]")) |offset| {
-                        if (rest[1 + offset] == ']') {
-                            out = out ++ rest[0 .. offset + 2];
-                            index += offset + 2;
-                            continue :scan;
-                        }
-                    }
-                }
-
-                if (rest[0] == '\\' and rest.len > 1) {
-                    out = out ++ rest[0..2];
-                    index += 2;
-                    continue :scan;
-                }
-
-                for (localized) |entry| {
-                    if (std.mem.startsWith(u8, rest, entry.sequence)) {
-                        out = out ++ entry.expansion;
-                        index += entry.sequence.len;
-                        changed = true;
-                        continue :scan;
-                    }
-                }
-
-                out = out ++ rest[0..1];
-                index += 1;
-            }
-
-            if (!changed) return current;
-            current = out;
-        }
-
-        return current;
-    }
-}
-
-test expandLocalized {
-    try std.testing.expectEqualStrings("MM/DD/YYYY", comptime expandLocalized("L"));
-    try std.testing.expectEqualStrings("h:mm A", comptime expandLocalized("LT"));
-    try std.testing.expectEqualStrings("M/D/YYYY", comptime expandLocalized("l"));
-
-    // The longest spelling wins, so five Ls are the four letter one and
-    // then the one letter one.
-    try std.testing.expectEqualStrings(
-        "dddd, MMMM D, YYYY h:mm AMM/DD/YYYY",
-        comptime expandLocalized("LLLLL"),
-    );
-
-    // Bracketed text is not a sequence, and neither is anything a
-    // backslash claimed.
-    try std.testing.expectEqualStrings("[LT]", comptime expandLocalized("[LT]"));
-    try std.testing.expectEqualStrings("\\LT", comptime expandLocalized("\\LT"));
-
-    // Anything with no localized sequence in it comes back unchanged.
-    try std.testing.expectEqualStrings("YYYY-MM-DD", comptime expandLocalized("YYYY-MM-DD"));
-}
-
 pub const FormatTag = enum {
     /// 1 2 ... 11 12 (month, numeric)
     M,
@@ -309,6 +200,153 @@ pub const FormatTag = enum {
     ZZ,
     // x, // unix milli
     // X, // unix
+
+    // The localized sequences, which stand for a whole format string
+    // rather than for a value: "the usual way to write a date here",
+    // without having to know what that is. What each stands for is the
+    // locale's, so these are read from `locale.LongDateFormat` when they
+    // are written rather than replaced before anything is read. See
+    // `isLocalized` and `DateTime.formatWith`.
+
+    /// 8:30 PM (time of day)
+    LT,
+    /// 8:30:25 PM (time of day with seconds)
+    LTS,
+    /// 03/15/2024 (date in figures)
+    L,
+    /// March 15, 2024 (date with the month named)
+    LL,
+    /// March 15, 2024 8:30 PM (`LL` with the time)
+    LLL,
+    /// Friday, March 15, 2024 8:30 PM (`LLL` with the weekday)
+    LLLL,
+    /// 3/15/2024 (`L`, shortened)
+    ///
+    /// moment does not let a locale name the lower case spellings. It
+    /// takes the upper case one and drops a letter from each of `MMMM`,
+    /// `MM`, `DD` and `dddd`, which is what `abbreviate` does here.
+    l,
+    /// Mar 15, 2024 (`LL`, shortened)
+    ll,
+    /// Mar 15, 2024 8:30 PM (`LLL`, shortened)
+    lll,
+    /// Fri, Mar 15, 2024 8:30 PM (`LLLL`, shortened)
+    llll,
+
+    /// Whether `tag` stands for a whole format string rather than for a
+    /// value, and so has to be looked up in a locale and written out
+    /// through another pass.
+    pub fn isLocalized(tag: FormatTag) bool {
+        return switch (tag) {
+            .LT, .LTS, .L, .LL, .LLL, .LLLL, .l, .ll, .lll, .llll => true,
+            else => false,
+        };
+    }
+
+    test isLocalized {
+        try std.testing.expect(FormatTag.LLLL.isLocalized());
+        try std.testing.expect(FormatTag.l.isLocalized());
+        // `Z` is an offset and `M` a month, whatever they look like.
+        try std.testing.expect(!FormatTag.Z.isLocalized());
+        try std.testing.expect(!FormatTag.MMMM.isLocalized());
+    }
+
+    /// Whether `tag` names a date, and so can be read back off one.
+    ///
+    /// The rest name something a date does not determine, or something
+    /// that determines no part of it: a quarter and an era are too coarse
+    /// to place anything, a zone name is not an offset, the run-together
+    /// sequences have no separator to read by, and a Unix timestamp is a
+    /// whole date rather than a field of one.
+    ///
+    /// `parseWith` asks this while it is being compiled, so a format
+    /// string that names one of them is a compile error rather than
+    /// something a caller has to handle.
+    pub fn isParsable(tag: FormatTag) bool {
+        return switch (tag) {
+            .Q,
+            .Qo,
+            .yo,
+            .N,
+            .NN,
+            .NNN,
+            .NNNN,
+            .NNNNN,
+            .YYYYY,
+            .YYYYYY,
+            .Hmm,
+            .Hmmss,
+            .hmm,
+            .hmmss,
+            .X,
+            .x,
+            .z,
+            .zz,
+            .ggggg,
+            .GGGGG,
+            => false,
+            else => true,
+        };
+    }
+
+    test isParsable {
+        try std.testing.expect(FormatTag.YYYY.isParsable());
+        try std.testing.expect(FormatTag.MMMM.isParsable());
+        // A localized sequence stands for a string of parsable ones.
+        try std.testing.expect(FormatTag.LLLL.isParsable());
+
+        // A quarter names three months and so places nothing, and a zone
+        // name is not an offset.
+        try std.testing.expect(!FormatTag.Q.isParsable());
+        try std.testing.expect(!FormatTag.z.isParsable());
+        try std.testing.expect(!FormatTag.X.isParsable());
+    }
+
+    /// Whether `tag` is one of the lower case localized spellings, whose
+    /// expansion is the upper case one with a letter taken off the padded
+    /// sequences.
+    pub fn isAbbreviated(tag: FormatTag) bool {
+        return switch (tag) {
+            .l, .ll, .lll, .llll => true,
+            else => false,
+        };
+    }
+
+    test isAbbreviated {
+        try std.testing.expect(FormatTag.llll.isAbbreviated());
+        try std.testing.expect(!FormatTag.LLLL.isAbbreviated());
+    }
+
+    /// Returns the sequence a lower case localized spelling writes in
+    /// place of `tag`.
+    ///
+    /// moment builds its lower case expansions by taking the upper case
+    /// string and running `/MMMM|MM|DD|dddd/g` over it, dropping the
+    /// first letter of whatever matches. Doing it a sequence at a time
+    /// rather than a substring at a time is the same rule without a
+    /// string to build: those four are the only ones that shorten, and a
+    /// sequence is exactly what the regular expression was finding.
+    pub fn abbreviate(tag: FormatTag) FormatTag {
+        return switch (tag) {
+            .MMMM => .MMM,
+            .MM => .M,
+            .DD => .D,
+            .dddd => .ddd,
+            else => tag,
+        };
+    }
+
+    test abbreviate {
+        try std.testing.expectEqual(FormatTag.MMM, FormatTag.MMMM.abbreviate());
+        try std.testing.expectEqual(FormatTag.D, FormatTag.DD.abbreviate());
+        try std.testing.expectEqual(FormatTag.ddd, FormatTag.dddd.abbreviate());
+
+        // Everything else is left alone, including the sequences that
+        // merely look like they would shorten.
+        try std.testing.expectEqual(FormatTag.MMM, FormatTag.MMM.abbreviate());
+        try std.testing.expectEqual(FormatTag.YYYY, FormatTag.YYYY.abbreviate());
+        try std.testing.expectEqual(FormatTag.dd, FormatTag.dd.abbreviate());
+    }
 
     /// Truncates a nanosecond value to the precision of this `S...` tag,
     /// e.g. `.SSS` reduces it to milliseconds. `tag` must be one of the

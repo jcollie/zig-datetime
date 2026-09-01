@@ -46,6 +46,12 @@ pub const Date = @import("Date.zig");
 pub const DateTime = @import("DateTime.zig");
 /// A point on the timeline, as nanoseconds since the Unix epoch.
 pub const Instant = @import("Instant.zig");
+/// The language a date is written in: month and day names, the meridiem,
+/// ordinals, the week rule, and what the `L` sequences stand for.
+/// `locale.en` is built in; `-Dembed-locales` adds moment.js's other
+/// hundred and thirty-six.
+pub const locale = @import("locale.zig");
+
 /// Parsing of the ISO 8601 date and time representations.
 pub const iso8601 = @import("iso8601.zig");
 /// Parsing of the RFC 822 date and time syntax used by mail and HTTP.

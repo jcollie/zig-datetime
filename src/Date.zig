@@ -433,7 +433,12 @@ pub fn weekOfYear(
     /// The weekday a week begins on: Monday for ISO 8601.
     week_starts_on: DayOfWeek,
     /// The day of January that is always in week 1: the 4th for ISO 8601.
-    january_day_in_first_week: u4,
+    ///
+    /// May be zero or negative, which names a day of the December before
+    /// and is what a rule whose first week reaches back into the old year
+    /// looks like. moment writes the same thing as `doy`, and eight of
+    /// its locales use a `doy` that puts this at -5.
+    january_day_in_first_week: i8,
 ) Week {
     const offset = firstWeekOffset(self.year, week_starts_on, january_day_in_first_week);
     const day_of_year = @as(i32, self.month.daysBefore(self.year)) + self.day;
@@ -455,15 +460,21 @@ pub fn weekOfYear(
 
 /// How far week 1 of `year` starts from January 1st, as a day-of-year
 /// offset that may be negative when week 1 begins in the previous year.
-fn firstWeekOffset(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: u4) i32 {
-    const anchor: Date = .{ .year = year, .month = .Jan, .day = january_day_in_first_week };
+fn firstWeekOffset(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: i8) i32 {
+    // Counted from January 1st rather than built as a date, because the
+    // anchoring day may be zero or negative -- a day of the December
+    // before, which no `Date` can hold -- and stepping a weekday by a
+    // day count works either way.
+    const january_first: Date = .{ .year = year, .month = .Jan, .day = 1 };
+    const anchor_weekday = @mod(
+        @as(i32, january_first.dayOfWeek().weekdayNumber()) +
+            @as(i32, january_day_in_first_week) - 1,
+        7,
+    );
 
     // Where the anchoring day sits within its own week, counting from the
     // day the week begins on rather than from Sunday.
-    const within_week = @mod(
-        @as(i32, anchor.dayOfWeek().weekdayNumber()) - @as(i32, week_starts_on.weekdayNumber()),
-        7,
-    );
+    const within_week = @mod(anchor_weekday - @as(i32, week_starts_on.weekdayNumber()), 7);
 
     return @as(i32, january_day_in_first_week) - 1 - within_week;
 }
@@ -473,7 +484,7 @@ fn firstWeekOffset(year: Year, week_starts_on: DayOfWeek, january_day_in_first_w
 ///
 /// Public because parsing needs it to bound a week it was given: week 53
 /// is a real week of some years and not of others.
-pub fn weeksInYear(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: u4) i32 {
+pub fn weeksInYear(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: i8) i32 {
     const offset = firstWeekOffset(year, week_starts_on, january_day_in_first_week);
     const next = firstWeekOffset(year + 1, week_starts_on, january_day_in_first_week);
     const days: i32 = if (leap.is(year)) 366 else 365;
@@ -581,7 +592,7 @@ pub fn fromWeek(
     week: u16,
     weekday: DayOfWeek,
     week_starts_on: DayOfWeek,
-    january_day_in_first_week: u4,
+    january_day_in_first_week: i8,
 ) Date {
     // Where the weekday sits within its week, counting from the day the
     // week begins on rather than from Sunday.

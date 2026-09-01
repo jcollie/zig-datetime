@@ -37,6 +37,7 @@ const FormatTag = formatsequence.FormatTag;
 const writeTwelveHour = @import("hour.zig").writeTwelveHour;
 const ordinal = @import("ordinal.zig");
 const Designation = @import("designation.zig").Designation;
+const locale = @import("locale.zig");
 const print = @import("print.zig");
 const read = @import("read.zig");
 
@@ -193,183 +194,398 @@ test updateDayOfWeek {
 /// through unchanged; any other character that is not part of a format
 /// sequence is a compile error. Flushes `writer` before returning.
 pub fn format(self: DateTime, comptime fmt: []const u8, writer: *std.Io.Writer) !void {
+    return self.formatWith(fmt, locale.en, writer);
+}
+
+/// Writes this `DateTime` to `writer` according to the comptime `fmt`,
+/// with the month names, day names, meridiem, ordinals and `L` sequences
+/// `in` gives them. See `format` for the sequences themselves and
+/// `locale.Locale` for what a locale decides.
+///
+/// The format string stays comptime, because it decides which code runs.
+/// The locale does not, because it only decides which bytes come out, so
+/// one can be chosen at run time from a header or a configuration file.
+///
+/// ```zig
+/// const dt: DateTime = .{ .year = 2024, .month = .Mar, .day = 5 };
+/// try dt.formatWith("dddd, D MMMM YYYY", locale.byName(tag) orelse .en, writer);
+/// ```
+pub fn formatWith(
+    self: DateTime,
+    comptime fmt: []const u8,
+    in: locale.Locale,
+    writer: *std.Io.Writer,
+) !void {
     if (fmt.len == 0) @compileError("DateTime: format string can't be empty");
 
     @setEvalBranchQuota(2000000);
+    const tokens = comptime tokensOf(fmt);
 
-    // The localized sequences stand for other sequences rather than for a
-    // value, so they are replaced before anything is tokenized.
-    const expanded = comptime formatsequence.expandLocalized(fmt);
+    // Whether a month name in this string is the declined one, which is
+    // a question about the whole string and so is settled once.
+    const context = comptime monthContext(tokens);
+    const declined = in.months_decline.declines(context);
 
-    const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
+    inline for (tokens) |token| {
+        switch (token) {
+            .tag => |tag| try self.writeTag(tag, in, declined, writer, 0),
+            .literal => |text| try writer.writeAll(text),
+        }
+    }
+
+    try writer.flush();
+}
+
+/// Which arrangements of day and month name a format string holds.
+///
+/// A language that declines its month names picks between the two forms
+/// by looking at the whole format string, not at what is around the
+/// sequence: moment asks its locale `months(m, format)` once, with the
+/// format string entire. So this is a property of the string, worked out
+/// once, and `locale.DeclineShapes` says which of the arrangements a
+/// given language cares about.
+///
+/// "Next to" means with nothing but spaces between, or a full stop and
+/// spaces, which is what moment's own patterns look for.
+fn monthContext(tokens: []const FormatTag.Tokenizer.Token) locale.DeclineShapes {
+    var found: locale.DeclineShapes = .{};
+
+    // What has gone by since the last sequence: nothing at all, spaces,
+    // a full stop and spaces, or something that ends the run.
+    const Between = enum { nothing, spaces, stop, other };
+
+    var previous: ?FormatTag = null;
+    var between: Between = .other;
+
+    for (tokens) |token| {
+        switch (token) {
+            .tag => |tag| {
+                const day: ?enum { plain, ordinal } = switch (tag) {
+                    .D, .DD => .plain,
+                    .Do => .ordinal,
+                    else => null,
+                };
+                const month = switch (tag) {
+                    .MMM, .MMMM => true,
+                    else => false,
+                };
+
+                if (previous) |before| {
+                    const separated = between == .spaces or between == .stop;
+                    if (month and separated) switch (before) {
+                        .D, .DD => {
+                            if (between == .spaces) found.day_then_month = true;
+                            if (between == .stop) found.day_stop_month = true;
+                        },
+                        .Do => found.ordinal_then_month = true,
+                        else => {},
+                    };
+                    if (day != null and separated and (before == .MMM or before == .MMMM)) {
+                        switch (day.?) {
+                            .plain => found.month_then_day = true,
+                            .ordinal => found.month_then_ordinal = true,
+                        }
+                    }
+                }
+
+                previous = if (day != null or month) tag else null;
+                between = .nothing;
+            },
+            // Spaces keep the two next to each other, and so does a full
+            // stop, which is what Czech's pattern allows. Bracketed text
+            // arrives here as its contents and ends the run, which is
+            // what moment's patterns do with anything else.
+            .literal => |text| {
+                var seen_stop = between == .stop;
+                var seen_other = false;
+                for (text) |char| {
+                    if (std.ascii.isWhitespace(char)) continue;
+                    if (char == '.' and !seen_stop) seen_stop = true else seen_other = true;
+                }
+                between = if (seen_other) .other else if (seen_stop) .stop else .spaces;
+                if (between == .other) previous = null;
+            },
+        }
+    }
+
+    return found;
+}
+
+test monthContext {
+    // A day and then a month name, which is what most languages look for.
+    {
+        const found = comptime monthContext(tokensOf("D MMMM YYYY"));
+        try std.testing.expect(found.day_then_month);
+        try std.testing.expect(!found.month_then_day);
+        try std.testing.expect(!found.ordinal_then_month);
+    }
+
+    // An ordinal day is its own arrangement, because Polish counts one
+    // and not the other.
+    {
+        const found = comptime monthContext(tokensOf("Do MMMM"));
+        try std.testing.expect(found.ordinal_then_month);
+        try std.testing.expect(!found.day_then_month);
+    }
+
+    // The other way round, which is what Konkani looks for.
+    {
+        const found = comptime monthContext(tokensOf("dddd, MMMM Do, YYYY"));
+        try std.testing.expect(found.month_then_ordinal);
+        try std.testing.expect(!found.day_then_month);
+    }
+
+    // A full stop between is its own arrangement too, which is what
+    // Czech allows.
+    {
+        const found = comptime monthContext(tokensOf("D. MMMM YYYY"));
+        try std.testing.expect(found.day_stop_month);
+        try std.testing.expect(!found.day_then_month);
+    }
+
+    // Anything else between them and they are not next to each other.
+    {
+        const found = comptime monthContext(tokensOf("D, MMMM"));
+        try std.testing.expect(!found.any());
+    }
+    {
+        const found = comptime monthContext(tokensOf("D YYYY MMMM"));
+        try std.testing.expect(!found.any());
+    }
+
+    // And a string with no month name in it asks for nothing.
+    {
+        const found = comptime monthContext(tokensOf("YYYY-MM-DD"));
+        try std.testing.expect(!found.any());
+    }
+}
+
+/// Splits `fmt` into tokens at compile time.
+fn tokensOf(comptime fmt: []const u8) []const FormatTag.Tokenizer.Token {
+    comptime {
+        @setEvalBranchQuota(2000000);
         var count = 0;
         {
-            var it: FormatTag.Tokenizer = .init(expanded);
+            var it: FormatTag.Tokenizer = .init(fmt);
             while (it.next()) |_| count += 1;
         }
         var buf: [count]FormatTag.Tokenizer.Token = undefined;
         var index = 0;
         {
-            var it: FormatTag.Tokenizer = .init(expanded);
+            var it: FormatTag.Tokenizer = .init(fmt);
             while (it.next()) |token| {
                 buf[index] = token;
                 index += 1;
             }
         }
         const final = buf;
-        break :tokens &final;
-    };
+        return &final;
+    }
+}
 
-    inline for (tokens) |token| {
+/// Writes what one localized sequence stands for.
+///
+/// The string comes from the locale, so this is the one place a format
+/// string is tokenized at run time. `abbreviated` takes a letter off the
+/// padded sequences, which is how moment derives `l` from `L`.
+///
+/// `depth` bounds the nesting, as moment's own expansion is bounded at
+/// five passes; a locale whose `L` names another localized sequence is
+/// not a thing that exists, and this keeps one from looping if it did.
+fn formatExpansion(
+    self: DateTime,
+    stands_for: locale.LongDateFormat.Expansion,
+    in: locale.Locale,
+    writer: *std.Io.Writer,
+    depth: u8,
+) std.Io.Writer.Error!void {
+    // The locale has already said which form of the month name its own
+    // strings use, so nothing here has to work it out. See
+    // `locale.LongDateFormat.months_declined`.
+    const declined = stands_for.months_declined orelse false;
+
+    var it: FormatTag.Tokenizer = .init(stands_for.fmt);
+    while (it.next()) |token| {
         switch (token) {
-            .tag => |format_tag| switch (format_tag) {
-                .M => try writer.print("{}", .{@intFromEnum(self.month)}),
-                .Mo => try print.ordinal(writer, @intFromEnum(self.month)),
-                .MM => try writer.print("{:0>2}", .{@intFromEnum(self.month)}),
-                .MMM => try writer.writeAll(self.month.shortName()),
-                .MMMM => try writer.writeAll(self.month.longName()),
-
-                .Q => try writer.print("{}", .{self.month.quarter()}),
-                .Qo => try print.ordinal(writer, self.month.quarter()),
-
-                .D => try writer.print("{}", .{self.day}),
-                .Do => try print.ordinal(writer, self.day),
-                .DD => try writer.print("{:0>2}", .{self.day}),
-
-                .DDD => try writer.print("{}", .{self.dayOfThisYear()}),
-                .DDDo => try print.ordinal(writer, self.dayOfThisYear()),
-                .DDDD => try writer.print("{:0>3}", .{self.dayOfThisYear()}),
-
-                .d => try writer.print("{}", .{self.weekday.weekdayNumber()}),
-                .do => try print.ordinal(writer, self.weekday.weekdayNumber()),
-                .dd => try writer.writeAll(self.weekday.veryShortName()),
-                .ddd => try writer.writeAll(self.weekday.shortName()),
-                .dddd => try writer.writeAll(self.weekday.longName()),
-
-                .e => try writer.print("{}", .{self.weekday.weekdayNumber()}),
-                .E => try writer.print("{}", .{self.weekday.isoWeekdayNumber()}),
-
-                // Two week rules, which disagree at the turn of a year.
-                // `w` is the English-language one that moment's default
-                // locale uses; `W` is ISO 8601. Each pairs with its own
-                // week-numbering year, which is why `gg` and `GG` exist
-                // and why neither pairs with `YY`.
-                .w => try writer.print("{}", .{self.localeWeek().week}),
-                .wo => try print.ordinal(writer, self.localeWeek().week),
-                .ww => try writer.print("{:0>2}", .{self.localeWeek().week}),
-                .W => try writer.print("{}", .{self.isoWeek().week}),
-                .Wo => try print.ordinal(writer, self.isoWeek().week),
-                .WW => try writer.print("{:0>2}", .{self.isoWeek().week}),
-                .gg => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.localeWeek().year, 100)))}),
-                .gggg => try printYear(writer, self.localeWeek().year),
-                .ggggg => try printPaddedYear(writer, self.localeWeek().year, 5),
-                .GG => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.isoWeek().year, 100)))}),
-                .GGGG => try printYear(writer, self.isoWeek().year),
-                .GGGGG => try printPaddedYear(writer, self.isoWeek().year, 5),
-
-                // @mod rather than @rem, so a year either side of the
-                // epoch lands in 0-99 rather than going negative, and the
-                // cast drops the sign the signed type would print. This
-                // is the inverse of the parse side, which reads two
-                // digits as 2000-2099.
-                .YY => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.year, 100)))}),
-                .Y, .y, .yy, .yyy, .yyyy => try writer.print("{d}", .{self.year}),
-                .yo => try print.ordinal(writer, @as(u32, @intCast(@max(self.year, 0)))),
-                .YYYY => try printYear(writer, self.year),
-                .YYYYY => try printPaddedYear(writer, self.year, 5),
-                .YYYYYY => {
-                    // Always signed, which is what makes it the expanded
-                    // form rather than a wider `YYYY`.
-                    try writer.writeAll(if (self.year < 0) "-" else "+");
-                    try writer.print("{d:0>6}", .{@abs(self.year)});
-                },
-
-                // Every spelling but the longest abbreviates, which is
-                // moment.js's arrangement and not an oversight.
-                .N, .NN, .NNN, .NNNNN => try writer.writeAll(if (self.year < 1) "BC" else "AD"),
-                .NNNN => try writer.writeAll(if (self.year < 1) "Before Christ" else "Anno Domini"),
-
-                .A => try writeTwelveHour(self.hour, .upper, writer),
-                .a => try writeTwelveHour(self.hour, .lower, writer),
-
-                .H => try writer.print("{}", .{self.hour}),
-                .HH => try writer.print("{:0>2}", .{self.hour}),
-                .h => try writer.print("{}", .{wrap(self.hour, 12)}),
-                .hh => try writer.print("{:0>2}", .{wrap(self.hour, 12)}),
-                .k => try writer.print("{}", .{wrap(self.hour, 24)}),
-                .kk => try writer.print("{:0>2}", .{wrap(self.hour, 24)}),
-
-                .m => try writer.print("{}", .{self.minute}),
-                .mm => try writer.print("{:0>2}", .{self.minute}),
-
-                .s => try writer.print("{d}", .{self.second}),
-                .ss => try writer.print("{d:0>2}", .{self.second}),
-
-                .S,
-                .SS,
-                .SSS,
-                .SSSS,
-                .SSSSS,
-                .SSSSSS,
-                .SSSSSSS,
-                .SSSSSSSS,
-                .SSSSSSSSS,
-                => {
-                    try writer.print(
-                        std.fmt.comptimePrint("{{d:0>{d}}}", .{@tagName(format_tag).len}),
-                        .{
-                            format_tag.convertFractionalSeconds(self.nanosecond),
-                        },
-                    );
-                },
-
-                // .N => brk: {
-                //     if (self.year < 0) {
-                //         writer.writeAll("BCE");
-                //         break :brk;
-                //     }
-                //     if (self.year > 0) {
-                //         writer.writeAll("CE");
-                //         break :brk;
-                //     }
-                // },
-                // .NN => brk: {
-                //     if (self.year < 0) {
-                //         writer.writeAll("Before Common Era");
-                //         break :brk;
-                //     }
-                //     if (self.year > 0) {
-                //         writer.writeAll("CE");
-                //         break :brk;
-                //     }
-                // },
-
-                // Constant, which is moment.js's behaviour rather than an
-                // oversight: see the sequences' own documentation.
-                .z => try writer.writeAll("UTC"),
-                .zz => try writer.writeAll("Coordinated Universal Time"),
-
-                .Z => try print.offset(writer, self.offset, .colon),
-                .ZZ => try print.offset(writer, self.offset, .none),
-
-                // The hour is unpadded and everything after it is, so
-                // these are not the same as writing the parts separately.
-                .Hmm => try writer.print("{d}{d:0>2}", .{ self.hour, self.minute }),
-                .Hmmss => try writer.print("{d}{d:0>2}{d:0>2}", .{ self.hour, self.minute, self.second }),
-                .hmm => try writer.print("{d}{d:0>2}", .{ wrap(self.hour, 12), self.minute }),
-                .hmmss => try writer.print("{d}{d:0>2}{d:0>2}", .{ wrap(self.hour, 12), self.minute, self.second }),
-
-                .X => try writer.print("{d}", .{@divFloor(self.toInstant().timestamp, std.time.ns_per_s)}),
-                .x => try writer.print("{d}", .{@divFloor(self.toInstant().timestamp, std.time.ns_per_ms)}),
+            .tag => |found| {
+                const tag = if (stands_for.abbreviate) found.abbreviate() else found;
+                // `inline else` is what makes the tag comptime again, so
+                // that the same `writeTag` serves both this and the
+                // unrolled walk in `formatWith`.
+                switch (tag) {
+                    inline else => |known| try self.writeTag(known, in, declined, writer, depth),
+                }
             },
-            // Anything that is not a sequence is copied through, which
-            // is what moment.js does and what makes `YYYY/MM/DD` and
-            // `[today is] dddd` mean what they look like.
             .literal => |text| try writer.writeAll(text),
         }
     }
+}
 
-    try writer.flush();
+/// Writes the one value `tag` names.
+///
+/// `tag` is comptime so that a format string turns into straight-line
+/// code, which is what it was before a locale came into it; the runtime
+/// walk in `formatExpansion` gets there through `inline else`.
+fn writeTag(
+    self: DateTime,
+    comptime tag: FormatTag,
+    in: locale.Locale,
+    in_format: bool,
+    writer: *std.Io.Writer,
+    depth: u8,
+) std.Io.Writer.Error!void {
+    {
+        {
+            {
+                const format_tag = tag;
+                switch (format_tag) {
+                    .M => try writer.print("{}", .{@intFromEnum(self.month)}),
+                    .Mo => try in.writeOrdinal(writer, @intFromEnum(self.month), .Mo),
+                    .MM => try writer.print("{:0>2}", .{@intFromEnum(self.month)}),
+                    .MMM, .MMMM => try writer.writeAll(in.monthName(self.month, format_tag, in_format)),
+
+                    .Q => try writer.print("{}", .{self.month.quarter()}),
+                    .Qo => try in.writeOrdinal(writer, self.month.quarter(), .Qo),
+
+                    .D => try writer.print("{}", .{self.day}),
+                    .Do => try in.writeOrdinal(writer, self.day, .Do),
+                    .DD => try writer.print("{:0>2}", .{self.day}),
+
+                    .DDD => try writer.print("{}", .{self.dayOfThisYear()}),
+                    .DDDo => try in.writeOrdinal(writer, self.dayOfThisYear(), .DDDo),
+                    .DDDD => try writer.print("{:0>3}", .{self.dayOfThisYear()}),
+
+                    .d => try writer.print("{}", .{self.weekday.weekdayNumber()}),
+                    .do => try in.writeOrdinal(writer, self.weekday.weekdayNumber(), .do),
+                    .dd, .ddd, .dddd => try writer.writeAll(in.weekdayName(self.weekday, format_tag)),
+
+                    .e => try writer.print("{}", .{in.weekdayNumber(self.weekday)}),
+                    .E => try writer.print("{}", .{self.weekday.isoWeekdayNumber()}),
+
+                    // Two week rules, which disagree at the turn of a year.
+                    // `w` is the English-language one that moment's default
+                    // locale uses; `W` is ISO 8601. Each pairs with its own
+                    // week-numbering year, which is why `gg` and `GG` exist
+                    // and why neither pairs with `YY`.
+                    .w => try writer.print("{}", .{self.weekIn(in).week}),
+                    .wo => try in.writeOrdinal(writer, self.weekIn(in).week, .wo),
+                    .ww => try writer.print("{:0>2}", .{self.weekIn(in).week}),
+                    .W => try writer.print("{}", .{self.isoWeek().week}),
+                    .Wo => try in.writeOrdinal(writer, self.isoWeek().week, .Wo),
+                    .WW => try writer.print("{:0>2}", .{self.isoWeek().week}),
+                    .gg => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.weekIn(in).year, 100)))}),
+                    .gggg => try printYear(writer, self.weekIn(in).year),
+                    .ggggg => try printPaddedYear(writer, self.weekIn(in).year, 5),
+                    .GG => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.isoWeek().year, 100)))}),
+                    .GGGG => try printYear(writer, self.isoWeek().year),
+                    .GGGGG => try printPaddedYear(writer, self.isoWeek().year, 5),
+
+                    // @mod rather than @rem, so a year either side of the
+                    // epoch lands in 0-99 rather than going negative, and the
+                    // cast drops the sign the signed type would print. This
+                    // is the inverse of the parse side, which reads two
+                    // digits as 2000-2099.
+                    .YY => try writer.print("{d:0>2}", .{@as(u7, @intCast(@mod(self.year, 100)))}),
+                    .Y, .y, .yy, .yyy, .yyyy => try writer.print("{d}", .{self.year}),
+                    .yo => try in.writeOrdinal(writer, @as(u32, @intCast(@max(self.year, 0))), .yo),
+                    .YYYY => try printYear(writer, self.year),
+                    .YYYYY => try printPaddedYear(writer, self.year, 5),
+                    .YYYYYY => {
+                        // Always signed, which is what makes it the expanded
+                        // form rather than a wider `YYYY`.
+                        try writer.writeAll(if (self.year < 0) "-" else "+");
+                        try writer.print("{d:0>6}", .{@abs(self.year)});
+                    },
+
+                    // Every spelling but the longest abbreviates, which is
+                    // moment.js's arrangement and not an oversight.
+                    .N, .NN, .NNN, .NNNNN => try writer.writeAll(if (self.year < 1) "BC" else "AD"),
+                    .NNNN => try writer.writeAll(if (self.year < 1) "Before Christ" else "Anno Domini"),
+
+                    .A => try in.writeMeridiem(writer, self.hour, self.minute, .upper),
+                    .a => try in.writeMeridiem(writer, self.hour, self.minute, .lower),
+
+                    .H => try writer.print("{}", .{self.hour}),
+                    .HH => try writer.print("{:0>2}", .{self.hour}),
+                    .h => try writer.print("{}", .{wrap(self.hour, 12)}),
+                    .hh => try writer.print("{:0>2}", .{wrap(self.hour, 12)}),
+                    .k => try writer.print("{}", .{wrap(self.hour, 24)}),
+                    .kk => try writer.print("{:0>2}", .{wrap(self.hour, 24)}),
+
+                    .m => try writer.print("{}", .{self.minute}),
+                    .mm => try writer.print("{:0>2}", .{self.minute}),
+
+                    .s => try writer.print("{d}", .{self.second}),
+                    .ss => try writer.print("{d:0>2}", .{self.second}),
+
+                    .S,
+                    .SS,
+                    .SSS,
+                    .SSSS,
+                    .SSSSS,
+                    .SSSSSS,
+                    .SSSSSSS,
+                    .SSSSSSSS,
+                    .SSSSSSSSS,
+                    => {
+                        try writer.print(
+                            std.fmt.comptimePrint("{{d:0>{d}}}", .{@tagName(format_tag).len}),
+                            .{
+                                format_tag.convertFractionalSeconds(self.nanosecond),
+                            },
+                        );
+                    },
+
+                    // .N => brk: {
+                    //     if (self.year < 0) {
+                    //         writer.writeAll("BCE");
+                    //         break :brk;
+                    //     }
+                    //     if (self.year > 0) {
+                    //         writer.writeAll("CE");
+                    //         break :brk;
+                    //     }
+                    // },
+                    // .NN => brk: {
+                    //     if (self.year < 0) {
+                    //         writer.writeAll("Before Common Era");
+                    //         break :brk;
+                    //     }
+                    //     if (self.year > 0) {
+                    //         writer.writeAll("CE");
+                    //         break :brk;
+                    //     }
+                    // },
+
+                    // Constant, which is moment.js's behaviour rather than an
+                    // oversight: see the sequences' own documentation.
+                    .z => try writer.writeAll("UTC"),
+                    .zz => try writer.writeAll("Coordinated Universal Time"),
+
+                    .Z => try print.offset(writer, self.offset, .colon),
+                    .ZZ => try print.offset(writer, self.offset, .none),
+
+                    // The hour is unpadded and everything after it is, so
+                    // these are not the same as writing the parts separately.
+                    .Hmm => try writer.print("{d}{d:0>2}", .{ self.hour, self.minute }),
+                    .Hmmss => try writer.print("{d}{d:0>2}{d:0>2}", .{ self.hour, self.minute, self.second }),
+                    .hmm => try writer.print("{d}{d:0>2}", .{ wrap(self.hour, 12), self.minute }),
+                    .hmmss => try writer.print("{d}{d:0>2}{d:0>2}", .{ wrap(self.hour, 12), self.minute, self.second }),
+
+                    .X => try writer.print("{d}", .{@divFloor(self.toInstant().timestamp, std.time.ns_per_s)}),
+                    .x => try writer.print("{d}", .{@divFloor(self.toInstant().timestamp, std.time.ns_per_ms)}),
+
+                    // A whole format string of the locale's own, which is
+                    // the one place the tokenizer runs at run time.
+                    .LT, .LTS, .L, .LL, .LLL, .LLLL, .l, .ll, .lll, .llll => {
+                        if (depth >= 5) return;
+                        const stands_for = in.long_date_format.get(format_tag);
+                        try self.formatExpansion(stands_for, in, writer, depth + 1);
+                    },
+                }
+            }
+        }
+    }
 }
 
 /// Like `format`, but returns the formatted string as a slice allocated
@@ -454,7 +670,7 @@ const Week = struct {
 /// it to do once the date is named another way. moment gates it the same
 /// way, and treats a weekday alongside a full date as a claim to check
 /// rather than a date to build.
-fn resolveWeek(self: Week, year: ?Year, reference: Date) ParseError!Date {
+fn resolveWeek(self: Week, year: ?Year, reference: Date, in: locale.Locale) ParseError!Date {
     if (self.isIso()) {
         const week_year = self.iso_year orelse year orelse reference.isoWeek().year;
         const week = self.iso_week orelse 1;
@@ -464,15 +680,22 @@ fn resolveWeek(self: Week, year: ?Year, reference: Date) ParseError!Date {
         return Date.fromWeek(week_year, week, weekday, .Mon, 4);
     }
 
-    const week_year = self.year orelse year orelse reference.localeWeek().year;
+    // The other family counts by the locale's rule, which is what makes
+    // `w` and `gg` mean different weeks in different languages. `W` and
+    // `GG` above are ISO whatever the locale says.
+    const starts_on = in.week.starts_on;
+    const first = in.week.january_day_in_first_week;
+
+    const week_year = self.year orelse year orelse
+        reference.weekOfYear(starts_on, first).year;
 
     // A missing week is the reference's own, which is what makes a bare
     // `d` mean "that weekday, this week" rather than "in week one".
-    const week = self.week orelse reference.localeWeek().week;
-    const weekday = self.weekday orelse self.local_weekday orelse .Sun;
+    const week = self.week orelse reference.weekOfYear(starts_on, first).week;
+    const weekday = self.weekday orelse self.local_weekday orelse starts_on;
 
-    if (week < 1 or week > Date.weeksInYear(week_year, .Sun, 1)) return error.ParseError;
-    return Date.fromWeek(week_year, week, weekday, .Sun, 1);
+    if (week < 1 or week > Date.weeksInYear(week_year, starts_on, first)) return error.ParseError;
+    return Date.fromWeek(week_year, week, weekday, starts_on, first);
 }
 
 const AmPm = enum {
@@ -536,6 +759,11 @@ pub const Options = struct {
     relative_to: DateTime = .unix_epoch,
     /// How closely the input has to match. See `Mode`.
     mode: Mode = .lenient,
+    /// The language the input is written in: which month and day names to
+    /// look for, what stands for AM and PM, what decorates an ordinal,
+    /// which day the week starts on, and what the `L` sequences stand
+    /// for. See `locale.Locale`.
+    locale: locale.Locale = locale.en,
 };
 
 /// What a sequence failing to read says.
@@ -579,6 +807,10 @@ fn matchTag(
     var rest = left.*;
 
     switch (tag) {
+        // Handled by `ParseWalk.tag`, which reads what they stand for
+        // rather than reaching here with a sequence that names no value.
+        .LT, .LTS, .L, .LL, .LLL, .LLLL, .l, .ll, .lll, .llll => unreachable,
+
         .YY => {
             const str = read.int(rest, 2);
             if (options.mode == .strict and str.len != 2) return error.NoMatch;
@@ -614,23 +846,19 @@ fn matchTag(
             // stepping over it to find the next thing that looks
             // like one. moment matches any word here and judges it
             // afterwards, to the same effect.
-            if (rest.len == 0 or !std.ascii.isAlphabetic(rest[0])) return error.ParseError;
+            if (!startsWord(rest)) return error.ParseError;
 
             state.datetime.month = month: {
-                for (1..rest.len + 1) |l| {
-                    if (Month.long_map.get(rest[0..l])) |m| {
-                        rest = rest[l..];
-                        break :month m;
-                    }
+                if (options.locale.matchMonth(rest, .MMMM)) |found| {
+                    rest = rest[found.len..];
+                    break :month found.month;
                 }
                 // And a short name where a long one was asked
                 // for, which moment also takes leniently.
                 if (options.mode == .lenient) {
-                    for (1..rest.len + 1) |l| {
-                        if (Month.short_map.get(rest[0..l])) |m| {
-                            rest = rest[l..];
-                            break :month m;
-                        }
+                    if (options.locale.matchMonth(rest, .MMM)) |found| {
+                        rest = rest[found.len..];
+                        break :month found.month;
                     }
                 }
                 return error.ParseError;
@@ -642,25 +870,21 @@ fn matchTag(
             // stepping over it to find the next thing that looks
             // like one. moment matches any word here and judges it
             // afterwards, to the same effect.
-            if (rest.len == 0 or !std.ascii.isAlphabetic(rest[0])) return error.ParseError;
+            if (!startsWord(rest)) return error.ParseError;
 
             state.datetime.month = month: {
                 // Leniently a full name is taken too, longest
                 // first so that "March" is not read as "Mar"
-                // with "ch" rest over.
+                // with "ch" left over.
                 if (options.mode == .lenient) {
-                    for (1..rest.len + 1) |l| {
-                        if (Month.long_map.get(rest[0..l])) |m| {
-                            rest = rest[l..];
-                            break :month m;
-                        }
+                    if (options.locale.matchMonth(rest, .MMMM)) |found| {
+                        rest = rest[found.len..];
+                        break :month found.month;
                     }
                 }
-                for (1..rest.len + 1) |l| {
-                    if (Month.short_map.get(rest[0..l])) |m| {
-                        rest = rest[l..];
-                        break :month m;
-                    }
+                if (options.locale.matchMonth(rest, .MMM)) |found| {
+                    rest = rest[found.len..];
+                    break :month found.month;
                 }
                 return error.ParseError;
             };
@@ -675,19 +899,13 @@ fn matchTag(
             };
         },
         .Mo => {
-            const map = ordinal.map;
             state.datetime.month = month: {
                 const str = read.int(rest, 2);
                 if (str.len == 0) return error.NoMatch;
                 const month = try Month.parseInt(str);
                 rest = rest[str.len..];
-                for (1..rest.len + 1) |l| {
-                    if (map.get(rest[0..l])) |_| {
-                        rest = rest[l..];
-                        break :month month;
-                    }
-                }
-                return error.NoMatch;
+                try skipOrdinal(&rest, @intFromEnum(month), .Mo, options);
+                break :month month;
             };
         },
         .DD, .D => {
@@ -702,20 +920,14 @@ fn matchTag(
             };
         },
         .Do => {
-            const map = ordinal.map;
             state.datetime.day = day: {
                 const str = read.int(rest, 3);
                 if (str.len == 0) return error.NoMatch;
                 const day = read.digits(str);
                 if (day < 1 or day > 31) return error.ParseError;
                 rest = rest[str.len..];
-                for (1..rest.len + 1) |l| {
-                    if (map.get(rest[0..l])) |_| {
-                        rest = rest[l..];
-                        break :day @intCast(day);
-                    }
-                }
-                return error.NoMatch;
+                try skipOrdinal(&rest, day, .Do, options);
+                break :day @intCast(day);
             };
         },
         .DDDD, .DDD, .DDDo => {
@@ -727,16 +939,7 @@ fn matchTag(
                 if (doy < 1 or doy > 366) return error.ParseError;
                 rest = rest[str.len..];
                 switch (tag) {
-                    .DDDo => ordinal: {
-                        const map = ordinal.map;
-                        for (1..rest.len + 1) |l| {
-                            if (map.get(rest[0..l])) |_| {
-                                rest = rest[l..];
-                                break :ordinal;
-                            }
-                        }
-                        return error.NoMatch;
-                    },
+                    .DDDo => try skipOrdinal(&rest, doy, .DDDo, options),
                     .DDDD, .DDD => {},
                     else => unreachable,
                 }
@@ -858,18 +1061,11 @@ fn matchTag(
         //     };
         // },
         .A, .a => {
-            const map = std.StaticStringMapWithEql(AmPm, std.ascii.eqlIgnoreCase).initComptime(.{
-                .{ "AM", .am },
-                .{ "PM", .pm },
-            });
-            state.am_pm = am_pm: {
-                for (1..rest.len + 1) |l| {
-                    if (map.get(rest[0..l])) |sign| {
-                        rest = rest[l..];
-                        break :am_pm sign;
-                    }
-                }
-                return error.NoMatch;
+            const found = options.locale.matchMeridiem(rest) orelse return error.NoMatch;
+            rest = rest[found.len..];
+            state.am_pm = switch (found.half) {
+                .am => .am,
+                .pm => .pm,
             };
         },
         .dddd,
@@ -879,21 +1075,21 @@ fn matchTag(
             // Leniently any of the three lengths is taken
             // whichever was asked for, longest first so that
             // "Sunday" is not read as "Sun" with "day" over.
-            if (rest.len == 0 or !std.ascii.isAlphabetic(rest[0])) return error.NoMatch;
+            if (!startsWord(rest)) return error.NoMatch;
 
+            // Leniently any of the three lengths is taken whichever was
+            // asked for, longest first so that "Sunday" is not read as
+            // "Sun" with "day" left over.
             const result = (if (options.mode == .lenient)
-                DayOfWeek.parseLongStr(rest) catch
-                    DayOfWeek.parseShortStr(rest) catch
-                    DayOfWeek.parseVeryShortStr(rest)
-            else switch (tag) {
-                .dddd => DayOfWeek.parseLongStr(rest),
-                .ddd => DayOfWeek.parseShortStr(rest),
-                .dd => DayOfWeek.parseVeryShortStr(rest),
-                else => unreachable,
-            }) catch return error.ParseError;
-            rest = rest[result.str.len..];
-            state.day_of_week = result.value;
-            state.week.weekday = result.value;
+                options.locale.matchWeekday(rest, .dddd) orelse
+                    options.locale.matchWeekday(rest, .ddd) orelse
+                    options.locale.matchWeekday(rest, .dd)
+            else
+                options.locale.matchWeekday(rest, tag)) orelse return error.ParseError;
+
+            rest = rest[result.len..];
+            state.day_of_week = result.weekday;
+            state.week.weekday = result.weekday;
         },
         .w, .ww, .wo, .W, .WW, .Wo => {
             const parsed = number: {
@@ -908,14 +1104,7 @@ fn matchTag(
             };
 
             switch (tag) {
-                .wo, .Wo => {
-                    for (1..rest.len + 1) |l| {
-                        if (ordinal.map.get(rest[0..l])) |_| {
-                            rest = rest[l..];
-                            break;
-                        }
-                    } else return error.NoMatch;
-                },
+                .wo, .Wo => try skipOrdinal(&rest, parsed, tag, options),
                 else => {},
             }
 
@@ -972,20 +1161,18 @@ fn matchTag(
                 }
                 rest = rest[str.len..];
                 switch (tag) {
-                    .do => ordinal: {
-                        const map = ordinal.map;
-                        for (1..rest.len + 1) |l| {
-                            if (map.get(rest[0..l])) |_| {
-                                rest = rest[l..];
-                                break :ordinal;
-                            }
-                        }
-                        return error.NoMatch;
-                    },
+                    .do => try skipOrdinal(&rest, dow, .do, options),
                     .d, .e, .E => {},
                     else => unreachable,
                 }
-                const parsed = std.enums.fromInt(DayOfWeek, @as(u3, @intCast(dow))) orelse
+                // `e` counts from the day the locale starts its week
+                // on, where `d` and `do` always count from Sunday, so
+                // only `e` has to be turned back into a weekday.
+                const numbered: u3 = switch (tag) {
+                    .e => @intCast((dow + @as(u8, options.locale.week.starts_on.weekdayNumber())) % 7),
+                    else => @intCast(dow),
+                };
+                const parsed = std.enums.fromInt(DayOfWeek, numbered) orelse
                     return error.NoMatch;
 
                 // `E` counts the ISO way and the others the
@@ -1081,6 +1268,276 @@ pub fn parseStrict(comptime format_string: []const u8, value: []const u8) ParseE
     return parseWith(format_string, value, .{ .mode = .strict });
 }
 
+/// A French locale, built by hand from moment's own `fr`, for the tests
+/// below. Only a locale's data is needed to make one, so this is also
+/// what writing one looks like.
+const french: locale.Locale = blk: {
+    const months = [12][]const u8{
+        "janvier",
+        "février",
+        "mars",
+        "avril",
+        "mai",
+        "juin",
+        "juillet",
+        "août",
+        "septembre",
+        "octobre",
+        "novembre",
+        "décembre",
+    };
+    const months_short = [12][]const u8{
+        "janv.",
+        "févr.",
+        "mars",
+        "avr.",
+        "mai",
+        "juin",
+        "juil.",
+        "août",
+        "sept.",
+        "oct.",
+        "nov.",
+        "déc.",
+    };
+    const weekdays = [7][]const u8{
+        "dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi",
+    };
+    const weekdays_short = [7][]const u8{
+        "dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam.",
+    };
+    const weekdays_min = [7][]const u8{ "di", "lu", "ma", "me", "je", "ve", "sa" };
+
+    break :blk .{
+        .tag = "fr",
+        .months = &months,
+        .months_short = &months_short,
+        .weekdays = &weekdays,
+        .weekdays_short = &weekdays_short,
+        .weekdays_min = &weekdays_min,
+        .long_date_format = .{
+            .LT = "HH:mm",
+            .LTS = "HH:mm:ss",
+            .L = "DD/MM/YYYY",
+            .LL = "D MMMM YYYY",
+            .LLL = "D MMMM YYYY HH:mm",
+            .LLLL = "dddd D MMMM YYYY HH:mm",
+        },
+        // moment's `fr` is dow 1, doy 4, which is the ISO rule.
+        .week = .iso,
+    };
+};
+
+test "a locale changes the words and not the sequences" {
+    const dt: DateTime = .{
+        .year = 2024,
+        .month = .Mar,
+        .day = 5,
+        .hour = 13,
+        .minute = 7,
+        .weekday = .Tue,
+    };
+
+    var buffer: [128]u8 = undefined;
+
+    // The same format string, two languages.
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.formatWith("dddd D MMMM YYYY", french, &writer);
+        try std.testing.expectEqualStrings("mardi 5 mars 2024", writer.buffered());
+    }
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.format("dddd D MMMM YYYY", &writer);
+        try std.testing.expectEqualStrings("Tuesday 5 March 2024", writer.buffered());
+    }
+
+    // `L` is the piece a locale rewrites rather than renames: the same
+    // sequence is a different date order.
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.formatWith("L", french, &writer);
+        try std.testing.expectEqualStrings("05/03/2024", writer.buffered());
+    }
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.format("L", &writer);
+        try std.testing.expectEqualStrings("03/05/2024", writer.buffered());
+    }
+
+    // And `LLLL`, which is a whole sentence of them.
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.formatWith("LLLL", french, &writer);
+        try std.testing.expectEqualStrings("mardi 5 mars 2024 13:07", writer.buffered());
+    }
+
+    // The lower case spellings take a letter off the padded sequences,
+    // which is how moment derives them rather than letting a locale name
+    // them: `DD/MM/YYYY` becomes `D/M/YYYY`.
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.formatWith("l", french, &writer);
+        try std.testing.expectEqualStrings("5/3/2024", writer.buffered());
+    }
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.formatWith("llll", french, &writer);
+        try std.testing.expectEqualStrings("mar. 5 mars 2024 13:07", writer.buffered());
+    }
+
+    // `e` counts from the day the week starts on, so it moves with the
+    // locale where `d` and `E` do not.
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.formatWith("d e E", french, &writer);
+        try std.testing.expectEqualStrings("2 1 2", writer.buffered());
+    }
+    {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.format("d e E", &writer);
+        try std.testing.expectEqualStrings("2 2 2", writer.buffered());
+    }
+}
+
+test "a locale reads back what it wrote" {
+    const written = "mardi 5 mars 2024";
+
+    const parsed = try parseWith("dddd D MMMM YYYY", written, .{
+        .locale = french,
+        .mode = .strict,
+    });
+    try std.testing.expectEqual(@as(Year, 2024), parsed.value.year);
+    try std.testing.expectEqual(Month.Mar, parsed.value.month);
+    try std.testing.expectEqual(@as(Day, 5), parsed.value.day);
+    try std.testing.expectEqual(DayOfWeek.Tue, parsed.value.weekday);
+
+    // The `L` family reads as well as it writes, and reads the locale's
+    // order rather than the English one.
+    const short = try parseWith("L", "05/03/2024", .{ .locale = french, .mode = .strict });
+    try std.testing.expectEqual(Month.Mar, short.value.month);
+    try std.testing.expectEqual(@as(Day, 5), short.value.day);
+
+    // The same text under English is the fifth of May, because `L` means
+    // something else there. Both are right, which is the point.
+    const english = try parseWith("L", "05/03/2024", .{ .mode = .strict });
+    try std.testing.expectEqual(Month.May, english.value.month);
+    try std.testing.expectEqual(@as(Day, 3), english.value.day);
+
+    // A name in the wrong language is not a name.
+    try std.testing.expectError(
+        error.ParseError,
+        parseWith("dddd D MMMM YYYY", written, .{ .mode = .strict }),
+    );
+}
+
+test "every locale reads back what it wrote" {
+    // Only the built-in one without `-Dembed-locales`, which the tests
+    // above have already been through.
+    if (!locale.embedded) return error.SkipZigTest;
+
+    // Dates spread over a year, so that every month name and every
+    // weekday name is written and read at least once, and so that an
+    // ordinal is asked for on the days most likely to be irregular.
+    const dates = [_]Date{
+        .{ .year = 2024, .month = .Jan, .day = 1 },
+        .{ .year = 2024, .month = .Feb, .day = 2 },
+        .{ .year = 2024, .month = .Feb, .day = 29 },
+        .{ .year = 2024, .month = .Mar, .day = 3 },
+        .{ .year = 2024, .month = .Apr, .day = 11 },
+        .{ .year = 2024, .month = .May, .day = 21 },
+        .{ .year = 2024, .month = .Jun, .day = 22 },
+        .{ .year = 2024, .month = .Jul, .day = 23 },
+        .{ .year = 2024, .month = .Aug, .day = 13 },
+        .{ .year = 2024, .month = .Sep, .day = 4 },
+        .{ .year = 2024, .month = .Oct, .day = 5 },
+        .{ .year = 2024, .month = .Nov, .day = 30 },
+        .{ .year = 2024, .month = .Dec, .day = 31 },
+    };
+
+    var buffer: [256]u8 = undefined;
+
+    for (locale.all) |each| {
+        // moment's pseudo-locale wraps its names in tildes, which are
+        // not letters in any alphabet and which moment's own name pattern
+        // does not accept either. It exists to make untranslated text
+        // obvious on screen, not to be read back.
+        if (std.mem.eql(u8, each.tag, "x-pseudo")) continue;
+
+        for (dates) |date| {
+            const dt: DateTime = .{
+                .year = date.year,
+                .month = date.month,
+                .day = date.day,
+                .weekday = date.dayOfWeek(),
+            };
+
+            // The long names, which is where an accent or a name that is
+            // a prefix of another one would go wrong.
+            var writer = std.Io.Writer.fixed(&buffer);
+            dt.formatWith("dddd|D|MMMM|YYYY", each, &writer) catch |err| {
+                std.debug.print("{s}: writing failed: {}\n", .{ each.tag, err });
+                return err;
+            };
+            const written = writer.buffered();
+
+            const parsed = parseWith("dddd|D|MMMM|YYYY", written, .{
+                .locale = each,
+                .mode = .strict,
+            }) catch |err| {
+                std.debug.print("{s}: {s} did not read back: {}\n", .{ each.tag, written, err });
+                return err;
+            };
+
+            if (parsed.value.month != dt.month or parsed.value.day != dt.day or
+                parsed.value.weekday != dt.weekday or parsed.value.year != dt.year)
+            {
+                std.debug.print("{s}: {s} read back as {d}-{d}-{d}\n", .{
+                    each.tag,
+                    written,
+                    parsed.value.year,
+                    @intFromEnum(parsed.value.month),
+                    parsed.value.day,
+                });
+                return error.RoundTripChangedTheDate;
+            }
+        }
+    }
+}
+
+test "a locale round trips every day of a year" {
+    // Every date of 2024 written in French and read back, which is what
+    // says the accented names match and that nothing is a prefix of
+    // something it should not be.
+    var date: Date = .{ .year = 2024, .month = .Jan, .day = 1 };
+    const last: Date = .{ .year = 2024, .month = .Dec, .day = 31 };
+
+    var buffer: [128]u8 = undefined;
+    while (true) {
+        const dt: DateTime = .{
+            .year = date.year,
+            .month = date.month,
+            .day = date.day,
+            .weekday = date.dayOfWeek(),
+        };
+
+        var writer = std.Io.Writer.fixed(&buffer);
+        try dt.formatWith("dddd D MMMM YYYY", french, &writer);
+
+        const parsed = try parseWith("dddd D MMMM YYYY", writer.buffered(), .{
+            .locale = french,
+            .mode = .strict,
+        });
+        try std.testing.expectEqual(dt.year, parsed.value.year);
+        try std.testing.expectEqual(dt.month, parsed.value.month);
+        try std.testing.expectEqual(dt.day, parsed.value.day);
+        try std.testing.expectEqual(dt.weekday, parsed.value.weekday);
+
+        if (std.meta.eql(date, last)) break;
+        date = Date.fromDaysSinceStartOfEra(date.toDaysSinceStartOfEra() + 1);
+    }
+}
+
 test parseStrict {
     // The whole input has to be used, and each sequence takes exactly what
     // it says.
@@ -1133,6 +1590,181 @@ pub fn parseRelativeTo(comptime format_string: []const u8, relative_to: DateTime
     return parseWith(format_string, value, .{ .relative_to = relative_to });
 }
 
+/// Whether `text` begins with something a name could be written in.
+///
+/// A word that is not a month is a wrong month rather than no month at
+/// all, which is what stops a lenient scan stepping over it to find the
+/// next thing that looks like one. So a sequence that reads a name has to
+/// be able to tell "there is a word here" from "there is not", without
+/// knowing the language it would be in.
+///
+/// moment asks this with `/[0-9]{0,256}[a-z\u00A0-\u05FF...]{1,256}/i`:
+/// any run of digits, then at least one letter, where letter means most
+/// of the Basic Multilingual Plane. The same shape here, with "letter"
+/// meaning an ASCII one or any byte a multi-byte UTF-8 sequence can start
+/// or continue. The digits in front are what lets Japanese "3月" be a
+/// month name rather than a number with something after it.
+fn startsWord(text: []const u8) bool {
+    var index: usize = 0;
+    while (index < text.len and std.ascii.isDigit(text[index])) index += 1;
+    if (index >= text.len) return false;
+    return std.ascii.isAlphabetic(text[index]) or text[index] == '\'' or text[index] >= 0x80;
+}
+
+test startsWord {
+    try std.testing.expect(startsWord("March"));
+    try std.testing.expect(startsWord("march"));
+
+    // Not English, and not letters at all in the ASCII sense.
+    try std.testing.expect(startsWord("\u{43c}\u{430}\u{440}\u{442}"));
+    try std.testing.expect(startsWord("3\u{6708}"));
+
+    // A bare number is a number, and punctuation is a separator.
+    try std.testing.expect(!startsWord("15"));
+    try std.testing.expect(!startsWord(" March"));
+    try std.testing.expect(!startsWord("-"));
+    try std.testing.expect(!startsWord(""));
+}
+
+/// Steps over whatever the locale writes around an ordinal, the number
+/// itself having already been read.
+fn skipOrdinal(rest: *[]const u8, n: u32, comptime tag: FormatTag, options: Options) MatchError!void {
+    const len = options.locale.matchOrdinal(rest.*, n, tag) orelse return error.NoMatch;
+    rest.* = rest.*[len..];
+}
+
+/// One pass over a format string's tokens while reading a date.
+///
+/// The state a sequence can touch, held together so that the same step
+/// serves the unrolled walk over a comptime format string and the runtime
+/// one over what a localized sequence stands for. Before a locale, the
+/// walk was the body of `parseWith` and there was only ever one of them.
+const ParseWalk = struct {
+    /// What the sequences have read so far.
+    state: ParseState,
+    /// What is left of the input.
+    left: []const u8,
+    options: Options,
+
+    /// How much of the input was stepped over rather than read, which
+    /// only happens leniently. `ParseResult.str` still runs to the end of
+    /// what was used, so this is what says how much of it counted.
+    skipped: usize = 0,
+
+    /// Whether any sequence read anything. An input that matched nothing
+    /// at all is not a date, however many sequences were passed over on
+    /// the way: moment calls that `empty` and refuses it, and so does
+    /// this.
+    matched_any: bool = false,
+
+    /// Which of the date fields actually got a value. Not which ones the
+    /// format string names: leniently a sequence can match nowhere and be
+    /// passed over, and then its field was never set at all.
+    set_year: bool = false,
+    set_month: bool = false,
+    set_day: bool = false,
+
+    /// Reads what one sequence names, wherever the mode allows it to be.
+    ///
+    /// `depth` bounds the nesting of localized sequences the same way
+    /// `DateTime.formatExpansion` does.
+    fn tag(self: *ParseWalk, comptime found: FormatTag, depth: u8) ParseError!void {
+        // A localized sequence stands for a string of others, which are
+        // read in its place. The string is the locale's, so this is the
+        // one place the tokenizer runs at run time.
+        if (comptime found.isLocalized()) {
+            if (depth >= 5) return;
+            const stands_for = self.options.locale.long_date_format.get(found);
+            return self.expansion(stands_for.fmt, stands_for.abbreviate, depth + 1);
+        }
+
+        // Leniently a sequence is looked for rather than required where
+        // it stands: moment searches the rest of the input for something
+        // the sequence matches, steps over whatever came before, and
+        // passes over the sequence altogether when nothing does. Strictly
+        // it has to be right here.
+        //
+        // Trying the same match at successive places is what does the
+        // searching, so every sequence gets the behaviour without any of
+        // them knowing about it.
+        const limit = if (self.options.mode == .strict) 0 else self.left.len;
+
+        var at: usize = 0;
+        const matched = while (at <= limit) : (at += 1) {
+            var attempt = self.left[at..];
+            var candidate = self.state;
+            if (matchTag(found, &attempt, &candidate, self.options)) |_| {
+                self.skipped += at;
+                self.state = candidate;
+                self.left = attempt;
+                break true;
+            } else |err| switch (err) {
+                // Not shaped like this sequence here; try further along,
+                // and leave `state` as it was.
+                error.NoMatch => {},
+                // Shaped like it and wrong, which no amount of looking
+                // elsewhere will improve.
+                else => |fatal| return fatal,
+            }
+        } else false;
+
+        // A sequence that matched nowhere is simply not there. Strictly
+        // that is an error; leniently the field keeps whatever it was
+        // going to default to.
+        if (!matched and self.options.mode == .strict) return error.ParseError;
+        if (matched) {
+            self.matched_any = true;
+            switch (found) {
+                .YYYY, .YY, .Y, .y, .yy, .yyy, .yyyy => self.set_year = true,
+                .MMMM, .MMM, .MM, .M, .Mo => self.set_month = true,
+                .DD, .D, .Do => self.set_day = true,
+                // A day of the year names a month and a day between them.
+                .DDDD, .DDD, .DDDo => {
+                    self.set_month = true;
+                    self.set_day = true;
+                },
+                else => {},
+            }
+        }
+    }
+
+    /// Reads a run of text that is not a sequence.
+    ///
+    /// Looked for the same way a sequence is, so a separator that does
+    /// not match is stepped over leniently rather than refused, and one
+    /// that is nowhere in what is left is passed over. Strictly it has to
+    /// be right here.
+    fn literal(self: *ParseWalk, text: []const u8) ParseError!void {
+        if (self.options.mode == .strict) {
+            if (self.left.len < text.len) return error.ParseError;
+            if (!std.mem.eql(u8, self.left[0..text.len], text)) return error.ParseError;
+            self.left = self.left[text.len..];
+        } else if (std.mem.indexOf(u8, self.left, text)) |at| {
+            self.skipped += at;
+            self.left = self.left[at + text.len ..];
+        }
+    }
+
+    /// Reads what one localized sequence stands for.
+    fn expansion(self: *ParseWalk, fmt: []const u8, abbreviated: bool, depth: u8) ParseError!void {
+        var it: FormatTag.Tokenizer = .init(fmt);
+        while (it.next()) |token| {
+            switch (token) {
+                .tag => |found| {
+                    const shortened = if (abbreviated) found.abbreviate() else found;
+                    if (!shortened.isParsable()) return error.IllegalToken;
+                    // `inline else` is what makes the sequence comptime
+                    // again, so that the same step serves both walks.
+                    switch (shortened) {
+                        inline else => |known| try self.tag(known, depth),
+                    }
+                },
+                .literal => |text| try self.literal(text),
+            }
+        }
+    }
+};
+
 /// Parses `value` according to the comptime `format_string`, a string of
 /// `FormatTag` sequences (e.g. "MMM D H:mm:ss"), under `options`.
 pub fn parseWith(
@@ -1141,55 +1773,14 @@ pub fn parseWith(
     options: Options,
 ) ParseError!ParseResult {
     const relative_to = options.relative_to;
-    const expanded = comptime formatsequence.expandLocalized(format_string);
 
-    const tokens: []const FormatTag.Tokenizer.Token = comptime tokens: {
+    const tokens = comptime tokens: {
         @setEvalBranchQuota(200000);
-        var count = 0;
-        {
-            var it: FormatTag.Tokenizer = .init(expanded);
-            while (it.next()) |token| {
-                switch (token) {
-                    .tag => |tag| switch (tag) {
-                        .Q,
-                        .Qo,
-                        .yo,
-                        .N,
-                        .NN,
-                        .NNN,
-                        .NNNN,
-                        .NNNNN,
-                        .YYYYY,
-                        .YYYYYY,
-                        .Hmm,
-                        .Hmmss,
-                        .hmm,
-                        .hmmss,
-                        .X,
-                        .x,
-                        .z,
-                        .zz,
-                        .ggggg,
-                        .GGGGG,
-                        => return error.IllegalToken,
-                        else => {},
-                    },
-                    .literal => {},
-                }
-                count += 1;
-            }
-        }
-        var tokens: [count]FormatTag.Tokenizer.Token = undefined;
-        var index = 0;
-        {
-            var it: FormatTag.Tokenizer = .init(expanded);
-            while (it.next()) |token| {
-                tokens[index] = token;
-                index += 1;
-            }
-        }
-        const final = tokens;
-        break :tokens &final;
+        for (tokensOf(format_string)) |token| switch (token) {
+            .tag => |tag| if (!tag.isParsable()) return error.IllegalToken,
+            .literal => {},
+        };
+        break :tokens tokensOf(format_string);
     };
 
     var datetime: DateTime = relative_to;
@@ -1198,107 +1789,30 @@ pub fn parseWith(
     datetime.second = 0;
     datetime.nanosecond = 0;
 
-    // Which of the date fields actually got a value. Not which ones the
-    // format string names: leniently a sequence can match nowhere and be
-    // passed over, and then its field was never set at all.
-    var set_year = false;
-    var set_month = false;
-    var set_day = false;
+    var walk: ParseWalk = .{
+        .state = .{ .datetime = datetime },
+        .left = value,
+        .options = options,
+    };
 
-    // Held together so that a sequence can be tried in more than one
-    // place and anything a failed attempt wrote can be thrown away. The
-    // week fields inside are kept apart by family: `w`, `gg` and `d` count
-    // weeks the English-language way and `W`, `GG` and `E` the ISO way,
-    // and the two default what they are not told differently. See
-    // `resolveWeek`.
-    var state: ParseState = .{ .datetime = datetime };
-
-    var left = value;
-
-    // How much of `left` was stepped over rather than read, which only
-    // happens leniently. `ParseResult.str` still runs to the end of what
-    // was used, so this is what says how much of it counted.
-    var skipped: usize = 0;
-
-    // Whether any sequence read anything. An input that matched nothing
-    // at all is not a date, however many sequences were passed over on
-    // the way: moment calls that `empty` and refuses it, and so does this.
-    var matched_any = false;
-
-    // Unrolled, as `format` does with the same token list. The tokens are
-    // comptime known, so this turns a switch over every sequence in the
-    // enum into straight-line code for the handful the format string
+    // Unrolled, as `formatWith` does with the same token list. The tokens
+    // are comptime known, so this turns a switch over every sequence in
+    // the enum into straight-line code for the handful the format string
     // actually uses.
     inline for (tokens) |token| {
         switch (token) {
-            .tag => |tag| {
-                // Leniently a sequence is looked for rather than
-                // required where it stands: moment searches the rest of
-                // the input for something the sequence matches, steps over
-                // whatever came before, and passes over the sequence
-                // altogether when nothing does. Strictly it has to be
-                // right here.
-                //
-                // Trying the same match at successive places is what does
-                // the searching, so every sequence gets the behaviour
-                // without any of them knowing about it.
-                const limit = if (options.mode == .strict) 0 else left.len;
-
-                var at: usize = 0;
-                const matched = while (at <= limit) : (at += 1) {
-                    var attempt = left[at..];
-                    var candidate = state;
-                    if (matchTag(tag, &attempt, &candidate, options)) |_| {
-                        skipped += at;
-                        state = candidate;
-                        left = attempt;
-                        break true;
-                    } else |err| switch (err) {
-                        // Not shaped like this sequence here; try further
-                        // along, and leave `state` as it was.
-                        error.NoMatch => {},
-                        // Shaped like it and wrong, which no amount of
-                        // looking elsewhere will improve.
-                        else => |fatal| return fatal,
-                    }
-                } else false;
-
-                // A sequence that matched nowhere is simply not there.
-                // Strictly that is an error; leniently the field keeps
-                // whatever it was going to default to.
-                if (!matched and options.mode == .strict) return error.ParseError;
-                if (matched) {
-                    matched_any = true;
-                    switch (tag) {
-                        .YYYY, .YY, .Y, .y, .yy, .yyy, .yyyy => set_year = true,
-                        .MMMM, .MMM, .MM, .M, .Mo => set_month = true,
-                        .DD, .D, .Do => set_day = true,
-                        // A day of the year names a month and a day
-                        // between them.
-                        .DDDD, .DDD, .DDDo => {
-                            set_month = true;
-                            set_day = true;
-                        },
-                        else => {},
-                    }
-                }
-            },
-            // A literal is looked for the same way a sequence is, so a
-            // separator that does not match is stepped over leniently
-            // rather than refused, and one that is nowhere in what is left
-            // is passed over. Strictly it has to be right here.
-            .literal => |text| {
-                if (options.mode == .strict) {
-                    if (left.len < text.len) return error.ParseError;
-                    if (!std.mem.eql(u8, left[0..text.len], text)) return error.ParseError;
-                    left = left[text.len..];
-                } else if (std.mem.indexOf(u8, left, text)) |at| {
-                    skipped += at;
-                    left = left[at + text.len ..];
-                }
-            },
+            .tag => |tag| try walk.tag(tag, 0),
+            .literal => |text| try walk.literal(text),
         }
     }
+
+    var state = walk.state;
+    var set_year = walk.set_year;
+    var set_month = walk.set_month;
+    var set_day = walk.set_day;
+    const matched_any = walk.matched_any;
+    const skipped = walk.skipped;
+    const left = walk.left;
 
     switch (state.am_pm) {
         .none => {},
@@ -1322,6 +1836,7 @@ pub fn parseWith(
             state.week,
             if (set_year) state.datetime.year else null,
             relative_to.asDate(),
+            options.locale,
         );
         state.datetime.year = from_week.year;
         state.datetime.month = from_week.month;
@@ -1473,11 +1988,49 @@ pub fn isoWeek(self: DateTime) Date.Week {
     return self.asDate().isoWeek();
 }
 
-/// Returns the state.week this date falls in under the English-language
-/// convention, and the year that state.week belongs to. See `Date.localeWeek`.
-/// The `w` and `gg` format sequences write these.
+/// Returns the week this date falls in under the English-language
+/// convention, and the year that week belongs to. See `Date.localeWeek`.
+///
+/// This is `weekIn(locale.en)`, and is what the `w` and `gg` sequences
+/// write when no locale was asked for.
 pub fn localeWeek(self: DateTime) Date.Week {
     return self.asDate().localeWeek();
+}
+
+/// Returns the week this date falls in under `in`'s rule, and the year
+/// that week belongs to.
+///
+/// Which day the week starts on and which January day is always in week
+/// one are both the locale's, and the two together are what make a week
+/// number: English puts January 1st in week one and starts on Sunday,
+/// most of Europe starts on Monday and uses the ISO rule. The `w`, `ww`,
+/// `wo`, `gg` and `gggg` sequences write these. `W` and `GG` are always
+/// ISO whatever the locale says, which is what `isoWeek` is for.
+pub fn weekIn(self: DateTime, in: locale.Locale) Date.Week {
+    return self.asDate().weekOfYear(in.week.starts_on, in.week.january_day_in_first_week);
+}
+
+test weekIn {
+    const newyear: DateTime = .{ .year = 2027, .month = .Jan, .day = 1 };
+
+    // English puts January 1st in week one whatever weekday it is.
+    try std.testing.expectEqual(@as(u8, 1), newyear.weekIn(locale.en).week);
+    try std.testing.expectEqual(newyear.localeWeek(), newyear.weekIn(locale.en));
+
+    // The ISO rule does not: 2027 opens on a Friday, which belongs to
+    // 2026's week 53.
+    const iso: locale.Locale = .{
+        .tag = "test",
+        .months = locale.en.months,
+        .months_short = locale.en.months_short,
+        .weekdays = locale.en.weekdays,
+        .weekdays_short = locale.en.weekdays_short,
+        .weekdays_min = locale.en.weekdays_min,
+        .long_date_format = locale.en.long_date_format,
+        .week = .iso,
+    };
+    try std.testing.expectEqual(@as(u8, 53), newyear.weekIn(iso).week);
+    try std.testing.expectEqual(newyear.isoWeek(), newyear.weekIn(iso));
 }
 
 test localeWeek {

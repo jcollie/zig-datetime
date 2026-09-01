@@ -168,6 +168,7 @@ reference implementation produces.
 | `-Dembed-tzdata` | off | Compile the database into the binary |
 | `-Dtzdata-packing=slim\|fat` | `slim` | `slim` leans on each zone's POSIX rule for repeating years (~347 KB); `fat` writes every transition out (~702 KB) |
 | `-Dtzdata-from=@0` | keep all | Drop transitions before this point; `@0` keeps 1970 onwards (~255 KB) |
+| `-Dembed-locales` | off | Compile moment.js's 137 locales into the library; see [Locales](#locales) |
 
 Without `-Dembed-tzdata` nothing is fetched and no C is compiled, so an
 ordinary build stays fast and offline. `tzdb.embedded.available` tells you
@@ -343,9 +344,93 @@ Two places it does not follow moment, both deliberate:
   means not known, which is what a parsed date or `Instant.asDateTime`
   gives you: neither has a zone to ask.
 
-The locale is `en`, which is moment's default and the only one here, so
-the localized sequences `L`, `LL`, `LT` and the rest expand to their
-English forms.
+### Locales
+
+The default locale is `en`, and every entry point that does not take one
+uses it, so nothing changes for a caller that never asks. To ask, pass one:
+
+```zig
+var zone_locale = datetime.locale.byName(header) orelse .en;
+
+try dt.formatWith("dddd D MMMM YYYY", zone_locale, writer);   // mardi 5 mars 2024
+const parsed = try datetime.DateTime.parseWith("dddd D MMMM YYYY", text, .{
+    .locale = zone_locale,
+});
+```
+
+A locale is runtime data rather than a comptime parameter. The format
+string stays comptime, because it decides which code runs; the locale only
+decides which bytes come out, so one can come from a request header or a
+configuration file without a switch over everything you might have
+compiled in.
+
+It carries more than names. `Do` writes `1er` in French and `1.` in
+German; `A` is `午後` in Japanese; `w` counts from Sunday with January 1st
+in week one for `en` and by the ISO rule for most of Europe, and `e`
+numbers the weekday from whichever day the week starts on, where `d` is
+always Sunday-based and `E` always ISO. And the `L` family really is
+localized — the same sequence is a different date order:
+
+```zig
+try dt.formatWith("L", .en, writer);      // 03/05/2024
+try dt.formatWith("L", french, writer);   // 05/03/2024
+```
+
+That is the one piece a locale changes at run time rather than renames: it
+stands for a whole format string, so the tokenizer runs over the locale's
+expansion. Everything else is the comptime-unrolled walk it always was.
+
+`-Dembed-locales` compiles in moment's other hundred and thirty-six, and
+`locale.byName` finds one by tag. Without it there is only `en`, and
+nothing is fetched:
+
+```sh
+zig build -Dembed-locales
+```
+
+The data is moment's own, read out of its locale files by
+`tools/gen_locales.js` the way the timezone database is read out of IANA's
+sources — a locale transcribed by hand would be a divergence built in at
+the source. The two pieces moment holds as functions rather than data, the
+meridiem and the ordinal, are enumerated rather than reimplemented: their
+domains are finite, so what comes out is a table that answers the same
+questions.
+
+You can also write one by hand; `Locale` is a plain struct, and only the
+names and the `L` strings have no default.
+
+#### Compatibility, checked
+
+`zig build oracle-locale` formats a corpus in every embedded locale and
+diffs it against moment in the same locale:
+
+```
+97818 comparisons across the locales of moment 2.30.1
+10067 known and documented
+no divergence beyond those
+```
+
+The documented ones are three, and each is a limit rather than a bug:
+
+- **Twenty-three locales rewrite the digits after formatting**, and some
+  the separators too — moment calls it `postformat`, and Arabic, Hindi and
+  Bengali among others use it. This library writes ASCII digits. The
+  oracle proves the difference is confined to that by running moment's own
+  `postformat` over this library's answer and requiring the result to
+  match exactly, so every name, meridiem and ordinal still has to agree.
+
+- **moment writes `NaN` for the fortieth ordinal in Azerbaijani, Turkmen
+  and Turkish**, where its suffix table has no entry. This library writes
+  the number. Reproducing a NaN is not parity with anything.
+
+- **Ukrainian declines the weekday name after a preposition**, which
+  moment selects with a pattern looking for bracketed text before the
+  sequence. The tokenizer here does not record whether a literal came from
+  brackets, so the standalone form is written.
+
+Beyond the oracle, every embedded locale is written and read back in a
+test, so a name that cannot be parsed in the language it was written in is
+a failure rather than something nobody tried.
 
 ### Go's time layouts
 
