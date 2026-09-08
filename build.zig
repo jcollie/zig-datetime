@@ -106,6 +106,16 @@ pub fn build(b: *std.Build) void {
             "`zig build test` quick; raise it for a longer hunt (default: 2000)",
     ) orelse 2000;
 
+    const big_test_years = b.option(
+        u32,
+        "big-test-years",
+        "Sweep every date from -N-01-01 to N-12-31 through the day-number " ++
+            "conversions and back, checking the three properties Hinnant's " ++
+            "paper checks. Zero, the default, skips it. The paper's own " ++
+            "figure is 1000000, which is 730,485,366 dates and wants " ++
+            "-Doptimize=ReleaseFast (default: 0)",
+    ) orelse 0;
+
     const embed_locales = b.option(
         bool,
         "embed-locales",
@@ -161,6 +171,7 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption(bool, "no_system_tzdata", no_system_tzdata);
     options.addOption(usize, "fuzz_iterations", fuzz_iterations);
+    options.addOption(u32, "big_test_years", big_test_years);
     module.addImport("build_options", options.createModule());
 
     // The oracles below run on the machine doing the build, so they need

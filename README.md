@@ -507,6 +507,35 @@ real data. Expanded years such as `+002024`, which ISO 8601 permits only
 by prior agreement, are not accepted, and neither are intervals or
 durations.
 
+## The calendar arithmetic
+
+Turning a date into a day number and back is Howard Hinnant's, from
+[*chrono-Compatible Low-Level Date
+Algorithms*](https://howardhinnant.github.io/date_algorithms.html):
+`days_from_civil`, `civil_from_days`, `weekday_from_days` and
+`weekday_difference`, in `src/Date.zig` and `src/dayofweek.zig`, with the
+derivations quoted in the doc comments there.
+
+Two ideas do the work. The year is shifted to begin in March, which puts
+the leap day at the end of it and leaves month lengths that a single
+division inverts. And the calendar is cut into *eras* of 400 years, the
+period after which the proleptic Gregorian calendar repeats exactly —
+146097 days, every era — so a conversion factors the era out and then
+works in a day-of-era and a year-of-era, which is why one era being right
+means all of time is right. There is no table anywhere in it, and no
+leap-year test in the round trip itself.
+
+What that buys is a calendar exact in both directions for every year a
+`Year` can hold, with no epoch-relative special cases and nothing that
+degrades far from 1970. `Year` is an `i32`, numbered astronomically, so
+there is a year 0 and negative years before it. What the paper does *not*
+do is validity checking, deliberately, so `Date.isRegular` and the
+assertions inside the conversions are this library's own. The paper's own
+verification is kept, and runs: see `-Dbig-test-years` below.
+
+Hinnant dedicates the algorithms to the public domain, so they are here
+under the same MIT licence as the rest without any further condition.
+
 ## A note on offsets
 
 `DateTime.offset` is in **seconds** east of UTC, not minutes. Historical
@@ -580,6 +609,24 @@ you like:
 ```sh
 zig build test -Dfuzz-iterations=500000 --seed 42
 ```
+
+`-Dbig-test-years=N` sweeps every date from `-N-01-01` to `N-12-31`
+through the day-number conversions and back, checking that the day number
+advances by exactly one, that the round trip returns the date it started
+from, and that the weekday advances by one. It is Hinnant's own test of
+the algorithms `Date` and `DayOfWeek` are built on, and it defaults to
+zero, which skips it:
+
+```sh
+zig build test -Dbig-test-years=2000                            # seconds
+zig build test -Dbig-test-years=1000000 -Doptimize=ReleaseFast  # the paper's own
+```
+
+The second is the span the paper publishes, 730,485,366 dates, and the
+test asserts that count too — so a disagreement about how many days two
+million years hold is itself a failure. It takes about fifteen seconds,
+against the seventeen the paper reports for the same sweep in C++ in
+2013. In `Debug` it takes long enough to be worth not doing.
 
 The seed is the test runner's, so a failure replays exactly. There are
 `std.testing.fuzz` targets beside the mutation ones for when

@@ -229,6 +229,18 @@ pub const DayOfWeek = enum(u3) {
 
     /// Returns the day of the week that falls `days` days after 1970-01-01
     /// (which was a Thursday); negative values count backward.
+    ///
+    /// Hinnant's `weekday_from_days`, from the paper cited in `Date`.
+    /// Adding 4 rebases the count on the Sunday four days before the epoch,
+    /// since the epoch was a Thursday and Thursday is 4 in this numbering,
+    /// so the remainder modulo 7 is then the weekday directly.
+    /// The second branch is there because `@rem` truncates towards zero,
+    /// so for a count more than four days before the epoch `days + 4` is
+    /// negative and the remainder comes out in `[-6, 0]`; shifting by 5
+    /// instead and adding 6 maps that range onto `[0, 6]` without a
+    /// division that floors. No table and no lookup: the week has run
+    /// unbroken through the whole proleptic Gregorian calendar, so a
+    /// weekday is nothing but the day count modulo seven.
     pub fn fromDaysSinceStartOfEra(days: Date.DaysType) DayOfWeek {
         const result = if (days >= -4)
             @rem(days + 4, 7)
@@ -353,6 +365,12 @@ pub const DayOfWeek = enum(u3) {
 };
 
 /// Returns the number of days (0-6) counting forward from `start` to `end`.
+///
+/// Hinnant's `weekday_difference`, from the paper cited in `Date`, which
+/// treats `[Sun, Sat]` as a circular range: subtract, and add 7 back if
+/// that went negative. It is the arithmetic behind questions like "the
+/// fourth Saturday of May", where the answer is found by stepping from the
+/// weekday a month starts on to the one wanted.
 pub fn weekdayDifference(start: DayOfWeek, end: DayOfWeek) u3 {
     const d = @as(i4, end.weekdayNumber()) - @as(i4, start.weekdayNumber());
     return if (d >= 0) @intCast(d) else @intCast(d + 7);

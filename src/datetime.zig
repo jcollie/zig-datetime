@@ -70,45 +70,78 @@ pub const posixtz = @import("posixtz.zig");
 /// The SI decimal prefixes, for moving a value between units of time.
 pub const si = @import("si.zig");
 
-// test "bigTest" {
-//     const year_start: Year = -1000000;
-//     const year_end = -year_start;
-//     var prev_z: i32 = Date.toCivilDays(.{ .year = year_start, .month = .Jan, .day = 1 }) - 1;
-//     try std.testing.expect(prev_z < 0);
-//     var prev_wd = DayOfWeek.weekdayFromDays(prev_z);
-//     try std.testing.expect(0 <= @intFromEnum(prev_wd) and @intFromEnum(prev_wd) <= 6);
-//     var y: Year = year_start;
-//     while (y < year_end) {
-//         var it = Month.iterator();
-//         while (it.next()) |m| {
-//             std.debug.print("{}\n", .{m});
-//             var day: Day = 1;
-//             const end_of_month = m.lastDay(y);
-//             while (day <= end_of_month) {
-//                 const date_0: Date = .{
-//                     .year = y,
-//                     .month = m,
-//                     .day = day,
-//                 };
-//                 const z = date_0.toDaysSinceStartOfEra();
-//                 try std.testing.expect(prev_z < z);
-//                 try std.testing.expect(z == prev_z + 1);
-//                 const date_1 = Date.fromDaysSinceStartOfEra(z);
-//                 try std.testing.expect(y == date_1.year);
-//                 try std.testing.expect(m == date_1.month);
-//                 try std.testing.expect(day == date_1.day);
-//                 const wd = DayOfWeek.fromDaysSinceStartOfEra(z);
-//                 try std.testing.expect(0 <= @intFromEnum(wd) and @intFromEnum(wd) <= 6);
-//                 try std.testing.expect(wd == prev_wd.next());
-//                 try std.testing.expect(prev_wd == wd.prev());
-//                 prev_z = z;
-//                 prev_wd = wd;
-//                 day += 1;
-//             }
-//         }
-//         y += 1;
-//     }
-// }
+/// How many years either side of year 0 the sweep below covers, from
+/// `-Dbig-test-years`. Zero, the default, skips it.
+const big_test_years = @import("build_options").big_test_years;
+
+// Hinnant's own verification of the algorithms `Date` and `DayOfWeek` are
+// built on, from *chrono-Compatible Low-Level Date Algorithms* (the section
+// headed "Yes, but how do you know this all really works?"):
+// <https://howardhinnant.github.io/date_algorithms.html>.
+//
+// It walks every date of a span of years in order and checks three
+// properties at each one: that the day number is exactly one more than the
+// previous date's, which catches a gap or a repeat anywhere in the calendar;
+// that converting that day number back returns the triple it started from,
+// which makes the two conversions each other's inverse; and that the weekday
+// is the next one round from the previous date's, which pins the weekday to
+// the same unbroken run of days. Together those say that the date the
+// calendar hands out and the integer the library stores are the same
+// sequence counted two ways, which is a stronger claim than any table of
+// known dates can make.
+//
+// It is behind a build option rather than an ordinary test because the
+// paper's own span is 730,485,366 dates, so `zig build test` runs none of
+// it:
+//
+//     zig build test -Dbig-test-years=2000                     # seconds
+//     zig build test -Dbig-test-years=1000000 -Doptimize=ReleaseFast
+//
+// The second is the paper's test as published, and it checks the paper's
+// published count as well, so a disagreement about how many days those two
+// million years hold is itself a failure.
+test "every date in a span of years, forwards" {
+    if (big_test_years == 0) return error.SkipZigTest;
+
+    const first: Year = -@as(Year, @intCast(big_test_years));
+    const last: Year = @intCast(big_test_years);
+
+    // The day before the span starts, so that the first date of the sweep
+    // is checked against something rather than taken on trust.
+    var previous_day = (Date{ .year = first, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra() - 1;
+    var previous_weekday = DayOfWeek.fromDaysSinceStartOfEra(previous_day);
+    var count: u64 = 0;
+
+    var year: Year = first;
+    while (year <= last) : (year += 1) {
+        var months = Month.iterator();
+        while (months.next()) |month| {
+            var day: Day = 1;
+            const end_of_month = month.lastDay(year);
+            while (day <= end_of_month) : (day += 1) {
+                const date: Date = .{ .year = year, .month = month, .day = day };
+
+                const days = date.toDaysSinceStartOfEra();
+                try std.testing.expectEqual(previous_day + 1, days);
+                try std.testing.expectEqual(date, Date.fromDaysSinceStartOfEra(days));
+
+                const weekday = DayOfWeek.fromDaysSinceStartOfEra(days);
+                try std.testing.expectEqual(previous_weekday.next(), weekday);
+                try std.testing.expectEqual(previous_weekday, weekday.prev());
+
+                previous_day = days;
+                previous_weekday = weekday;
+                count += 1;
+            }
+        }
+    }
+
+    // The paper prints the length of its own sweep, so when the span is the
+    // paper's the count is one more figure to agree with.
+    if (big_test_years == 1_000_000) {
+        try std.testing.expectEqual(@as(u64, 730_485_366), count);
+    }
+}
 
 test {
     std.testing.refAllDecls(@This());

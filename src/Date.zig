@@ -4,10 +4,27 @@
 //! A calendar date: a year, a month and a day, with no time of day and no
 //! timezone attached.
 //!
-//! Conversion to and from a day number runs on Howard Hinnant's `civil_from_days`
-//! algorithm, which shifts the year to start in March so that the leap day
-//! falls at the end of it and the month lengths become a repeating pattern
-//! that a single division can invert. See `fromDaysSinceStartOfEra`.
+//! Conversion to and from a day number runs on Howard Hinnant's
+//! `civil_from_days` and `days_from_civil`, derived in *chrono-Compatible
+//! Low-Level Date Algorithms*, which the page itself dates 2021-09-01:
+//! <https://howardhinnant.github.io/date_algorithms.html>.
+//!
+//! Two ideas carry the whole of it. The year is shifted to start in March,
+//! so that the leap day falls at the end of it and the month lengths become
+//! a repeating pattern that a single division can invert. And the calendar
+//! is cut into *eras* of 400 years, which is the period after which the
+//! proleptic Gregorian calendar repeats exactly: every era is 146097 days
+//! long, whichever one it is. So a conversion factors the era out first and
+//! then works with a day-of-era in `[0, 146096]` and a year-of-era in
+//! `[0, 399]` — which is why getting one era right gets all of time right,
+//! and why so many of the assertions in these functions name those two
+//! ranges.
+//! See `fromDaysSinceStartOfEra` and `toDaysSinceStartOfEra`.
+//!
+//! Hinnant dedicates the algorithms to the public domain ("Consider these
+//! donated to the public domain"), so no permission is needed to carry them
+//! into an MIT-licensed library; the citation is here because the
+//! derivation is worth having beside the code.
 
 const Date = @This();
 
@@ -139,6 +156,30 @@ test daysFromSecondsSaturating {
 
 /// Returns the date that is `days` days after 1970-01-01; negative values
 /// give dates before the epoch.
+///
+/// This is Hinnant's `civil_from_days`. Adding
+/// 719468 moves the count off the Unix epoch and onto 0000-03-01, the first
+/// day of era 0, so that every day number in range is a non-negative
+/// distance into some era. Dividing by 146097 gives the era and the
+/// remainder the day-of-era. The year-of-era comes out of the day-of-era by
+/// `(doe - doe/1460 + doe/36524 - doe/146096) / 365`, whose three
+/// corrections are the three days on which a plain `doe / 365` steps a year
+/// early: day 1460, which is still year 3 because the first four years hold
+/// 1461 days; day 36524, which is already year 100 because the first
+/// century holds 36524 days; and day 146096, the last day of the era, which
+/// would otherwise come out as year 400. What is left is a day-of-year
+/// counted from 1 March, and `(5 * doy + 2) / 153` turns that into a month
+/// because March-based month lengths run 31, 30, 31, 30, 31, 31, 30, 31,
+/// 30, 31, 31, 28 — a line fits the first eleven of them exactly, and
+/// February's short month is at the end where nothing follows it to be
+/// thrown off. January and February are then carried forward into the next
+/// calendar year, which is where the March-based year and the civil one
+/// part company.
+///
+/// Hinnant writes the era as `z >= 0 ? z : z - 146096` because C++ divides
+/// towards zero and the algorithm wants flooring; the same guard is kept
+/// here around `@divTrunc` rather than reaching for `@divFloor`, so that
+/// this reads as the published algorithm does.
 pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
     const z = days + 719468;
 
@@ -178,12 +219,14 @@ pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
 /// year's first of January.
 ///
 /// `fromDaysSinceStartOfEra` answers this too, by way of a month and a
-/// day that then have to be added back up. This stops short of them.
-/// The algorithm counts years from March so that the leap day lands at
-/// the end of one, which is why there is a year to name before there is a
-/// month: the March-based day of year decides which side of the new year
-/// the date falls on, and the first of January is that many days back
-/// plus or minus the run from January to March.
+/// day that then have to be added back up. This stops short of them: it is
+/// the first half of Hinnant's `civil_from_days`, run only as far as the
+/// year-of-era and the March-based day-of-year. That algorithm counts
+/// years from March so that the leap day lands at the end of one, which is
+/// why there is a year to name before there is a month: the March-based
+/// day of year decides which side of the new year the date falls on, and
+/// the first of January is that many days back plus or minus the run from
+/// January to March.
 ///
 /// `posixtz` works out every switch of a rule as an offset from the first
 /// of January, and this is where that day comes from.
@@ -307,6 +350,17 @@ test "civilFromDays" {
 
 /// Returns the number of days from 1970-01-01 to this date; negative for
 /// dates before the epoch. Asserts that the date is valid (see `isRegular`).
+///
+/// Hinnant's `days_from_civil`, which is `fromDaysSinceStartOfEra` read
+/// backwards and against the same 400-year era. January and February are
+/// moved into the previous March-based year, that year is split into an era
+/// and a year-of-era, `(153 * mp + 2) / 5` recovers the day-of-year from
+/// the March-based month index that `(5 * doy + 2) / 153` produced going
+/// the other way, and `era * 146097 + doe - 719468` puts the answer back
+/// on the Unix epoch. There is no leap-year test anywhere in it: the leap
+/// day is the last day of a March-based year, so `yoe/4 - yoe/100` counts
+/// the leap days of the era and the era boundary accounts for the
+/// four-hundreds.
 pub fn toDaysSinceStartOfEra(self: Date) DaysType {
     std.debug.assert(self.day >= 1 and self.day <= self.month.lastDay(self.year));
 
