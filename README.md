@@ -13,7 +13,7 @@ main by `.forgejo/workflows/test.yaml`.
 ## Adding it to a project
 
 ```sh
-zig fetch --save git+https://git.jcollie.dev/jeff/zig-datetime.git
+zig fetch --save git+https://github.com/jcollie/zig-datetime
 ```
 
 ```zig
