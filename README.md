@@ -7,13 +7,13 @@ SPDX-License-Identifier: MIT
 
 Dates, times, and timezones for Zig 0.16.
 
-API documentation: <https://jeff.ocj.page/zig-datetime/>, published from
+API documentation: <https://jeff.jcollie.page/zig-datetime/>, published from
 main by `.forgejo/workflows/test.yaml`.
 
 ## Adding it to a project
 
 ```sh
-zig fetch --save git+https://github.com/jeffollie/zig-datetime
+zig fetch --save git+https://git.jcollie.dev/jeff/zig-datetime.git
 ```
 
 ```zig

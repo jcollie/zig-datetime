@@ -43,7 +43,7 @@
               pkgs.curl
               pkgs.git
               pkgs.jq
-              # Publishes the API documentation to ocj.page; see
+              # Publishes the API documentation to jcollie.page; see
               # .forgejo/workflows/test.yaml.
               pkgs.git-pages-cli
               # Checks the SPDX headers; see REUSE.toml.

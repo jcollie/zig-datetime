@@ -3,7 +3,7 @@
 
 # Runs the test suite on every push, on this machine and again as a
 # Windows binary under Wine, and publishes the API documentation to
-# https://jeff.ocj.page/zig-datetime/ when the push was to main.
+# https://jeff.jcollie.page/zig-datetime/ when the push was to main.
 #
 # The documentation is only published from main, so that a branch build
 # cannot replace the site with a work in progress. Everything goes
@@ -99,7 +99,7 @@ jobs:
 
       - name: Publish docs
         run: >
-          nix develop .#default -c git-pages-cli https://jeff.ocj.page/zig-datetime/
-          --server ocj.page
+          nix develop .#default -c git-pages-cli https://jeff.jcollie.page/zig-datetime/
+          --server jcollie.page
           --token ${{ forge.token }}
           --upload-dir zig-out/docs

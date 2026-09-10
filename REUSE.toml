@@ -4,7 +4,7 @@
 version = 1
 SPDX-PackageName = "zig-datetime"
 SPDX-PackageSupplier = "Jeffrey C. Ollie <jeff@ocjtech.us>"
-SPDX-PackageDownloadLocation = "git+https://git.ocjtech.us/jeff/zig-datetime.git"
+SPDX-PackageDownloadLocation = "git+https://git.jcollie.dev/jeff/zig-datetime.git"
 
 # flake.lock is generated JSON, which has no comment syntax to carry a header.
 # It is dedicated to the public domain under CC0-1.0 rather than carrying the
