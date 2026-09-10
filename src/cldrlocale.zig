@@ -113,6 +113,30 @@ pub const EraNames = [3][2][]const u8;
 /// The four lengths of one of the locale's own patterns.
 pub const Patterns = [4][]const u8;
 
+/// One of the locale's opinions about a combination of fields: the
+/// skeleton naming them, and the pattern that writes them.
+///
+/// This is CLDR's `availableFormats`, and it is what makes "the month and
+/// the day" come out as "September 9" in English and "9. September" in
+/// German. A skeleton says *which* fields are wanted and how wide; the
+/// locale says what order they go in and what goes between them, and
+/// nothing but its own data can supply that.
+///
+/// No locale here carries any: CLDR's set is large -- of the order of
+/// forty entries apiece across seven hundred locales -- and a library
+/// whose subject is the calendar should not make every consumer of it pay
+/// for a table most of them will not ask for. So `available_formats` is
+/// left empty on the generated locales and a caller that has the data
+/// supplies its own `Locale`, or fills the field in on a copy of one of
+/// these. `cldr.formatSkeleton` is the algorithm; the data is the
+/// caller's.
+pub const AvailableFormat = struct {
+    /// The field letters in CLDR's canonical order, e.g. `"yMMMd"`.
+    skeleton: []const u8,
+    /// The pattern to write them with, e.g. `"d MMM y"`.
+    pattern: []const u8,
+};
+
 /// The language a CLDR pattern is written in.
 ///
 /// Every table has a `format` half that is always there and a
@@ -186,6 +210,14 @@ pub const Locale = struct {
     /// derived because the sign is not always a hyphen: French writes a
     /// real minus sign and Persian puts a bidirectional mark in front.
     hour_format_negative: []const u8 = "-HH:mm",
+
+    /// The locale's own opinions about combinations of fields, keyed by
+    /// skeleton; see `AvailableFormat` for why this is empty on every
+    /// locale generated here and what to do about it.
+    ///
+    /// Order matters only in that an exact match is taken as soon as it is
+    /// seen; otherwise `cldr.matchSkeleton` scores the whole table.
+    available_formats: []const AvailableFormat = &.{},
 
     /// The day a week begins on here, which `e`, `c` and `w` count from.
     first_day: DayOfWeek = .Sun,
@@ -384,6 +416,38 @@ pub const Locale = struct {
     /// Returns the locale's own time pattern of the given length.
     pub fn timeFormat(self: Locale, length: Length) []const u8 {
         return self.time_formats[@intFromEnum(length)];
+    }
+
+    /// Which hour the locale writes the time on: the twelve-hour clock, or
+    /// the twenty-four hour one.
+    ///
+    /// Read off the locale's own short time pattern rather than from a
+    /// table of its own, because that pattern is the answer: a locale that
+    /// writes `h` there is a twelve-hour locale and no other source can
+    /// disagree with it. `K` counts too, being the other twelve-hour
+    /// field, and a quoted run is skipped so that a literal `h` in the
+    /// text -- Danish writes `HH.mm`, but a language could quote a word
+    /// with an h in it -- does not answer the question.
+    ///
+    /// This is what the skeleton letter `j` asks for; see
+    /// `cldr.formatSkeleton`.
+    pub fn prefersTwelveHour(self: Locale) bool {
+        const pattern = self.time_formats[@intFromEnum(Length.short)];
+        var index: usize = 0;
+        while (index < pattern.len) : (index += 1) {
+            if (pattern[index] == '\'') {
+                index += 1;
+                if (index < pattern.len and pattern[index] == '\'') continue;
+                while (index < pattern.len and pattern[index] != '\'') index += 1;
+                continue;
+            }
+            if (pattern[index] == 'h' or pattern[index] == 'K') return true;
+        }
+        return false;
+    }
+
+    test prefersTwelveHour {
+        try std.testing.expect(en.prefersTwelveHour());
     }
 
     /// Returns the pattern that joins a date to a time in general, with

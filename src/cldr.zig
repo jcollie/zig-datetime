@@ -66,6 +66,8 @@ pub const Width = cldrlocale.Width;
 pub const WeekdayWidth = cldrlocale.WeekdayWidth;
 /// Which of the four lengths of a locale's own pattern is wanted.
 pub const Length = cldrlocale.Length;
+/// One of the locale's opinions about a combination of fields.
+pub const AvailableFormat = cldrlocale.AvailableFormat;
 /// The twelve day periods CLDR names.
 pub const DayPeriod = cldrlocale.DayPeriod;
 /// English, which is built in whatever the build asked for.
@@ -459,6 +461,343 @@ test formatRuntime {
     var discard = std.Io.Writer.fixed(&buffer);
     try std.testing.expectError(error.UnknownField, formatRuntime(value, "yyyy P", en, &discard));
     try std.testing.expectError(error.UnterminatedQuote, formatRuntime(value, "'oops", en, &discard));
+}
+
+// ----- Skeletons -----
+
+/// The most letters a skeleton may hold.
+///
+/// CLDR's own longest is nine (`GyMMMEEEEd`), and a skeleton is written by
+/// a program rather than a person, so this is generous rather than tight.
+pub const max_skeleton = 32;
+
+/// What can be wrong with a skeleton.
+pub const SkeletonError = error{
+    /// More than `max_skeleton` letters.
+    SkeletonTooLong,
+    /// A byte that is not a pattern letter. A skeleton names fields and
+    /// nothing else: it has no punctuation, no spaces and no literals.
+    NotAField,
+    /// The locale carries no `available_formats`, so there is nothing to
+    /// match against. Every locale generated here is in that position on
+    /// purpose; see `cldrlocale.AvailableFormat`.
+    NoSkeletonData,
+};
+
+/// A skeleton in the spelling CLDR's own keys use.
+///
+/// Three normalizations, each of which is a way of writing the same
+/// request that would otherwise fail to match the key holding the answer:
+///
+///   - `j` is the hour on whichever clock the locale prefers, which is
+///     the whole reason it exists; `J` is the same without a meridiem and
+///     `C` the same allowing one, and all three become `h` or `H` here.
+///     They are the only letters `check` refuses that mean something,
+///     because they are questions a *pattern* cannot answer and a
+///     skeleton can.
+///   - `c` and `e` are other spellings of the weekday; a key always
+///     writes `E`.
+///   - `E`, `EE` and `EEE` are all the abbreviated weekday, and a key
+///     always writes one. Left alone, `EEE` matches neither `yMMMEd` nor
+///     `yMMMEEEEd`, and the nearest by score is the wide one -- which in
+///     Japanese is a different pattern rather than the same one with a
+///     longer name in it, `y年M月d日EEEE` against `y年M月d日(E)`. The
+///     parentheses would go missing along with the exact match.
+///
+/// Nothing else is touched: the order of the fields is the caller's, and
+/// matching is on the text.
+pub fn canonicalSkeleton(
+    skeleton: []const u8,
+    locale: Locale,
+    buffer: *[max_skeleton]u8,
+) SkeletonError![]const u8 {
+    var length: usize = 0;
+    var index: usize = 0;
+    while (index < skeleton.len) {
+        const letter = skeleton[index];
+        if (!std.ascii.isAlphabetic(letter)) return error.NotAField;
+
+        var count: usize = 0;
+        while (index + count < skeleton.len and skeleton[index + count] == letter) count += 1;
+        index += count;
+
+        var write = letter;
+        switch (letter) {
+            'j', 'J', 'C' => write = if (locale.prefersTwelveHour()) 'h' else 'H',
+            'c', 'e' => write = 'E',
+            else => {},
+        }
+        if (write == 'E' and count <= 3) count = 1;
+
+        if (length + count > buffer.len) return error.SkeletonTooLong;
+        @memset(buffer[length..][0..count], write);
+        length += count;
+    }
+    return buffer[0..length];
+}
+
+test canonicalSkeleton {
+    var buffer: [max_skeleton]u8 = undefined;
+
+    // English prefers the twelve-hour clock, so `j` is `h` there.
+    try std.testing.expectEqualStrings("hm", try canonicalSkeleton("jm", en, &buffer));
+
+    // The three spellings of an abbreviated weekday are one spelling.
+    try std.testing.expectEqualStrings("yMMMEd", try canonicalSkeleton("yMMMEEEd", en, &buffer));
+    try std.testing.expectEqualStrings("yMMMEd", try canonicalSkeleton("yMMMccd", en, &buffer));
+
+    // The wide and narrow weekdays are left as they are.
+    try std.testing.expectEqualStrings("yMMMEEEEd", try canonicalSkeleton("yMMMEEEEd", en, &buffer));
+
+    try std.testing.expectError(error.NotAField, canonicalSkeleton("y-M", en, &buffer));
+}
+
+/// Finds the locale's pattern for `skeleton`, or the nearest thing to it.
+///
+/// An exact match is the usual answer, since CLDR lists the combinations
+/// people actually ask for. Failing that the best match is scored: having
+/// a field at all is most of it, and then how nearly the widths agree --
+/// with crossing between a number and a name counted as a far bigger
+/// difference than one digit, because it is. Without that, German scores
+/// `yMMdd` ("dd.MM.y") and `yMMMd` ("d. MMM y") the same for a request
+/// wanting a named month and picks whichever it saw first.
+///
+/// The skeleton is matched as given; put it through `canonicalSkeleton`
+/// first unless it is already in CLDR's spelling.
+pub fn matchSkeleton(skeleton: []const u8, locale: Locale) ?AvailableFormat {
+    var best: ?AvailableFormat = null;
+    var best_score: isize = std.math.minInt(isize);
+
+    for (locale.available_formats) |available| {
+        if (std.mem.eql(u8, available.skeleton, skeleton)) return available;
+
+        var score: isize = 0;
+        for ("GyYuMLQqwWEecdDFghHKkmsSaBbzZOvVXx") |letter| {
+            const wanted = std.mem.count(u8, skeleton, &.{letter});
+            const has = std.mem.count(u8, available.skeleton, &.{letter});
+            if (wanted == 0 and has == 0) continue;
+
+            if (wanted == 0 or has == 0) {
+                score -= 16;
+                continue;
+            }
+            score += 16;
+
+            const wanted_is_text = wanted >= 3;
+            const has_is_text = has >= 3;
+            if (wanted_is_text != has_is_text) {
+                score -= 8;
+            } else {
+                score -= @intCast(@max(wanted, has) - @min(wanted, has));
+            }
+        }
+
+        if (score > best_score) {
+            best_score = score;
+            best = available;
+        }
+    }
+
+    return best;
+}
+
+/// How many of `letter` to write, given what the pattern says and what
+/// the request and the matched entry's key say.
+///
+/// The rule is not "make the pattern match the request", which sounds
+/// right and is wrong. For each field: if the request asks for a width
+/// the matched entry was *filed under* differently, take the request;
+/// otherwise leave the pattern exactly as the locale wrote it. The
+/// difference is the entry's declared skeleton rather than the widths in
+/// the pattern, and the two disagree on purpose -- Japanese files
+/// `y年M月d日` under `yMMMd`, where the key says "abbreviated month" and
+/// the pattern writes the numeral, because in Japanese that *is* the
+/// abbreviated month. Rewriting its `M` as `MMM` would look the name up
+/// and produce "9月月".
+fn adjustedCount(
+    letter: u8,
+    count: usize,
+    skeleton: []const u8,
+    declared: []const u8,
+) usize {
+    // `c` and `e` are the weekday under other names, and a key spells it
+    // `E`; `L` is the stand-alone month, and a key spells it `M`.
+    const field: u8 = switch (letter) {
+        'c', 'e' => 'E',
+        'L' => 'M',
+        else => letter,
+    };
+
+    const requested = std.mem.count(u8, skeleton, &.{field});
+    if (requested == 0) return count;
+
+    // The era is the one field whose declared width says nothing. Every
+    // one of CLDR's `availableFormats` keys spells it with a single `G`,
+    // while hundreds of the patterns behind them write `GGGG` or `GGGGG`,
+    // so a comparison against the key can never fire and the pattern's own
+    // width would always win however wide a one was asked for. Take the
+    // request every time, since the key had no opinion to override.
+    if (field == 'G') return requested;
+
+    // The month is the one field that is a number at one width and a name
+    // at another, and the two are never interchangeable; see above.
+    if ((field == 'M') and (count >= 3) != (requested >= 3)) return count;
+
+    const declared_count = std.mem.count(u8, declared, &.{field});
+    return if (requested != declared_count) requested else count;
+}
+
+/// Writes `value` with the pattern the locale keeps for `skeleton`.
+///
+/// This is the third way of asking for a date, beside a pattern and one
+/// of the locale's four lengths, and it is the one that lets a caller name
+/// the fields it wants without deciding how they are arranged: ask for
+/// `yMMMd` and English writes "Mar 5, 2024", German "5. März 2024" and
+/// Japanese "2024年3月5日", each in the order and with the punctuation
+/// that language uses.
+///
+/// The locale must carry `available_formats`, which none of the generated
+/// ones do; see `cldrlocale.AvailableFormat` for why, and supply your own
+/// `Locale` or fill the field in on a copy of one of these.
+///
+/// The matched pattern's field widths are adjusted towards the request
+/// where the entry's key and the request disagree, which is what makes a
+/// two-digit day out of a locale that files a one-digit one. That is done
+/// while writing rather than by building a new pattern, so nothing here
+/// needs a buffer to hold one.
+pub fn formatSkeleton(
+    value: DateTime,
+    skeleton: []const u8,
+    locale: Locale,
+    writer: *std.Io.Writer,
+) (SkeletonError || PatternError || std.Io.Writer.Error)!void {
+    if (locale.available_formats.len == 0) return error.NoSkeletonData;
+
+    var buffer: [max_skeleton]u8 = undefined;
+    const wanted = try canonicalSkeleton(skeleton, locale, &buffer);
+    const matched = matchSkeleton(wanted, locale).?;
+
+    var scanner: Scanner = .{ .pattern = matched.pattern };
+    while (try scanner.next()) |chunk| switch (chunk) {
+        .literal => |text| try writer.writeAll(text),
+        .field => |field| {
+            const count = adjustedCount(field.letter, field.count, wanted, matched.skeleton);
+            const adjusted: Field = .{ .letter = field.letter, .count = @intCast(count) };
+            // The widened field has to be a field the library can write:
+            // a request for a five-letter era is fine and a five-letter
+            // day is not, and `check` is what knows the difference.
+            try check(adjusted);
+            try writeField(value, adjusted, locale, writer);
+        },
+    };
+}
+
+test formatSkeleton {
+    var buffer: [64]u8 = undefined;
+    const value: DateTime = .{ .year = 2024, .month = .Mar, .day = 5, .weekday = .Tue };
+
+    // A locale that carries none says so rather than guessing.
+    var none = std.Io.Writer.fixed(&buffer);
+    try std.testing.expectError(error.NoSkeletonData, formatSkeleton(value, "yMMMd", en, &none));
+
+    var with = en;
+    with.available_formats = &.{
+        .{ .skeleton = "yMMMd", .pattern = "MMM d, y" },
+        .{ .skeleton = "yMMMEd", .pattern = "E, MMM d, y" },
+        .{ .skeleton = "Gy", .pattern = "y GGGGG" },
+    };
+
+    var exact = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(value, "yMMMd", with, &exact);
+    try std.testing.expectEqualStrings("Mar 5, 2024", exact.buffered());
+
+    // `EEE` is the abbreviated weekday and finds the `E` entry.
+    var weekday = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(value, "yMMMEEEd", with, &weekday);
+    try std.testing.expectEqualStrings("Tue, Mar 5, 2024", weekday.buffered());
+
+    // The day is widened to what was asked for, because the entry is filed
+    // under a one-digit day and the request wants two.
+    var padded = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(value, "yMMMdd", with, &padded);
+    try std.testing.expectEqualStrings("Mar 05, 2024", padded.buffered());
+
+    // The era takes the request even though the key cannot disagree: the
+    // pattern says narrow and a short one was asked for.
+    var era = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(value, "Gy", with, &era);
+    try std.testing.expectEqualStrings("2024 AD", era.buffered());
+
+    var narrow = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(value, "GGGGGy", with, &narrow);
+    try std.testing.expectEqualStrings("2024 A", narrow.buffered());
+}
+
+test "a skeleton falls back to the nearest entry the locale has" {
+    var buffer: [64]u8 = undefined;
+    const value: DateTime = .{ .year = 2024, .month = .Mar, .day = 5, .weekday = .Tue };
+
+    var locale = en;
+    locale.available_formats = &.{
+        .{ .skeleton = "yMMMd", .pattern = "MMM d, y" },
+        .{ .skeleton = "yMMdd", .pattern = "MM/dd/y" },
+    };
+
+    // A long month is nearer the abbreviated entry than the numeric one,
+    // because crossing between a name and a number costs more than a
+    // letter of width does.
+    var written = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(value, "yMMMMd", locale, &written);
+    try std.testing.expectEqualStrings("March 5, 2024", written.buffered());
+}
+
+test "the month is not widened across the line between a number and a name" {
+    var buffer: [64]u8 = undefined;
+    const value: DateTime = .{ .year = 2024, .month = .Mar, .day = 5 };
+
+    // Japanese files `y年M月d日` under `yMMMd`: the key calls the month
+    // abbreviated and the pattern writes a numeral, because that is what
+    // an abbreviated month is in Japanese. Widening the `M` to `MMMM`
+    // because a long month was asked for would write the name and produce
+    // a month followed by 月月.
+    var locale = en;
+    locale.available_formats = &.{.{ .skeleton = "yMMMd", .pattern = "y'年'M'月'd'日'" }};
+
+    var written = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(value, "yMMMMd", locale, &written);
+    try std.testing.expectEqualStrings("2024年3月5日", written.buffered());
+}
+
+test "a skeleton reaches the week-numbering year, and the locale's week rule" {
+    var buffer: [64]u8 = undefined;
+
+    // Colognian files the year and month as `Y-MM`, and `Y` is the year the
+    // *week* belongs to rather than the calendar year. Germany keeps the
+    // ISO rule: weeks begin on Monday and week 1 is the one holding
+    // January 4th.
+    var locale = en;
+    locale.available_formats = &.{.{ .skeleton = "yM", .pattern = "Y-MM" }};
+    locale.first_day = .Mon;
+    locale.min_days_in_first_week = 4;
+
+    // 2024-12-30 is a Monday, and under that rule it opens week 1 of 2025.
+    var turn = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(.{ .year = 2024, .month = .Dec, .day = 30 }, "yM", locale, &turn);
+    try std.testing.expectEqualStrings("2025-12", turn.buffered());
+
+    // 2023-01-01 is a Sunday, the last day of week 52 of 2022.
+    var back = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(.{ .year = 2023, .month = .Jan, .day = 1 }, "yM", locale, &back);
+    try std.testing.expectEqualStrings("2022-01", back.buffered());
+
+    // The rule is read rather than assumed: under the American one, where
+    // weeks begin on Sunday and week 1 holds January 1st, that same day
+    // falls in week 1 of 2023.
+    locale.first_day = .Sun;
+    locale.min_days_in_first_week = 1;
+    var american = std.Io.Writer.fixed(&buffer);
+    try formatSkeleton(.{ .year = 2023, .month = .Jan, .day = 1 }, "yM", locale, &american);
+    try std.testing.expectEqualStrings("2023-01", american.buffered());
 }
 
 /// Writes `value` as the locale's own date of the given length.
