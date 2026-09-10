@@ -10,6 +10,23 @@ Dates, times, and timezones for Zig 0.16.
 API documentation: <https://jeff.jcollie.page/zig-datetime/>, published from
 main by `.forgejo/workflows/test.yaml`.
 
+## Where this lives
+
+The repository is hosted on Forgejo, which is where the issues, the
+continuous integration and the published documentation are:
+
+```sh
+git clone https://git.jcollie.dev/jeff/zig-datetime.git
+```
+
+It is mirrored to GitHub, and that is the copy Zig fetches from, since a
+`zig fetch` URL is read by whoever depends on this and GitHub is the more
+reachable of the two:
+
+```sh
+git clone https://github.com/jcollie/zig-datetime.git
+```
+
 ## Adding it to a project
 
 ```sh
