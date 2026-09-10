@@ -27,6 +27,34 @@ reachable of the two:
 git clone https://github.com/jcollie/zig-datetime.git
 ```
 
+It is also published on [Radicle][radicle], a peer-to-peer code forge that
+needs no account on anything. A Radicle repository is findable only by its
+repository ID, so this is that ID:
+
+```sh
+rad clone rad:zrcUiTVhYvJSzwRyCBNmfM9oHkSo
+```
+
+`rad clone` finds seeds through your local node's routing table, so the node
+has to be running first, and cloning seeds the repository in turn, which helps
+keep it available:
+
+```sh
+rad node start
+```
+
+If you already have the repository and only want to help host it:
+
+```sh
+rad seed rad:zrcUiTVhYvJSzwRyCBNmfM9oHkSo
+```
+
+The Radicle copy is public, named `zig-datetime`, and its default branch is
+`main` — the same name and branch as the other two, so any of the three gives
+the same history.
+
+[radicle]: https://radicle.xyz
+
 ## Adding it to a project
 
 ```sh
