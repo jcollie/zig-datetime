@@ -385,6 +385,28 @@ pub fn build(b: *std.Build) void {
         ).step);
     }
 
+    // Everything from here down is an oracle: a step that checks this
+    // library's answers against the implementation they were modelled on --
+    // moment.js, Go's `time`, ICU. They belong to `zig build test` here and
+    // to nobody else, and they are the last thing this function does, so a
+    // package that is somebody's dependency stops now.
+    //
+    // The line is not tidiness, it is 143 MB. `b.lazyDependency` marks a
+    // package as needed the moment it is *called*, and `build()` runs in
+    // full during the configure phase of every `zig build`, whatever step
+    // was asked for. The moment fetch below and the `generateCldr` call that
+    // wires up the CLDR oracle sat at the top level of this function, so
+    // every project depending on this library fetched moment and all three
+    // CLDR packages -- 138 MB of locale data to support a step that compares
+    // a table against its source -- on every clean build. Measured from a
+    // dependent project, not assumed.
+    //
+    // `b.pkg_hash` is empty for the package the build was invoked on and
+    // holds the package hash for anything reached as a dependency, which is
+    // exactly the distinction wanted: no option to remember, no change to
+    // what `zig build test` does here.
+    if (b.pkg_hash.len != 0) return;
+
     // The format strings are modelled on moment.js, so moment is what
     // says whether they behave. `tools/oracle_dump.zig` formats a corpus
     // and `tools/oracle.js` asks moment the same questions and reports
@@ -617,9 +639,11 @@ pub fn build(b: *std.Build) void {
 /// divergence built in at the source. `tools/gen_locales.js` is where the
 /// reading happens, and it needs the `node` the dev shell carries.
 ///
-/// Nothing is fetched or run without `-Dembed-locales`, and `locale.en`
-/// is built into the library rather than generated, so an ordinary build
-/// neither needs moment nor node.
+/// `locale.en` is built into the library rather than generated, so a build
+/// without `-Dembed-locales` needs neither moment nor node for the library
+/// itself. Building *this* package still fetches moment, because the oracle
+/// steps check the formatting against it; a project that merely depends on
+/// this one does not, since those steps are not wired up for it.
 fn generateLocales(b: *std.Build) std.Build.LazyPath {
     const moment = b.lazyDependency("moment", .{}) orelse return b.path("src/locales/stub.zig");
 
@@ -645,9 +669,12 @@ fn generateLocales(b: *std.Build) std.Build.LazyPath {
 /// separated list and narrows the table to those identifiers; empty means
 /// every locale CLDR ships, which is seven hundred and sixty-six of them.
 ///
-/// Nothing is fetched or run without `-Dembed-cldr`, and `cldrlocale.en`
-/// is built into the library rather than generated, so an ordinary build
-/// neither needs CLDR nor node.
+/// `cldrlocale.en` is built into the library rather than generated, so a
+/// build without `-Dembed-cldr` needs neither CLDR nor node for the library
+/// itself. Building *this* package still fetches all three CLDR packages,
+/// because `zig build oracle-cldr` checks the table against its source and
+/// asks for every locale; a project that merely depends on this one does
+/// not, since that step is not wired up for it.
 fn generateCldr(b: *std.Build, subset: []const u8) std.Build.LazyPath {
     const stub = b.path("src/cldrlocales/stub.zig");
     const core = b.lazyDependency("cldr_core", .{}) orelse return stub;
