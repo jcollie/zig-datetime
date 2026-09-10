@@ -70,6 +70,8 @@ pub const Length = cldrlocale.Length;
 pub const AvailableFormat = cldrlocale.AvailableFormat;
 /// The twelve day periods CLDR names.
 pub const DayPeriod = cldrlocale.DayPeriod;
+/// When one of those periods runs, which `B` is written from.
+pub const DayPeriodRule = cldrlocale.DayPeriodRule;
 /// English, which is built in whatever the build asked for.
 pub const en = cldrlocale.en;
 /// Every locale this build carries, sorted by tag.
