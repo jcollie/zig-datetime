@@ -124,6 +124,26 @@ pub fn build(b: *std.Build) void {
             "way; this adds the other hundred and thirty-six (default: false)",
     ) orelse false;
 
+    const embed_cldr = b.option(
+        bool,
+        "embed-cldr",
+        "Compile the Unicode CLDR's locales into the library, so that a " ++
+            "CLDR date pattern can be written in any of them at run time. " ++
+            "English is built in either way; this adds the other seven " ++
+            "hundred and sixty-five (default: false)",
+    ) orelse false;
+
+    const cldr_locales = b.option(
+        []const u8,
+        "cldr-locales",
+        "Restrict the CLDR locale table to these identifiers, comma " ++
+            "separated, so that a program needing a handful does not pay " ++
+            "for all of them: -Dcldr-locales=fr,de,ja. Narrows what " ++
+            "`zig build oracle-cldr` checks as well, which is the quick " ++
+            "way to iterate on one locale. Empty, the default, means every " ++
+            "locale CLDR ships",
+    ) orelse "";
+
     const no_system_tzdata = b.option(
         bool,
         "no-system-tzdata",
@@ -147,6 +167,11 @@ pub fn build(b: *std.Build) void {
     else
         b.path("src/locales/stub.zig");
 
+    const cldr_locales_source = if (embed_cldr)
+        generateCldr(b, cldr_locales)
+    else
+        b.path("src/cldrlocales/stub.zig");
+
     // The stub sits in a directory of its own because a module takes its
     // whole containing directory with it. Left in src/ it would make a
     // second module out of every file here, which turns up in the
@@ -158,6 +183,7 @@ pub fn build(b: *std.Build) void {
 
     module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
     module.addAnonymousImport("locales", .{ .root_source_file = locales_source });
+    module.addAnonymousImport("cldrlocales", .{ .root_source_file = cldr_locales_source });
 
     // Windows has no zoneinfo tree, so `tzdb.windows` asks it which zone
     // the machine is set to instead. Lazy, and only for that target, so a
@@ -189,6 +215,7 @@ pub fn build(b: *std.Build) void {
         });
         copy.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
         copy.addAnonymousImport("locales", .{ .root_source_file = locales_source });
+        copy.addAnonymousImport("cldrlocales", .{ .root_source_file = cldr_locales_source });
         copy.addImport("build_options", options.createModule());
         if (b.graph.host.result.os.tag == .windows) {
             if (b.lazyDependency("zigwin32", .{})) |zigwin32| {
@@ -442,6 +469,7 @@ pub fn build(b: *std.Build) void {
         });
         locales_module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
         locales_module.addAnonymousImport("locales", .{ .root_source_file = generateLocales(b) });
+        locales_module.addAnonymousImport("cldrlocales", .{ .root_source_file = cldr_locales_source });
         locales_module.addImport("build_options", options.createModule());
 
         const locale_dump = b.addExecutable(.{
@@ -472,6 +500,20 @@ pub fn build(b: *std.Build) void {
         locale_step.dependOn(&run_locale_oracle.step);
         test_step.dependOn(&run_locale_oracle.step);
     }
+
+    // The CLDR oracle checks the table against its source, and that
+    // answer does not change with -Dembed-cldr, so it asks for every
+    // locale rather than depending on how the rest of the build was
+    // invoked. The moment locale oracle above does the same, and for the
+    // same reason.
+    const cldr_module = b.createModule(.{
+        .root_source_file = b.path("src/datetime.zig"),
+        .target = b.graph.host,
+    });
+    cldr_module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
+    cldr_module.addAnonymousImport("locales", .{ .root_source_file = locales_source });
+    cldr_module.addAnonymousImport("cldrlocales", .{ .root_source_file = generateCldr(b, cldr_locales) });
+    cldr_module.addImport("build_options", options.createModule());
 
     // And the same again for Go's time layouts, against Go's own package.
     // No pinned dependency here: the layouts are part of the standard
@@ -505,6 +547,57 @@ pub fn build(b: *std.Build) void {
     const go_step = b.step("oracle-go", "Check the Go layouts against Go's time package");
     go_step.dependOn(&run_go_oracle.step);
     test_step.dependOn(&run_go_oracle.step);
+
+    // And the same again for the CLDR patterns, against ICU, which is the
+    // reference implementation of UTS #35. No pinned dependency for the
+    // oracle itself: ICU comes from the dev shell and the oracle prints
+    // which release it was, the way the Go one prints its toolchain.
+    //
+    // The C++ is compiled by Zig rather than by a separate toolchain, so
+    // the dev shell needs ICU and pkg-config and nothing more. Zig finds
+    // the library through pkg-config, which is why `icu-i18n` is spelled
+    // the way the `.pc` file names it rather than the way the linker
+    // does.
+    const cldr_dump = b.addExecutable(.{
+        .name = "oracle-cldr-dump",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/oracle_cldr_dump.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseFast,
+            .imports = &.{
+                .{ .name = "datetime", .module = cldr_module },
+            },
+        }),
+    });
+
+    const cldr_oracle_module = b.createModule(.{
+        .target = b.graph.host,
+        .optimize = .ReleaseFast,
+        .link_libcpp = true,
+    });
+    cldr_oracle_module.addCSourceFile(.{
+        .file = b.path("tools/oracle_cldr.cpp"),
+        .language = .cpp,
+        .flags = &.{"-std=c++17"},
+    });
+    cldr_oracle_module.linkSystemLibrary("icu-i18n", .{});
+    cldr_oracle_module.linkSystemLibrary("icu-uc", .{});
+
+    const cldr_oracle = b.addExecutable(.{
+        .name = "oracle-cldr",
+        .root_module = cldr_oracle_module,
+    });
+
+    const run_cldr_dump = b.addRunArtifact(cldr_dump);
+
+    const run_cldr_oracle = b.addRunArtifact(cldr_oracle);
+    run_cldr_oracle.addFileArg(run_cldr_dump.captureStdOut(.{ .basename = "cldr.tsv" }));
+    run_cldr_oracle.stdio = .inherit;
+    run_cldr_oracle.setEnvironmentVariable("TZ", "UTC");
+
+    const cldr_step = b.step("oracle-cldr", "Check the CLDR patterns against ICU");
+    cldr_step.dependOn(&run_cldr_oracle.step);
+    test_step.dependOn(&run_cldr_oracle.step);
 }
 
 /// Builds the embedded locale table and returns the path of the generated
@@ -526,6 +619,40 @@ fn generateLocales(b: *std.Build) std.Build.LazyPath {
     run.addFileArg(b.path("tools/gen_locales.js"));
     run.addDirectoryArg(moment.path(""));
     const generated = run.addOutputFileArg("locales.zig");
+
+    return generated;
+}
+
+/// Builds the embedded CLDR locale table and returns the path of the
+/// generated Zig source holding it.
+///
+/// The data is the Unicode Consortium's own, read out of the three CLDR
+/// JSON packages `build.zig.zon` pins, because CLDR is what this
+/// library's pattern formatting is checked against: a locale transcribed
+/// by hand would be a divergence built in at the source.
+/// `tools/gen_cldr.js` is where the reading happens, and it needs the
+/// `node` the dev shell carries.
+///
+/// `subset`, from `-Dcldr-locales`, is passed through as a comma
+/// separated list and narrows the table to those identifiers; empty means
+/// every locale CLDR ships, which is seven hundred and sixty-six of them.
+///
+/// Nothing is fetched or run without `-Dembed-cldr`, and `cldrlocale.en`
+/// is built into the library rather than generated, so an ordinary build
+/// neither needs CLDR nor node.
+fn generateCldr(b: *std.Build, subset: []const u8) std.Build.LazyPath {
+    const stub = b.path("src/cldrlocales/stub.zig");
+    const core = b.lazyDependency("cldr_core", .{}) orelse return stub;
+    const dates = b.lazyDependency("cldr_dates", .{}) orelse return stub;
+    const numbers = b.lazyDependency("cldr_numbers", .{}) orelse return stub;
+
+    const run = b.addSystemCommand(&.{"node"});
+    run.addFileArg(b.path("tools/gen_cldr.js"));
+    run.addDirectoryArg(core.path(""));
+    run.addDirectoryArg(dates.path(""));
+    run.addDirectoryArg(numbers.path(""));
+    const generated = run.addOutputFileArg("cldrlocales.zig");
+    run.addArg(subset);
 
     return generated;
 }

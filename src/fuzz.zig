@@ -31,6 +31,7 @@ const Instant = @import("Instant.zig");
 const Month = @import("month.zig").Month;
 const TimeZone = @import("TimeZone.zig");
 const Year = @import("year.zig").Year;
+const cldr = @import("cldr.zig");
 const iso8601 = @import("iso8601.zig");
 const locale = @import("locale.zig");
 const posixtz = @import("posixtz.zig");
@@ -612,6 +613,89 @@ test "fuzz the shipped locales round trip" {
 
 test "mutate the shipped locales round trip" {
     try overMutations(localeRoundTripProperty, &locale_round_trip_seeds);
+}
+
+// CLDR patterns --------------------------------------------------------
+
+/// A CLDR pattern is text this library did not write, and unlike a
+/// moment.js format string it does not have to be comptime: `cldr`'s
+/// runtime entry point exists because the locale's own patterns arrive as
+/// data, and a caller may just as well hand it a pattern out of a
+/// configuration file. So the tokenizer, the quoting, and every field
+/// writer are reachable from arbitrary bytes, which is what this points
+/// the fuzzer at.
+///
+/// The property is only that nothing crashes and that a refusal is one of
+/// the three documented errors. What a pattern *should* write is what
+/// `zig build oracle-cldr` is for, and a fuzzer has no opinion about it.
+fn cldrPatternProperty(text: []const u8) !void {
+    const dates = [_]DateTime{
+        .{ .year = 2024, .month = .Mar, .day = 5, .hour = 13, .minute = 7, .weekday = .Tue, .offset = -21036 },
+        .{ .year = 1, .month = .Jan, .day = 1, .weekday = .Mon },
+        .{ .year = -4000, .month = .Dec, .day = 31, .hour = 23, .minute = 59, .second = 59, .weekday = .Tue },
+    };
+
+    // One shipped locale per input, chosen by the input, for the same
+    // reason the moment locale target does it: walking every table for
+    // every input spends the run on the same answers over and over.
+    const shipped: []const cldr.Locale = if (cldr.embedded) cldr.all else &.{cldr.en};
+    const in = shipped[(if (text.len > 0) text[text.len - 1] else 0) % shipped.len];
+
+    var buffer: [4096]u8 = undefined;
+    for (dates) |value| {
+        var writer = std.Io.Writer.fixed(&buffer);
+        // A pattern can ask for more than any buffer holds -- `yyyy`
+        // repeated is a legal pattern -- so running out of room is an
+        // answer rather than a failure.
+        cldr.formatRuntime(value, text, in, &writer) catch |err| switch (err) {
+            error.WriteFailed => {},
+            error.UnterminatedQuote, error.UnknownField, error.InvalidFieldWidth => {},
+        };
+
+        // And the locale's own patterns, which are the ones a caller
+        // reaches without writing a pattern at all.
+        for ([_]cldr.Length{ .full, .long, .medium, .short }) |length| {
+            var styled = std.Io.Writer.fixed(&buffer);
+            cldr.formatDateTime(value, length, length, in, &styled) catch {};
+        }
+    }
+}
+
+const cldr_pattern_seeds = [_][]const u8{
+    "",
+    "yyyy-MM-dd'T'HH:mm:ssXXX",
+    "EEEE, MMMM d, y 'at' h:mm:ss a zzzz",
+    "GGGGG QQQQQ LLLLL cccccc bbbbb BBBBB",
+    // Quoting, which is the part of the tokenizer with state in it.
+    "'",
+    "''",
+    "'unterminated",
+    "'don''t' HH",
+    "''",
+    // Counts at and past the edge of what each field means.
+    "MMMMMM",
+    "OO",
+    "VVV",
+    "jjj",
+    "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+    "SSSSSSSSSSSSSSSSSSSS",
+    "AAAAAAAAAAAAAAAAAAAA",
+    // Letters that name nothing, which are reserved rather than text.
+    "PPPP",
+    "hello world",
+    "\xff\xff\xff\xff",
+};
+
+test "cldr.formatRuntime over the seeds" {
+    try overSeeds(cldrPatternProperty, &cldr_pattern_seeds);
+}
+
+test "fuzz cldr.formatRuntime" {
+    try overFuzzer(cldrPatternProperty);
+}
+
+test "mutate cldr.formatRuntime" {
+    try overMutations(cldrPatternProperty, &cldr_pattern_seeds);
 }
 
 // Week rules -----------------------------------------------------------

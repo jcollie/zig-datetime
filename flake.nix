@@ -57,6 +57,17 @@
               # oracle for src/golayout.zig and where the reference
               # behaviour is read from. See tools/oracle_go.go.
               pkgs.go
+              # And the same again for the CLDR patterns, where ICU is
+              # the reference implementation of UTS #35. The C++ in
+              # tools/oracle_cldr.cpp is compiled by Zig rather than by a
+              # toolchain of its own; pkg-config is how Zig finds the
+              # headers and the library, and without it on PATH it
+              # silently looks for a library called `libicu-i18n` that
+              # does not exist. `icu.dev` carries the headers and the
+              # `.pc` files, `icu` the library itself.
+              pkgs.icu.dev
+              pkgs.icu
+              pkgs.pkg-config
             ];
           };
         in

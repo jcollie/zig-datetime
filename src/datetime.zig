@@ -8,11 +8,13 @@
 //! of nanoseconds since the Unix epoch. `Instant.asDateTime` converts
 //! between the two views of a moment.
 //!
-//! Text goes in and out through three routes. `DateTime.format` and
+//! Text goes in and out through four routes. `DateTime.format` and
 //! `DateTime.parse` work from a comptime format string of the sequences
 //! in `formatsequence.FormatTag`, which is the general case. `iso8601`
 //! and `rfc822` parse the two standard syntaxes, whose shape is not known
 //! until the input is read and so cannot go through a format string.
+//! `golayout` and `cldr` are the other two vocabularies a format string
+//! can be written in, taken from Go and from UTS #35.
 //!
 //! Timezone support starts at `tzdb`, which loads a `TimeZone` either
 //! from the operating system's copy of the IANA database or from one
@@ -59,6 +61,10 @@ pub const rfc822 = @import("rfc822.zig");
 /// Formatting and parsing with Go's time layouts, where the format string
 /// is one particular time written the way you want yours written.
 pub const golayout = @import("golayout.zig");
+/// Formatting with CLDR date patterns, the vocabulary UTS #35 defines and
+/// that ICU, Java and `Intl.DateTimeFormat` speak. `-Dembed-cldr` adds
+/// CLDR's locales; English is built in either way.
+pub const cldr = @import("cldr.zig");
 /// A timezone, and the lookups that apply it to an instant.
 pub const TimeZone = @import("TimeZone.zig");
 /// Where timezone data comes from: the system's copy or an embedded one.

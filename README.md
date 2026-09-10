@@ -479,6 +479,137 @@ as one number of hours and `+0545` is not a count of hours. Both are
 Go's, and a layout that means one thing there should not mean another
 here.
 
+### CLDR patterns
+
+`cldr` is the third way of saying it, and the one the rest of the world
+is speaking: the pattern vocabulary the Unicode Consortium defines in
+[UTS #35](https://unicode.org/reports/tr35/tr35-dates.html), which ICU,
+Java, .NET and every `Intl.DateTimeFormat` in a browser use underneath.
+
+```zig
+try datetime.cldr.format(value, "yyyy-MM-dd'T'HH:mm:ssXXX", .en, writer);
+try datetime.cldr.format(value, "EEEE, d MMMM y", french, writer);
+```
+
+The letter says which field and how many of it says how that field is
+written, so `M` is the month as a number, `MMM` abbreviates it, `MMMM`
+spells it out and `MMMMM` reduces it to a letter. Text inside single
+quotes is copied through, which is how a letter is written as itself, and
+`''` is one apostrophe. Every ASCII letter is reserved whether or not it
+names a field, so `hello` is a compile error rather than four fields and
+an `o`; quote it.
+
+Where it goes beyond the other two is that the locale carries its own
+patterns. A caller that does not want to decide how a date is written
+asks for a length instead:
+
+```zig
+try datetime.cldr.formatDateTime(value, .medium, .short, locale, writer);
+```
+
+which is `Mar 5, 2024, 2:30 PM` in English, `5 mars 2024, 14:30` in
+French and `2024/03/05 14:30` in Japanese, because the arrangement is
+data rather than something this library decided. `formatDate` and
+`formatTime` ask for one half.
+
+There are two entry points because CLDR patterns arrive both ways.
+`format` takes the pattern at comptime, tokenizes it while the program is
+compiled, and refuses one that is not a pattern with a compile error;
+`formatRuntime` takes one that was not known until the program ran, which
+is what the locale's own patterns are. Both walk the same field writer.
+
+#### Locales
+
+`-Dembed-cldr` compiles in CLDR's own seven hundred and sixty-six
+locales, and `cldr.byName` finds one by tag. Without it there is only
+`en`, and nothing is fetched:
+
+```sh
+zig build -Dembed-cldr
+zig build -Dembed-cldr -Dcldr-locales=fr,de,ja   # or only the ones you want
+```
+
+A tag CLDR does not ship is retried with its last subtag dropped, so an
+`Accept-Language` header works: `en-US` answers with `en`. That is not a
+formality — CLDR ships no `pt-BR`, because Brazilian Portuguese is the
+default content of `pt`.
+
+The data is the Unicode Consortium's own, read out of its JSON
+distribution by `tools/gen_cldr.js` the way the timezone database is read
+out of IANA's sources and the moment locales out of moment's. It carries
+what CLDR has and moment has no notion of: era names, quarter names, the
+narrow width, the difference between the name inside a date and the name
+standing alone, the flexible day periods that make `B` write "in the
+morning", and the ten digits a locale writes its numbers with — a Bengali
+date really is written in Bengali digits, rather than in ASCII ones
+rewritten afterwards.
+
+#### Compatibility, checked
+
+ICU is the reference implementation of UTS #35, and `zig build
+oracle-cldr` diffs against it: every field at every count, the shapes
+callers write, the corners of the quoting, and then every embedded locale
+against the patterns a locale can differ about, at seven instants and
+three offsets each.
+
+```
+889650 comparisons against ICU 78.3
+124 locales CLDR ships and ICU 78.3 does not, unchecked
+105 known and documented
+no divergence beyond those
+```
+
+The oracle gives ICU a zone that is nothing but an offset, because that
+is what a `DateTime` is, and a Gregorian calendar whose changeover has
+been pushed before every date there is, because ICU's is Julian before
+1582 and this library's is proleptic Gregorian throughout.
+
+Four things are deliberately not ICU's behaviour, and each is a limit
+rather than a bug:
+
+- **`V`, `VV` and `VVV` are refused**, along with the skeleton-only `j`,
+  `J` and `C`. The first three name a zone — its short identifier, its
+  long one, the city it is kept by — and a `DateTime` carries an offset
+  rather than a zone; ICU, given a zone that is nothing but an offset,
+  answers `unk` and `Unknown Location`. The last three ask for whichever
+  clock the locale prefers and are resolved before formatting begins;
+  ICU writes nothing for them. A field that silently vanishes is worse
+  than one that will not compile. `VVVV` is allowed, because its
+  fallback is something an offset can truthfully say.
+
+- **A count a field has no meaning for is refused** rather than falling
+  back. ICU writes `MMMMMM` as a six digit month number and `OO` as
+  nothing at all.
+
+- **Fractional seconds keep their precision.** ICU holds milliseconds and
+  pads `SSSS` onwards with zeros; this holds nanoseconds and writes them.
+  For any value ICU can represent the two agree, which is why the
+  oracle's corpus stops at the millisecond. The same choice, for the same
+  reason, as the moment sequences make.
+
+- **Two locales are excused**, and the oracle counts them. Hawaiian
+  writes the month of its short date in lowercase Roman numerals, which
+  CLDR expresses by hanging a numbering system on one field of a pattern;
+  a numbering system here is ten digits and `romanlow` is an algorithm.
+  French as written in Mali has a joining pattern that CLDR's JSON and
+  ICU inherit differently, and they disagree about a comma.
+
+Beyond that, `z` and its neighbours take UTS #35's documented fallback:
+given no zone to name, the localized GMT format, so `z` is `GMT-5` and
+`zzzz` is `GMT-05:00`, in the locale's own spelling and digits. The
+abbreviation a zone did supply is on the value instead, put there by the
+zone that knew it:
+
+```zig
+const local = zone.atTimestamp(1720000000);
+std.debug.print("{s}\n", .{local.designation.slice()});   // CDT
+```
+
+CLDR patterns are formatting only. Parsing them is a separate and much
+less well specified problem — several fields are ambiguous or
+unparseable by construction — and the moment sequences, Go's layouts,
+`iso8601` and `rfc822` are all still there to read text with.
+
 Two interchange formats have their own parsers, because the shape of
 their input is not known ahead of reading it and a format string cannot
 express that.
@@ -607,14 +738,23 @@ zig build test -Dno-system-tzdata  # as though the machine had no database
 zig build oracle                   # formatting against moment.js
 zig build oracle-parse             # parsing against moment.js, in both modes
 zig build oracle-go                # Go's time layouts against Go itself
+zig build oracle-locale            # the embedded locales against moment.js
+zig build oracle-cldr              # the CLDR patterns against ICU
 zig build bench                    # always ReleaseFast, whatever -Doptimize says
 ```
 
-All three oracles are part of `zig build test`, so an ordinary run needs
-`node` and `go`, and fetches moment the first time. moment is pinned in
-`build.zig.zon`; Go is not, because the layouts are part of its standard
-library rather than something to fetch, and the oracle prints the version
-it ran against.
+Every oracle is part of `zig build test`, so an ordinary run needs `node`,
+`go` and ICU, and fetches moment and CLDR the first time. moment and CLDR
+are pinned in `build.zig.zon`, because each is the specification being
+tested against and a floating version would move the target; Go and ICU
+are not, because their behaviour is part of a toolchain rather than
+something to fetch, and each oracle prints the version it ran against.
+`-Dcldr-locales` narrows the CLDR oracle as well as the embedded table,
+which is the quick way to iterate on one locale.
+
+The C++ in `tools/oracle_cldr.cpp` is compiled by Zig rather than by a
+toolchain of its own, so the dev shell needs ICU and `pkg-config` and
+nothing more.
 
 `src/fuzz.zig` holds a property per parser: nothing crashes on input
 nobody chose, whatever comes back holds together, and anything with an
