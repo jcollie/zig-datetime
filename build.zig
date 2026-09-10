@@ -153,10 +153,18 @@ pub fn build(b: *std.Build) void {
             "the library behaves the same either way (default: false)",
     ) orelse false;
 
+    // `src/root.zig` and not `src/datetime.zig`, which is what it was called
+    // until it turned out that the two conventions this library follows --
+    // a namespace file named in lower case, a type file named for its type --
+    // collide when the namespace and the type share a name. `datetime.zig`
+    // and `DateTime.zig` are one file on a case-insensitive filesystem, so
+    // Zig's package manager could not unpack this package on Windows or
+    // macOS at all: `unable to create file 'src/datetime.zig':
+    // PathAlreadyExists`, before a line of it was ever compiled.
     const module = b.addModule(
         "datetime",
         .{
-            .root_source_file = b.path("src/datetime.zig"),
+            .root_source_file = b.path("src/root.zig"),
             .target = target,
             .optimize = optimize,
         },
@@ -209,7 +217,7 @@ pub fn build(b: *std.Build) void {
     // so checking the host build is checking the same code.
     const host_module = if (target.query.isNative()) module else host: {
         const copy = b.createModule(.{
-            .root_source_file = b.path("src/datetime.zig"),
+            .root_source_file = b.path("src/root.zig"),
             .target = b.graph.host,
             .optimize = optimize,
         });
@@ -288,7 +296,7 @@ pub fn build(b: *std.Build) void {
     // The benchmarks always build ReleaseFast, independent of -Doptimize,
     // so they need their own instance of the module built the same way.
     const bench_datetime = b.createModule(.{
-        .root_source_file = b.path("src/datetime.zig"),
+        .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = .ReleaseFast,
     });
@@ -464,7 +472,7 @@ pub fn build(b: *std.Build) void {
         // compares is the table against its source, and that answer does
         // not change with `-Dembed-locales`.
         const locales_module = b.createModule(.{
-            .root_source_file = b.path("src/datetime.zig"),
+            .root_source_file = b.path("src/root.zig"),
             .target = b.graph.host,
         });
         locales_module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
@@ -507,7 +515,7 @@ pub fn build(b: *std.Build) void {
     // invoked. The moment locale oracle above does the same, and for the
     // same reason.
     const cldr_module = b.createModule(.{
-        .root_source_file = b.path("src/datetime.zig"),
+        .root_source_file = b.path("src/root.zig"),
         .target = b.graph.host,
     });
     cldr_module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
