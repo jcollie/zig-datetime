@@ -152,19 +152,22 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
                 // can name in days, so it is refused rather than guessed at.
                 'Y' => {
                     if (c.fraction.len != 0) return error.BadFraction;
-                    result.value.months += try mul(c.whole, 12);
+                    result.value.months = try add(result.value.months, try mul(c.whole, 12));
                 },
                 'M' => {
                     if (c.fraction.len != 0) return error.BadFraction;
-                    result.value.months += try cast(c.whole);
+                    result.value.months = try add(result.value.months, try cast(c.whole));
                 },
                 'W' => {
                     if (c.fraction.len != 0) return error.BadFraction;
-                    result.value.days += try mul(c.whole, 7);
+                    result.value.days = try add(result.value.days, try mul(c.whole, 7));
                 },
                 'D' => {
-                    result.value.days += try cast(c.whole);
-                    result.value.nanoseconds += scaleFraction(c.fraction, Duration.nanoseconds_per_day);
+                    result.value.days = try add(result.value.days, try cast(c.whole));
+                    result.value.nanoseconds = try addNanoseconds(
+                        result.value.nanoseconds,
+                        scaleFraction(c.fraction, Duration.nanoseconds_per_day),
+                    );
                 },
                 else => return error.ParseError,
             }
@@ -186,8 +189,14 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
                 'S' => Duration.nanoseconds_per_second,
                 else => return error.ParseError,
             };
-            result.value.nanoseconds += try mulNanoseconds(c.whole, unit);
-            result.value.nanoseconds += scaleFraction(c.fraction, unit);
+            result.value.nanoseconds = try addNanoseconds(
+                result.value.nanoseconds,
+                try mulNanoseconds(c.whole, unit),
+            );
+            result.value.nanoseconds = try addNanoseconds(
+                result.value.nanoseconds,
+                scaleFraction(c.fraction, unit),
+            );
             if (c.designator == 'S') break;
         }
         // `P1DT` is not a duration: the designator promises a time part.
@@ -320,6 +329,18 @@ fn mul(whole: u64, by: i64) ParseError!i64 {
 
 fn mulNanoseconds(whole: u64, unit: i128) ParseError!i128 {
     return std.math.mul(i128, whole, unit) catch error.OutOfRange;
+}
+
+/// Each component of a duration is checked as it is read, and the *running
+/// total* has to be checked too: `P9000000000000000000Y` overflows on its
+/// own, but so does a year count and a month count that each fit and together
+/// do not.
+fn add(total: i64, term: i64) ParseError!i64 {
+    return std.math.add(i64, total, term) catch error.OutOfRange;
+}
+
+fn addNanoseconds(total: i128, term: i128) ParseError!i128 {
+    return std.math.add(i128, total, term) catch error.OutOfRange;
 }
 
 /// Parses an ISO 8601 date, or date and time, at the start of `value`.
