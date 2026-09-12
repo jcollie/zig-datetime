@@ -29,7 +29,9 @@
 //!
 //!   * Expanded years such as `+002024`, which ISO 8601 allows only by
 //!     prior agreement between the parties exchanging the data.
-//!   * Intervals, durations, and recurring intervals.
+//!   * Intervals and recurring intervals. Durations *are* read, by
+//!     `parseDuration`, but not the alternative `P0003-06-04T12:30:05`
+//!     form of one.
 //!   * Mixing the basic and extended forms between the date and the time,
 //!     which ISO 8601 forbids. The zone is the one deliberate exception;
 //!     see `parse`.
@@ -38,6 +40,7 @@ const std = @import("std");
 
 const Date = @import("Date.zig");
 const DateTime = @import("DateTime.zig");
+const Duration = @import("Duration.zig");
 const Day = @import("day.zig").Day;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Hour = @import("hour.zig").Hour;
@@ -95,6 +98,229 @@ pub const ParseResult = struct {
     /// The smallest component the input named.
     precision: Precision,
 };
+
+/// What a successful `parseDuration` yields.
+pub const DurationParseResult = struct {
+    /// The prefix of the input that was consumed.
+    str: []const u8,
+    value: Duration,
+    /// The designator of the component that carried a decimal fraction, or
+    /// null when none did.
+    ///
+    /// It is reported because a caller may be stricter than ISO 8601 about
+    /// where a fraction may appear. XML Schema's `duration`, for one, allows
+    /// a fraction only on the seconds, so `P1.5D` is a perfectly good ISO
+    /// 8601 duration and not a valid `xs:duration` — and once the fraction
+    /// has been folded into `nanoseconds` there is no way to tell which
+    /// component it came from.
+    fractional: ?u8 = null,
+};
+
+/// Parses an ISO 8601 duration at the start of `value`: `P3Y6M4DT12H30M5S`,
+/// `PT30M`, `P2W`, `-P1D`.
+///
+/// Years fold into the duration's months and weeks into its days, since
+/// those two conversions are exact. A decimal fraction is allowed on any
+/// component that can carry one exactly — days and below — and refused on
+/// years and months, which have no fixed length to divide. ISO 8601 also
+/// asks that only the smallest component present carry one; that is not
+/// enforced here, and `DurationParseResult.fractional` says which one did so
+/// that a stricter caller can.
+///
+/// Trailing text is left unconsumed, as with `parse`.
+pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
+    var cursor: Cursor = .{ .text = value };
+
+    const negative = cursor.eat('-');
+    if (!negative) _ = cursor.eat('+');
+    if (!cursor.eatAny("Pp")) return error.ParseError;
+
+    var result: DurationParseResult = .{ .str = &.{}, .value = .{} };
+    var count: usize = 0;
+
+    // The date part, whose `M` means months. `W` is an alternative to the
+    // whole of it rather than one more component, but accepting it alongside
+    // the others costs nothing and rejecting it would only turn a duration
+    // somebody wrote into an error.
+    var in_time = cursor.eatAny("Tt");
+    if (!in_time) {
+        while (try component(&cursor)) |c| {
+            count += 1;
+            if (c.fraction.len != 0) result.fractional = c.designator;
+            switch (c.designator) {
+                // A fraction of a year or a month is a length of time nobody
+                // can name in days, so it is refused rather than guessed at.
+                'Y' => {
+                    if (c.fraction.len != 0) return error.BadFraction;
+                    result.value.months += try mul(c.whole, 12);
+                },
+                'M' => {
+                    if (c.fraction.len != 0) return error.BadFraction;
+                    result.value.months += try cast(c.whole);
+                },
+                'W' => {
+                    if (c.fraction.len != 0) return error.BadFraction;
+                    result.value.days += try mul(c.whole, 7);
+                },
+                'D' => {
+                    result.value.days += try cast(c.whole);
+                    result.value.nanoseconds += scaleFraction(c.fraction, Duration.nanoseconds_per_day);
+                },
+                else => return error.ParseError,
+            }
+            if (c.designator == 'D') break;
+        }
+        in_time = cursor.eatAny("Tt");
+    }
+
+    // The time part, whose `M` means minutes.
+    if (in_time) {
+        var time_count: usize = 0;
+        while (try component(&cursor)) |c| {
+            count += 1;
+            time_count += 1;
+            if (c.fraction.len != 0) result.fractional = c.designator;
+            const unit: i128 = switch (c.designator) {
+                'H' => Duration.nanoseconds_per_hour,
+                'M' => Duration.nanoseconds_per_minute,
+                'S' => Duration.nanoseconds_per_second,
+                else => return error.ParseError,
+            };
+            result.value.nanoseconds += try mulNanoseconds(c.whole, unit);
+            result.value.nanoseconds += scaleFraction(c.fraction, unit);
+            if (c.designator == 'S') break;
+        }
+        // `P1DT` is not a duration: the designator promises a time part.
+        if (time_count == 0) return error.ParseError;
+    }
+
+    // `P` on its own is not a duration either.
+    if (count == 0) return error.ParseError;
+
+    if (negative) result.value = result.value.negate();
+    result.str = value[0..cursor.index];
+    return result;
+}
+
+test parseDuration {
+    const cases = [_]struct { []const u8, Duration }{
+        .{ "P1Y", .{ .months = 12 } },
+        .{ "P1Y6M", .{ .months = 18 } },
+        .{ "P3Y6M4DT12H30M5S", .{
+            .months = 42,
+            .days = 4,
+            .nanoseconds = 12 * Duration.nanoseconds_per_hour +
+                30 * Duration.nanoseconds_per_minute +
+                5 * Duration.nanoseconds_per_second,
+        } },
+        .{ "PT30M", .{ .nanoseconds = 30 * Duration.nanoseconds_per_minute } },
+        .{ "P2W", .{ .days = 14 } },
+        .{ "PT0S", .{} },
+        .{ "-P1D", .{ .days = -1 } },
+        .{ "+P1D", .{ .days = 1 } },
+        .{ "PT1.5S", .{ .nanoseconds = 3 * Duration.nanoseconds_per_second / 2 } },
+        .{ "PT1,5S", .{ .nanoseconds = 3 * Duration.nanoseconds_per_second / 2 } },
+        .{ "P1.5D", .{ .days = 1, .nanoseconds = Duration.nanoseconds_per_day / 2 } },
+        .{ "P0D", .{} },
+    };
+    for (cases) |case| {
+        const got = try parseDuration(case[0]);
+        std.testing.expect(got.value.eql(case[1])) catch |err| {
+            std.debug.print("{s}: {any}\n", .{ case[0], got.value });
+            return err;
+        };
+        try std.testing.expectEqualStrings(case[0], got.str);
+    }
+
+    // Which component carried the fraction, for a caller that allows fewer
+    // of them than ISO 8601 does.
+    try std.testing.expectEqual(@as(?u8, 'S'), (try parseDuration("PT1.5S")).fractional);
+    try std.testing.expectEqual(@as(?u8, 'D'), (try parseDuration("P1.5D")).fractional);
+    try std.testing.expectEqual(@as(?u8, null), (try parseDuration("P1D")).fractional);
+
+    // Trailing text is left, as with `parse`.
+    try std.testing.expectEqualStrings("P1D", (try parseDuration("P1D and more")).str);
+
+    // None of these is a duration. Which error each gives is not the point
+    // -- `BadFraction` is as much a refusal as `ParseError` -- so the check
+    // is only that none of them parses.
+    for ([_][]const u8{
+        "",      "1D",    "P",     "-P",   "PT",
+        "P1DT",  "P1X",   "PTS",   "P.5D",
+        // A year, month or week has no fixed length, so a fraction of one is
+        // not a duration this can represent.
+        "P0.5Y",
+        "P0.5M", "P0.5W",
+        // A decimal point with no digits after it.
+        "PT1.S",
+    }) |bad| {
+        std.testing.expect(std.meta.isError(parseDuration(bad))) catch |err| {
+            std.debug.print("parsed but should not have: \"{s}\"\n", .{bad});
+            return err;
+        };
+    }
+}
+
+/// One `<number><designator>` of a duration, with the digits of its decimal
+/// fraction kept apart because what they are worth depends on the
+/// designator that follows them.
+const Component = struct {
+    whole: u64,
+    fraction: []const u8,
+    designator: u8,
+};
+
+fn component(cursor: *Cursor) ParseError!?Component {
+    const whole_len = cursor.digitsAhead();
+    if (whole_len == 0) return null;
+
+    var whole: u64 = 0;
+    for (cursor.text[cursor.index..][0..whole_len]) |char| {
+        whole = std.math.mul(u64, whole, 10) catch return error.OutOfRange;
+        whole = std.math.add(u64, whole, char - '0') catch return error.OutOfRange;
+    }
+    cursor.index += whole_len;
+
+    var fraction: []const u8 = &.{};
+    if (!cursor.done() and (cursor.peek() == '.' or cursor.peek() == ',')) {
+        cursor.index += 1;
+        const start = cursor.index;
+        cursor.index += cursor.digitsAhead();
+        if (cursor.index == start) return error.BadFraction;
+        fraction = cursor.text[start..cursor.index];
+    }
+
+    if (cursor.done()) return error.ParseError;
+    const designator = cursor.peek();
+    cursor.index += 1;
+    return .{ .whole = whole, .fraction = fraction, .designator = designator };
+}
+
+/// The digits after a decimal point, as a count of nanoseconds of `unit`.
+/// Digits past the point where they can no longer move a nanosecond are read
+/// and discarded, as in `Cursor.fraction`.
+fn scaleFraction(digits: []const u8, unit: i128) i128 {
+    var numerator: i128 = 0;
+    var denominator: i128 = 1;
+    for (digits) |char| {
+        if (denominator > std.math.pow(i128, 10, 15)) break;
+        numerator = numerator * 10 + (char - '0');
+        denominator *= 10;
+    }
+    return @divTrunc(numerator * unit, denominator);
+}
+
+fn cast(whole: u64) ParseError!i64 {
+    return std.math.cast(i64, whole) orelse error.OutOfRange;
+}
+
+fn mul(whole: u64, by: i64) ParseError!i64 {
+    return std.math.mul(i64, try cast(whole), by) catch error.OutOfRange;
+}
+
+fn mulNanoseconds(whole: u64, unit: i128) ParseError!i128 {
+    return std.math.mul(i128, whole, unit) catch error.OutOfRange;
+}
 
 /// Parses an ISO 8601 date, or date and time, at the start of `value`.
 /// Trailing text is left unconsumed; `ParseResult.str` says where the

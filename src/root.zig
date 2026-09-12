@@ -8,6 +8,10 @@
 //! of nanoseconds since the Unix epoch. `Instant.asDateTime` converts
 //! between the two views of a moment.
 //!
+//! `Duration` is a length of time as ISO 8601 writes one -- months, days
+//! and everything below a day, kept apart because a month is not a fixed
+//! number of days. `DateTime.add` applies one.
+//!
 //! Text goes in and out through four routes. `DateTime.format` and
 //! `DateTime.parse` work from a comptime format string of the sequences
 //! in `formatsequence.FormatTag`, which is the general case. `iso8601`
@@ -48,13 +52,17 @@ pub const Date = @import("Date.zig");
 pub const DateTime = @import("DateTime.zig");
 /// A point on the timeline, as nanoseconds since the Unix epoch.
 pub const Instant = @import("Instant.zig");
+/// A length of time as ISO 8601 writes one, in months, days and everything
+/// below a day.
+pub const Duration = @import("Duration.zig");
 /// The language a date is written in: month and day names, the meridiem,
 /// ordinals, the week rule, and what the `L` sequences stand for.
 /// `locale.en` is built in; `-Dembed-locales` adds moment.js's other
 /// hundred and thirty-six.
 pub const locale = @import("locale.zig");
 
-/// Parsing of the ISO 8601 date and time representations.
+/// Parsing of the ISO 8601 date and time representations, and of its
+/// durations.
 pub const iso8601 = @import("iso8601.zig");
 /// Parsing of the RFC 822 date and time syntax used by mail and HTTP.
 pub const rfc822 = @import("rfc822.zig");

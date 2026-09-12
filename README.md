@@ -680,8 +680,51 @@ ISO 8601 forbids mixing the basic and extended forms, and so does this:
 `2024-03-15T143000` is `error.MixedFormats`. The zone is the one
 deliberate exception, since `+0530` after an extended time is common in
 real data. Expanded years such as `+002024`, which ISO 8601 permits only
-by prior agreement, are not accepted, and neither are intervals or
-durations.
+by prior agreement, are not accepted, and neither are intervals.
+
+### Durations
+
+`iso8601.parseDuration` reads the other half of the syntax, and
+`Duration` is what it reads into:
+
+```zig
+const result = try datetime.iso8601.parseDuration("P3Y6M4DT12H30M5S");
+const later = now.add(result.value);
+```
+
+A `Duration` keeps **months**, **days** and **everything below a day**
+apart, and that separation is the whole design. A duration is not a fixed
+number of nanoseconds, because a month is not a fixed number of days: one
+month after the 31st of January is the 28th of February, and a type that
+reduced the duration to a count would have no way to say so. `Instant` is
+for a fixed span; `Duration` is for the calendar's own arithmetic. Years
+fold into months and weeks into days, since within each pair the
+conversion is exact.
+
+`DateTime.add` applies one, in the order XML Schema's [*Adding durations
+to dateTimes*](https://www.w3.org/TR/xmlschema-2/#adding-durations-to-dateTimes)
+lays down: the sub-day part first, so that its whole days can be set
+aside; then the months, with the day of the month **clamped** to the last
+day of wherever it landed; then the days, as a day count. Doing the months
+before the days is why adding a duration is neither commutative nor
+associative — `P1M1D` from the 31st of January is the 1st of March, while
+a day and then a month would be the 2nd — and why ISO 8601 writes the
+components in that one order and no other.
+
+Two things about a duration are worth knowing before relying on it.
+`sign` answers `1`, `-1`, `0`, or **null** when the fields disagree: the
+syntax has a single sign in front of everything, so `{ .months = 1,
+.days = -1 }` is a real length of time that cannot be written down, and
+anything that has to write one out asks first. And
+`DurationParseResult.fractional` says which component carried a decimal
+fraction, because a caller may allow fewer of them than ISO 8601 does —
+XML Schema's `duration` allows one only on the seconds, so `P1.5D` is a
+good ISO 8601 duration and not a valid `xs:duration`, and once the
+fraction is folded into `nanoseconds` there is nothing left to tell from.
+
+Fractions of a year, a month or a week are refused outright rather than
+guessed at, since none of the three has a length in days to divide. The
+alternative `P0003-06-04T12:30:05` spelling of a duration is not read.
 
 ## The calendar arithmetic
 

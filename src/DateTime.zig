@@ -31,6 +31,7 @@ const Second = @import("second.zig").Second;
 const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Date = @import("Date.zig");
+const Duration = @import("Duration.zig");
 const Instant = @import("Instant.zig");
 const formatsequence = @import("formatsequence.zig");
 const FormatTag = formatsequence.FormatTag;
@@ -1927,6 +1928,94 @@ pub fn parseWith(
 }
 
 /// This date as a `Date`, dropping the time of day and the offset.
+/// Adds a `Duration` to this date and time, by the calendar rather than by
+/// the clock.
+///
+/// The order is what makes the answer right, and it is XML Schema's
+/// *Adding durations to dateTimes*:
+///
+///  1. The sub-day part is added to the time of day, and whatever whole days
+///     that carries are set aside.
+///  2. The duration's months are added to the date, and the day of the month
+///     is **clamped** to the last day of wherever it landed — so one month
+///     after the 31st of January is the 28th of February.
+///  3. The duration's days, plus the carry from step 1, are added to that
+///     clamped date as a day count.
+///
+/// Doing the months before the days is why adding a duration is neither
+/// commutative nor associative: `P1M1D` from the 31st of January is the 1st
+/// of March, while a day then a month would be the 2nd.
+///
+/// The offset from UTC is carried over unchanged, because the arithmetic is
+/// on the wall clock: adding a day to a local time gives the same local time
+/// the next day, whatever the zone did in between. The zone's `designation`
+/// is dropped, since the name a zone went by at the old instant is not
+/// something this can know for the new one — ask a `TimeZone` for it.
+pub fn add(self: DateTime, duration: Duration) DateTime {
+    const time_of_day: i128 = @as(i128, self.hour) * Duration.nanoseconds_per_hour +
+        @as(i128, self.minute) * Duration.nanoseconds_per_minute +
+        @as(i128, self.second) * Duration.nanoseconds_per_second +
+        @as(i128, self.nanosecond);
+
+    const total = time_of_day + duration.nanoseconds;
+    const carry = @divFloor(total, Duration.nanoseconds_per_day);
+    const rest = total - carry * Duration.nanoseconds_per_day;
+
+    const date = (Duration{
+        .months = duration.months,
+        .days = duration.days + @as(i64, @intCast(carry)),
+    }).addToDate(self.asDate());
+
+    var result: DateTime = .{
+        .year = date.year,
+        .month = date.month,
+        .day = date.day,
+        .hour = @intCast(@divFloor(rest, Duration.nanoseconds_per_hour)),
+        .minute = @intCast(@mod(@divFloor(rest, Duration.nanoseconds_per_minute), 60)),
+        .second = @intCast(@mod(@divFloor(rest, Duration.nanoseconds_per_second), 60)),
+        .nanosecond = @intCast(@mod(rest, Duration.nanoseconds_per_second)),
+        .offset = self.offset,
+    };
+    result.updateDayOfWeek();
+    return result;
+}
+
+test add {
+    // The sub-day part carries into the day, and the day into the month.
+    try std.testing.expectEqual(
+        DateTime{ .year = 2001, .month = .Dec, .day = 2, .hour = 11, .minute = 30, .weekday = .Sun },
+        (DateTime{ .year = 2001, .month = .Dec, .day = 1, .hour = 10, .minute = 30 })
+            .add(.{ .nanoseconds = 25 * Duration.nanoseconds_per_hour }),
+    );
+    // Backwards over a month boundary.
+    try std.testing.expectEqual(
+        DateTime{ .year = 2001, .month = .Nov, .day = 30, .hour = 23, .weekday = .Fri },
+        (DateTime{ .year = 2001, .month = .Dec, .day = 1 })
+            .add(.{ .nanoseconds = -Duration.nanoseconds_per_hour }),
+    );
+    // The clamp, and that it happens before the days are added.
+    try std.testing.expectEqual(
+        DateTime{ .year = 2001, .month = .Feb, .day = 28, .weekday = .Wed },
+        (DateTime{ .year = 2001, .month = .Jan, .day = 31 }).add(.{ .months = 1 }),
+    );
+    try std.testing.expectEqual(
+        DateTime{ .year = 2001, .month = .Mar, .day = 1, .weekday = .Thu },
+        (DateTime{ .year = 2001, .month = .Jan, .day = 31 }).add(.{ .months = 1, .days = 1 }),
+    );
+    // The offset is carried over: the arithmetic is on the wall clock.
+    try std.testing.expectEqual(
+        @as(i32, -18000),
+        (DateTime{ .year = 2001, .month = .Jan, .day = 1, .offset = -18000 })
+            .add(.{ .days = 1 }).offset,
+    );
+    // A fraction of a second survives, and carries.
+    try std.testing.expectEqual(
+        DateTime{ .year = 2001, .month = .Jan, .day = 1, .second = 1, .nanosecond = 500_000_000, .weekday = .Mon },
+        (DateTime{ .year = 2001, .month = .Jan, .day = 1, .nanosecond = 500_000_000 })
+            .add(.{ .nanoseconds = Duration.nanoseconds_per_second }),
+    );
+}
+
 pub fn asDate(self: DateTime) Date {
     return .{
         .year = self.year,
