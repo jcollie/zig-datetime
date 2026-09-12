@@ -47,7 +47,7 @@ const std = @import("std");
 
 /// The IANA release that `build.zig.zon` pins. Kept here so the generated
 /// data can record which release it came from.
-const tz_release = "2026c";
+const tz_release = "2026d";
 
 /// The CLDR release `src/windowszones.zig` was generated from, recorded in
 /// the generated file and reported as `tzdb.windows.cldr_version`. The file

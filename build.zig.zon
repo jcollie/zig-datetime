@@ -15,13 +15,13 @@
         // hold exactly what tzdb-2026c.tar.lz holds, which Zig's package
         // manager cannot read because it does not support lzip.
         .tzcode = .{
-            .url = "https://data.iana.org/time-zones/releases/tzcode2026c.tar.gz",
-            .hash = "N-V-__8AACd5DwCVzz_8RDRfd3hfmj0Kmt3fUylmfdGyV1Pl",
+            .url = "https://data.iana.org/time-zones/releases/tzcode2026d.tar.gz",
+            .hash = "N-V-__8AABybDwDd46ZHFqBjb0twea7p9vwNzdSzUHFwA55f",
             .lazy = true,
         },
         .tzdata = .{
-            .url = "https://data.iana.org/time-zones/releases/tzdata2026c.tar.gz",
-            .hash = "N-V-__8AANpVFQC_1B4XtOlpRUfO6ZFsDlp3KppGU6Xal5yI",
+            .url = "https://data.iana.org/time-zones/releases/tzdata2026d.tar.gz",
+            .hash = "N-V-__8AAFiAFQDNovBNmFwF3hznlSfpY7KwAN3Jy7rhie29",
             .lazy = true,
         },
         // moment.js, used only by `zig build oracle`, which checks this
