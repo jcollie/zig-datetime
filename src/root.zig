@@ -83,6 +83,9 @@ pub const tzif = @import("tzif.zig");
 pub const posixtz = @import("posixtz.zig");
 /// The SI decimal prefixes, for moving a value between units of time.
 pub const si = @import("si.zig");
+/// Whether a year is a leap year, which several of the types ask and which
+/// a caller may want to ask on its own.
+pub const leap = @import("leap.zig");
 
 /// How many years either side of year 0 the sweep below covers, from
 /// `-Dbig-test-years`. Zero, the default, skips it.
