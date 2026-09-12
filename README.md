@@ -27,6 +27,10 @@ reachable of the two:
 git clone https://github.com/jcollie/zig-datetime.git
 ```
 
+It is mirrored on Tangled at <https://tangled.org/jcollie.dev/zig-datetime>,
+a forge built on the AT Protocol, where the repository is addressed by its
+owner's identity rather than by a server name.
+
 It is also published on [Radicle][radicle], a peer-to-peer code forge that
 needs no account on anything. A Radicle repository is findable only by its
 repository ID, so this is that ID:
@@ -50,8 +54,8 @@ rad seed rad:zrcUiTVhYvJSzwRyCBNmfM9oHkSo
 ```
 
 The Radicle copy is public, named `zig-datetime`, and its default branch is
-`main` — the same name and branch as the other two, so any of the three gives
-the same history.
+`main` — the same name and branch as the others, so any of the four gives the
+same history.
 
 [radicle]: https://radicle.xyz
 
