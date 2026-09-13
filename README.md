@@ -640,9 +640,10 @@ std.debug.print("{s}\n", .{local.designation.slice()});   // CDT
 CLDR patterns are formatting only. Parsing them is a separate and much
 less well specified problem — several fields are ambiguous or
 unparseable by construction — and the moment sequences, Go's layouts,
-`iso8601` and `rfc822` are all still there to read text with.
+`iso8601`, `rfc822` and `rfc5322` are all still there to read text
+with.
 
-Two interchange formats have their own parsers, because the shape of
+The interchange formats have their own parsers, because the shape of
 their input is not known ahead of reading it and a format string cannot
 express that.
 
@@ -652,6 +653,51 @@ express that.
 const result = try datetime.rfc822.parse("Fri, 21 Nov 1997 09:55:06 -0600");
 const utc = result.value.toUtc();
 ```
+
+It reads the syntax leniently, which is what a feed or a mailbox needs:
+the day name, its comma and the seconds are all optional, two and three
+digit years are windowed the way RFC 5322 section 4.3 says to, and the
+alphabetic zones (`GMT`, `EST`, and the single letter military ones) are
+accepted alongside `±hhmm`.
+
+**RFC 5322**, the current syntax of a message `Date:` header, is the same
+grammar read strictly:
+
+```zig
+const result = try datetime.rfc5322.parse("Fri, 21 Nov 1997 09:55:06 -0600");
+```
+
+Strictly means the obsolete forms above are refused — a four digit year,
+a two digit hour, a numeric zone and the comma after the day name are all
+required, so `20 Jun 82 12:34 EST` is `error.ParseError` here and a date
+for `rfc822.parse`. The division is between forms that change what a date
+*means* and forms that do not: a two digit year has to be guessed at a
+century and an alphabetic zone is ambiguous between the handful RFC 822
+named and the hundreds in use.
+
+What it adds in exchange is the rest of RFC 5322, which `rfc822` does not
+have:
+
+```zig
+// Comments stand wherever whitespace may, they nest, and `\` quotes the
+// character after it. A header still folded across lines is read as it
+// arrived. All of it is part of the date, so `result.str` covers it.
+const commented = try datetime.rfc5322.parse(
+    "Thu,\r\n 13 (the thirteenth) Feb 1969 23:32:54 -0330 (Newfoundland)",
+);
+
+// Section 3.3 gives `-0000` a meaning `+0000` does not: the time is UTC,
+// but the sender would not say what zone it was in, so the date carries
+// no zone information at all. Both leave `offset` zero, so the
+// distinction is reported on its own.
+const withheld = try datetime.rfc5322.parse("21 Nov 1997 09:55:06 -0000");
+std.debug.print("{}\n", .{withheld.unknown_offset});   // true
+```
+
+Years past four digits are well formed — the grammar says `4*DIGIT` —
+and a date must be semantically valid as well as well formed, so a day
+name that disagrees with the date it precedes is an error in both
+parsers.
 
 **ISO 8601**, including the RFC 3339 subset that most internet protocols
 mean when they say ISO 8601:

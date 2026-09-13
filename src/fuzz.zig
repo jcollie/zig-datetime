@@ -36,6 +36,7 @@ const iso8601 = @import("iso8601.zig");
 const locale = @import("locale.zig");
 const posixtz = @import("posixtz.zig");
 const rfc822 = @import("rfc822.zig");
+const rfc5322 = @import("rfc5322.zig");
 const tzif = @import("tzif.zig");
 const tzdb = @import("tzdb.zig");
 
@@ -235,6 +236,50 @@ test "fuzz rfc822.parse" {
 
 test "mutate rfc822.parse" {
     try overMutations(rfc822Property, &rfc822_seeds);
+}
+
+// RFC 5322 -------------------------------------------------------------
+
+fn rfc5322Property(text: []const u8) !void {
+    const result = rfc5322.parse(text) catch return;
+
+    try isWellFormed(result.value);
+    try std.testing.expect(result.str.len <= text.len);
+    try std.testing.expectEqualStrings(result.str, text[0..result.str.len]);
+
+    // Only "-0000" claims an unknown offset, and it is UTC either way.
+    if (result.unknown_offset) try std.testing.expectEqual(@as(i32, 0), result.value.offset);
+}
+
+const rfc5322_seeds = [_][]const u8{
+    "",
+    "Fri, 21 Nov 1997 09:55:06 -0600",
+    "21 Nov 1997 09:55 +0000",
+    "Thu, 13 (the thirteenth) Feb 1969 23:32:54 -0330 (Newfoundland)",
+    "Fri,\r\n 21 Nov\r\n\t1997 09:55:06 -0600",
+    "Fri, 21 Nov 1997 09:55:06 -0000",
+    "Mon, 21 Nov 1997 09:55:06 -0600",
+    "20 Jun 82 12:34 EST",
+    "21 Nov 1997 09:55:06 +9999",
+    "21 Nov 1997 12345678901 09:55:06 +0000",
+    "Fri, 21 Nov 1997 09:55:06 -0600 (never closed",
+    "((((((((((",
+    "21 Nov 1997 09:55:06 -0600 (a (nested \\) one)",
+    "\r\n\r\n\r\n",
+    "Fri,",
+    "21 Nov",
+};
+
+test "rfc5322.parse over the seeds" {
+    try overSeeds(rfc5322Property, &rfc5322_seeds);
+}
+
+test "fuzz rfc5322.parse" {
+    try overFuzzer(rfc5322Property);
+}
+
+test "mutate rfc5322.parse" {
+    try overMutations(rfc5322Property, &rfc5322_seeds);
 }
 
 // Format strings -------------------------------------------------------

@@ -20,6 +20,7 @@ const Instant = datetime.Instant;
 const TimeZone = datetime.TimeZone;
 const iso8601 = datetime.iso8601;
 const rfc822 = datetime.rfc822;
+const rfc5322 = datetime.rfc5322;
 const tzdb = datetime.tzdb;
 
 const N = 10_000_000;
@@ -185,6 +186,23 @@ pub fn main(init: std.process.Init) !void {
         const ns: u64 = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
         std.mem.doNotOptimizeAway(acc);
         report("rfc822.parse", ns);
+    }
+
+    // The same texts, which `ddd, DD MMM YYYY HH:mm:ss ZZ` writes in the
+    // form RFC 5322 says to generate, so the two parsers are timed on
+    // identical input and the difference is the grammar rather than the
+    // data.
+    {
+        const t0: std.Io.Timestamp = .now(io, .awake);
+        var acc: i64 = 0;
+        for (0..N) |i| {
+            const at = i & (table_len - 1);
+            const parsed = try rfc5322.parse(rfc_texts[at][0..rfc_lens[at]]);
+            acc +%= parsed.value.year;
+        }
+        const ns: u64 = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
+        std.mem.doNotOptimizeAway(acc);
+        report("rfc5322.parse", ns);
     }
 
     // --- timezones ----------------------------------------------------

@@ -17,6 +17,8 @@
 //! in `formatsequence.FormatTag`, which is the general case. `iso8601`
 //! and `rfc822` parse the two standard syntaxes, whose shape is not known
 //! until the input is read and so cannot go through a format string.
+//! `rfc5322` is the strict reading of that second syntax, for a caller
+//! that wants the current grammar and not the obsolete forms.
 //! `golayout` and `cldr` are the other two vocabularies a format string
 //! can be written in, taken from Go and from UTS #35.
 //!
@@ -66,6 +68,10 @@ pub const locale = @import("locale.zig");
 pub const iso8601 = @import("iso8601.zig");
 /// Parsing of the RFC 822 date and time syntax used by mail and HTTP.
 pub const rfc822 = @import("rfc822.zig");
+/// Parsing of the RFC 5322 `date-time`, the current syntax of a message
+/// `Date:` header: comments and folding are read, the obsolete forms are
+/// not.
+pub const rfc5322 = @import("rfc5322.zig");
 /// Formatting and parsing with Go's time layouts, where the format string
 /// is one particular time written the way you want yours written.
 pub const golayout = @import("golayout.zig");
