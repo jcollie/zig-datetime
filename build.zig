@@ -26,6 +26,11 @@
 //! shell rather than from a pin, because the layouts are part of its
 //! standard library; the oracle prints the version it ran against.
 //!
+//! `zig build oracle-strftime` does the same for `strftime`, against the
+//! C library that defines those conversions. The oracle is C, compiled by
+//! Zig and linked against whatever libc the host has, so it costs no
+//! dependency and nothing in the dev shell.
+//!
 //! `zig build oracle-parse` does the same for parsing. `DateTime.Mode` has
 //! the same two settings moment's strict flag chooses between, and each is
 //! held to the matching mode of moment. It carries a short list of known
@@ -628,6 +633,60 @@ pub fn build(b: *std.Build) void {
     const cldr_step = b.step("oracle-cldr", "Check the CLDR patterns against ICU");
     cldr_step.dependOn(&run_cldr_oracle.step);
     test_step.dependOn(&run_cldr_oracle.step);
+
+    // And the same again for the strftime conversions, against the C
+    // library that defines them. Nothing is fetched and nothing is added
+    // to the dev shell: the oracle is C, the C library is already there,
+    // and Zig compiles the one and links the other.
+    //
+    // It runs only where there is a libc to ask. A Windows host has
+    // `strftime` but no `strptime`, no `tm_gmtoff` and no `tm_zone`, so
+    // the comparison there would be against a different function; the
+    // step is declared everywhere and only joins `test` on a platform
+    // whose libc is the one being followed.
+    const strftime_dump = b.addExecutable(.{
+        .name = "oracle-strftime-dump",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/oracle_strftime_dump.zig"),
+            .target = b.graph.host,
+            .imports = &.{
+                .{ .name = "datetime", .module = host_module },
+            },
+        }),
+    });
+
+    const strftime_oracle_module = b.createModule(.{
+        .target = b.graph.host,
+        .optimize = .ReleaseFast,
+        .link_libc = true,
+    });
+    strftime_oracle_module.addCSourceFile(.{
+        .file = b.path("tools/oracle_strftime.c"),
+        .language = .c,
+        .flags = &.{"-std=c11"},
+    });
+
+    const strftime_oracle = b.addExecutable(.{
+        .name = "oracle-strftime",
+        .root_module = strftime_oracle_module,
+    });
+
+    const run_strftime_dump = b.addRunArtifact(strftime_dump);
+
+    const run_strftime_oracle = b.addRunArtifact(strftime_oracle);
+    run_strftime_oracle.addFileArg(run_strftime_dump.captureStdOut(.{ .basename = "strftime.tsv" }));
+    run_strftime_oracle.stdio = .inherit;
+    // `%s` and `%Z` are the two conversions that reach for the process's
+    // own timezone in glibc, so the process is given one it cannot be
+    // surprised by.
+    run_strftime_oracle.setEnvironmentVariable("TZ", "UTC");
+
+    const strftime_step = b.step(
+        "oracle-strftime",
+        "Check the strftime conversions against the C library",
+    );
+    strftime_step.dependOn(&run_strftime_oracle.step);
+    if (b.graph.host.result.os.tag != .windows) test_step.dependOn(&run_strftime_oracle.step);
 }
 
 /// Builds the embedded locale table and returns the path of the generated

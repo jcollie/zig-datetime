@@ -19,8 +19,9 @@
 //! until the input is read and so cannot go through a format string.
 //! `rfc5322` is the strict reading of that second syntax, for a caller
 //! that wants the current grammar and not the obsolete forms.
-//! `golayout` and `cldr` are the other two vocabularies a format string
-//! can be written in, taken from Go and from UTS #35.
+//! `golayout`, `cldr` and `strftime` are the other three vocabularies a
+//! format string can be written in, taken from Go, from UTS #35 and from
+//! the C library.
 //!
 //! Timezone support starts at `tzdb`, which loads a `TimeZone` either
 //! from the operating system's copy of the IANA database or from one
@@ -79,6 +80,10 @@ pub const golayout = @import("golayout.zig");
 /// that ICU, Java and `Intl.DateTimeFormat` speak. `-Dembed-cldr` adds
 /// CLDR's locales; English is built in either way.
 pub const cldr = @import("cldr.zig");
+/// Formatting and parsing with the C library's `strftime` conversions,
+/// the `%Y-%m-%d` vocabulary that configuration files and shell scripts
+/// are written in.
+pub const strftime = @import("strftime.zig");
 /// A timezone, and the lookups that apply it to an instant.
 pub const TimeZone = @import("TimeZone.zig");
 /// Where timezone data comes from: the system's copy or an embedded one.

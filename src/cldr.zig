@@ -13,13 +13,14 @@
 //! Anything that is not a letter is copied through, and text inside
 //! single quotes is copied through even if it is: `'at' HH:mm`.
 //!
-//! That makes it a third vocabulary beside the sequences in
-//! `formatsequence`, which moment.js established, and the layouts in
-//! `golayout`, which Go did. The three overlap and disagree -- `D` is the
-//! day of the month to moment and the day of the year to CLDR, and `Y`
-//! is the calendar year to moment and the week-numbering year to CLDR --
-//! so they are kept apart rather than merged, and a pattern means here
-//! what UTS #35 says it means.
+//! That makes it one of four vocabularies, beside the sequences in
+//! `formatsequence`, which moment.js established, the layouts in
+//! `golayout`, which Go did, and the conversions in `strftime`, which
+//! the C library did. They overlap and disagree -- `D` is the day of the
+//! month to moment and the day of the year to CLDR, and `Y` is the
+//! calendar year to moment and the week-numbering year to CLDR -- so
+//! they are kept apart rather than merged, and a pattern means here what
+//! UTS #35 says it means.
 //!
 //! What CLDR brings that neither of the others has is that the locale
 //! carries its own patterns. A caller that does not want to decide how a

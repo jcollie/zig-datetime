@@ -309,6 +309,11 @@ care which.
 
 ## Formatting and parsing
 
+There are four vocabularies a format string can be written in. The
+moment.js sequences below are the general case; `golayout`, `cldr` and
+`strftime` are the same job said the way Go, the Unicode Consortium and
+the C library say it, and each has a section of its own further down.
+
 Format strings are sequences of tags taken from moment.js, tokenized at
 compile time:
 
@@ -640,8 +645,83 @@ std.debug.print("{s}\n", .{local.designation.slice()});   // CDT
 CLDR patterns are formatting only. Parsing them is a separate and much
 less well specified problem — several fields are ambiguous or
 unparseable by construction — and the moment sequences, Go's layouts,
-`iso8601`, `rfc822` and `rfc5322` are all still there to read text
-with.
+the strftime conversions, `iso8601`, `rfc822` and `rfc5322` are all
+still there to read text with.
+
+### strftime conversions
+
+`strftime` is the fourth way of saying it, and the one already written
+down in most configuration files: a `%` followed by a letter, and
+everything else copied through.
+
+```zig
+try datetime.strftime.format(value, "%Y-%m-%d %H:%M:%S", writer);
+const value = try datetime.strftime.parseAll("%a, %d %b %Y %H:%M:%S %z", header);
+```
+
+Everything POSIX defines is here, along with the GNU extensions that
+turn up beside it: `%P`, `%k`, `%l`, `%s`, `%e`, `%C`, `%D`, `%F`, `%G`,
+`%g`, `%h`, `%r`, `%R`, `%T`, `%u` and `%V`. Between the `%` and the
+letter go the GNU flags — `-` for no padding, `_` for spaces, `0` for
+zeros, `^` for upper case and `#` for the opposite case — then a minimum
+field width, then the `E` or `O` modifier, which is read and dropped
+because no locale here has an alternative representation to offer:
+
+```zig
+try datetime.strftime.format(value, "%A, %-d %B %Y", writer);   // Friday, 5 January 2024
+try datetime.strftime.format(value, "%^b %_3d", writer);        // JAN   5
+```
+
+Two conversions are `date(1)`'s rather than `strftime(3)`'s, and both
+are here because without them something this library holds could not be
+written at all. `%N` is the nanosecond, nine digits by default and as
+many as a width asks for, so `%3N` is milliseconds. `%:z`, `%::z` and
+`%:::z` are the offset with colons in it, which is what RFC 3339 wants
+and what `%z` cannot spell.
+
+A conversion the library does not know is a **compile error** naming it,
+where the C library would copy it through as text. That is the one place
+a comptime format string earns its keep: `%Q` is a typo, and a typo that
+prints itself is one nobody finds.
+
+Parsing is `strptime`'s shape rather than `strftime`'s: whitespace in the
+format matches any run of it including none, a numeric field takes one
+digit as readily as two, names are matched without regard to case, and
+text after what the format asked for is left alone. `parse` returns what
+it read in `Result.str`; `parseAll` requires the whole input.
+
+#### Compatibility, checked
+
+glibc's `C` locale is the specification and `zig build oracle-strftime`
+diffs against it: every conversion on its own, every flag and width over
+the conversions they say anything about, the shapes callers write, and
+each one read straight back. The oracle is C, compiled by Zig and linked
+against whatever libc the host has, so it needs nothing added to the dev
+shell.
+
+```
+12496 comparisons against glibc 2.42, no divergence beyond 626 known and documented
+```
+
+Those are the deliberate differences, and the oracle carries the same
+list so that anything else fails. Writing:
+
+- **`%s` honours the offset.** glibc reaches a `struct tm` through
+  `mktime`, so its count of seconds is the fields read against the
+  process's timezone and `tm_gmtoff` is ignored. A `DateTime` carries the
+  offset that says which instant it names, and uses it.
+- **`%Z` writes nothing when the zone is not known**, which POSIX allows
+  in so many words. glibc falls back to the running process's zone name,
+  which would be a claim about where a reading was made that nothing here
+  can support.
+
+Reading, glibc's `strptime` is followed as far as it goes and then four
+things are kept that it throws away or refuses: `%G` with `%V` resolves
+an ISO week date, `%j` names a date without a year beside it, `%P` is
+read as well as written, and a flag, a width or an `E`/`O` modifier is
+ignored rather than refused — so that a format string which writes a date
+can read one back, which in glibc it cannot. `%s` reads a negative count
+too, which glibc writes and will not read.
 
 The interchange formats have their own parsers, because the shape of
 their input is not known ahead of reading it and a format string cannot
@@ -861,6 +941,7 @@ zig build oracle-parse             # parsing against moment.js, in both modes
 zig build oracle-go                # Go's time layouts against Go itself
 zig build oracle-locale            # the embedded locales against moment.js
 zig build oracle-cldr              # the CLDR patterns against ICU
+zig build oracle-strftime          # the strftime conversions against the C library
 zig build bench                    # always ReleaseFast, whatever -Doptimize says
 ```
 
@@ -875,7 +956,10 @@ which is the quick way to iterate on one locale.
 
 The C++ in `tools/oracle_cldr.cpp` is compiled by Zig rather than by a
 toolchain of its own, so the dev shell needs ICU and `pkg-config` and
-nothing more.
+nothing more. The C in `tools/oracle_strftime.c` is compiled the same
+way and needs nothing at all beyond a libc, which is also why that one
+step is the only oracle that does not join `zig build test` on Windows:
+`strptime`, `tm_gmtoff` and `tm_zone` are not there to compare against.
 
 `src/fuzz.zig` holds a property per parser: nothing crashes on input
 nobody chose, whatever comes back holds together, and anything with an
@@ -927,3 +1011,80 @@ zig build docs-serve            # http://127.0.0.1:8000, -Ddocs-port=N to change
 A server rather than opening `zig-out/docs/index.html`, because the
 viewer fetches `sources.tar` and `main.wasm` at runtime and a browser
 refuses those from a `file://` page.
+
+## References cited
+
+The documents this library is written against. They are kept in a Zotero
+collection called `zig-datetime`, with the full text of each RFC attached.
+
+- **[POSIX]** The Open Group and IEEE, *The Open Group Base Specifications
+  Issue 8*, IEEE Std 1003.1-2024,
+  <https://pubs.opengroup.org/onlinepubs/9799919799/>. The `strftime` and
+  `strptime` conversion specifications that `strftime` implements, and the
+  `TZ` environment variable whose rule syntax `posixtz` reads.
+- **[GLIBC]** Free Software Foundation, "Formatting Calendar Time", *The GNU
+  C Library Reference Manual*,
+  <https://www.gnu.org/software/libc/manual/html_node/Formatting-Calendar-Time.html>.
+  The extensions POSIX does not have — `%P`, `%k`, `%l`, `%s`, the `-`, `_`,
+  `0`, `^` and `#` flags and the field width — and, through
+  `tools/oracle_strftime.c`, the behaviour those are checked against.
+- **[COREUTILS]** Free Software Foundation, "date invocation", *GNU Coreutils
+  Manual*,
+  <https://www.gnu.org/software/coreutils/manual/html_node/date-invocation.html>.
+  `%N` and the `%:z` family, which are `date(1)`'s rather than
+  `strftime(3)`'s and are the only way to write a nanosecond or an RFC 3339
+  offset.
+- **[ISO8601]** International Organization for Standardization, *Date and
+  time — Representations for information interchange — Part 1: Basic rules*,
+  ISO 8601-1:2019, <https://www.iso.org/standard/70907.html>. The calendar,
+  ordinal and week date forms that `iso8601` reads, and the duration syntax
+  `Duration` holds.
+- **[UTS35]** Unicode Consortium, *Unicode Locale Data Markup Language (LDML)
+  Part 4: Dates*, UTS #35,
+  <https://unicode.org/reports/tr35/tr35-dates.html>. The pattern vocabulary
+  `cldr` speaks, field by field and count by count.
+- **[CLDR]** Unicode Consortium, *Unicode CLDR Project*,
+  <https://cldr.unicode.org/>. The locale data `-Dembed-cldr` compiles in,
+  and `windowsZones.xml`, which `src/windowszones.zig` is generated from.
+- **[ICU]** Unicode Consortium, "Formatting Dates and Times", *ICU
+  Documentation*,
+  <https://unicode-org.github.io/icu/userguide/format_parse/datetime/>. The
+  reference implementation of UTS #35, and what `zig build oracle-cldr`
+  diffs against.
+- **[MOMENT]** *Moment.js Documentation*, <https://momentjs.com/docs/>. The
+  format-string sequences `DateTime.format` uses, the two parsing modes, and
+  the locale data `-Dembed-locales` compiles in.
+- **[GO]** *time package*, Go Packages, <https://pkg.go.dev/time>. The
+  reference-time layouts `golayout` implements, and what `zig build
+  oracle-go` diffs against.
+- **[TZDB]** Internet Assigned Numbers Authority, *Time Zone Database*,
+  <https://www.iana.org/time-zones>. The zone data itself, and `zic`, the
+  reference compiler `-Dembed-tzdata` builds and runs.
+- **[HINNANT]** Hinnant, H., *chrono-Compatible Low-Level Date Algorithms*,
+  <https://howardhinnant.github.io/date_algorithms.html>. `days_from_civil`
+  and `civil_from_days`, which `Date` is built on, and the sweep over every
+  date in a span of years that `-Dbig-test-years` runs.
+- **[RFC822]** Crocker, D., *Standard for the Format of ARPA Internet Text
+  Messages*, RFC 822, August 1982,
+  <https://www.rfc-editor.org/info/rfc822>. The date syntax `rfc822` reads
+  leniently, including the alphabetic and military zones.
+- **[RFC1123]** Braden, R., Ed., *Requirements for Internet Hosts —
+  Application and Support*, RFC 1123, October 1989,
+  <https://www.rfc-editor.org/info/rfc1123>. The four digit year that
+  amended RFC 822, and the layout Go names `RFC1123`.
+- **[RFC2822]** Resnick, P., Ed., *Internet Message Format*, RFC 2822, April
+  2001, <https://www.rfc-editor.org/info/rfc2822>. The revision of RFC 822
+  that RFC 5322 in turn obsoletes.
+- **[RFC3339]** Klyne, G. and C. Newman, *Date and Time on the Internet:
+  Timestamps*, RFC 3339, July 2002,
+  <https://www.rfc-editor.org/info/rfc3339>. The ISO 8601 profile most
+  internet protocols mean, which `iso8601` accepts and which
+  `strftime.pattern.rfc_3339` writes.
+- **[RFC5322]** Resnick, P., Ed., *Internet Message Format*, RFC 5322,
+  October 2008, <https://www.rfc-editor.org/info/rfc5322>. The current
+  `date-time` grammar `rfc5322` reads strictly: comments, folding, and the
+  meaning section 3.3 gives `-0000`.
+- **[RFC8536]** Olson, A., Eggert, P. and K. Murchison, *The Time Zone
+  Information Format (TZif)*, RFC 8536, February 2019,
+  <https://www.rfc-editor.org/info/rfc8536>. The binary format `tzif` reads,
+  all three versions of it.

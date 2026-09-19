@@ -37,6 +37,7 @@ const locale = @import("locale.zig");
 const posixtz = @import("posixtz.zig");
 const rfc822 = @import("rfc822.zig");
 const rfc5322 = @import("rfc5322.zig");
+const strftime = @import("strftime.zig");
 const tzif = @import("tzif.zig");
 const tzdb = @import("tzdb.zig");
 
@@ -321,6 +322,59 @@ test "fuzz DateTime.parseWith" {
 
 test "mutate DateTime.parseWith" {
     try overMutations(formatStringProperty, &format_string_seeds);
+}
+
+// strftime -------------------------------------------------------------
+
+/// A strftime format string is comptime, so the untrusted surface is the
+/// text handed to the parser. Everything it can reach is in one format
+/// string here: names, numbers at several widths, a day of the year, an
+/// ISO week date, a meridiem, an offset and a zone abbreviation, which is
+/// also the assembly in `State.finish` -- the arithmetic that turns a
+/// week number or a day of the year into a date, and the place a value
+/// that had already parsed can still overflow.
+fn strftimeProperty(text: []const u8) !void {
+    inline for (.{
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%a, %d %b %Y %H:%M:%S %Z",
+        "%G-W%V-%u",
+        "%C%y-%j %I:%M %p",
+        "%s",
+    }) |format_string| {
+        if (strftime.parse(format_string, text)) |result| {
+            try isWellFormed(result.value);
+            try std.testing.expect(result.str.len <= text.len);
+            try std.testing.expectEqualStrings(result.str, text[0..result.str.len]);
+        } else |_| {}
+    }
+}
+
+const strftime_seeds = [_][]const u8{
+    "",
+    "2024-03-15T14:30:05-0500",
+    "Fri, 15 Mar 2024 14:30:05 CDT",
+    "2024-W11-5",
+    "2024-075 02:30 PM",
+    "1710513005",
+    "-2208988800",
+    "9999-99-99T99:99:99+9999",
+    "0000-W53-7",
+    "0000-366 12:00 AM",
+    "99999999999999999999",
+    "2024-03-15T14:30:05Z",
+    "        ",
+};
+
+test "strftime.parse over the seeds" {
+    try overSeeds(strftimeProperty, &strftime_seeds);
+}
+
+test "fuzz strftime.parse" {
+    try overFuzzer(strftimeProperty);
+}
+
+test "mutate strftime.parse" {
+    try overMutations(strftimeProperty, &strftime_seeds);
 }
 
 // Locales --------------------------------------------------------------
