@@ -31,6 +31,7 @@ const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Month = @import("month.zig").Month;
 const Year = @import("year.zig").Year;
 const generated = @import("cldrlocales");
+const cldr_options = @import("cldr_options");
 
 /// Which of CLDR's two grammatical contexts a name is asked for in.
 ///
@@ -668,15 +669,49 @@ fn fromEntry(comptime raw: anytype) Locale {
     };
 }
 
+/// Whether `tag` is one the build asked to keep.
+///
+/// `-Dcldr-locales` is a comma separated list, and empty means all of them,
+/// which is the default. Case is folded, because CLDR identifiers are case
+/// insensitive by definition and somebody writing `pt-br` on a command line
+/// means `pt-BR`.
+fn wanted(comptime tag: []const u8) bool {
+    const requested = cldr_options.locales;
+    if (requested.len == 0) return true;
+
+    var rest: []const u8 = requested;
+    while (rest.len > 0) {
+        const comma = std.mem.indexOfScalar(u8, rest, ',') orelse rest.len;
+        if (std.ascii.eqlIgnoreCase(rest[0..comma], tag)) return true;
+        rest = if (comma == rest.len) rest[comma..] else rest[comma + 1 ..];
+    }
+    return false;
+}
+
 /// The generated locales, sorted by tag. Empty unless the build asked for
-/// them with `-Dembed-cldr`.
+/// them with `-Dembed-cldr`, and narrowed to what `-Dcldr-locales` named.
+///
+/// The table this is built from holds every locale CLDR ships, because it
+/// is generated once and committed rather than cut to size by each build.
+/// Narrowing here costs a binary nothing it would have saved by narrowing
+/// there: an entry no `Locale` is built from is comptime data nothing
+/// refers to, and none of its strings reach the output.
 pub const all: []const Locale = built: {
     // Every locale builds its own tables, and there can be seven hundred
     // and sixty-six of them.
     @setEvalBranchQuota(10_000_000);
-    var out: [generated.entries.len]Locale = undefined;
-    for (&out, 0..) |*slot, index| {
-        slot.* = fromEntry(generated.entries[index]);
+
+    var count: usize = 0;
+    for (generated.entries) |entry| {
+        if (wanted(entry.tag)) count += 1;
+    }
+
+    var out: [count]Locale = undefined;
+    var next: usize = 0;
+    for (generated.entries) |entry| {
+        if (!wanted(entry.tag)) continue;
+        out[next] = fromEntry(entry);
+        next += 1;
     }
     const final = out;
     break :built &final;
@@ -788,7 +823,10 @@ test byName {
     try std.testing.expectEqualStrings("en", byName("en-US").?.tag);
     try std.testing.expectEqualStrings("en", byName("en-Latn-GB").?.tag);
 
-    if (embedded) {
+    // Only when the table is the whole of CLDR. `-Dcldr-locales` narrows it
+    // to what was named, and a build that asked for three of them has no
+    // `fr-CA` to find -- which is the option working rather than failing.
+    if (embedded and cldr_options.locales.len == 0) {
         try std.testing.expectEqualStrings("fr", byName("fr").?.tag);
         try std.testing.expectEqualStrings("fr-CA", byName("fr-ca").?.tag);
 

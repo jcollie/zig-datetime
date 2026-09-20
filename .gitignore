@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 # SPDX-License-Identifier: MIT
 
-/.zig-cache
-/zig-out
+# Anywhere, not just here: `upstream/` is a project of its own and builds
+# into its own directory.
+.zig-cache/
+zig-out/
+zig-pkg/
 /result*
-/zig-pkg
 # A Wine prefix, for `zig build test -Dtarget=x86_64-windows -fwine`.
 /.wine

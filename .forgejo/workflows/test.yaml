@@ -35,7 +35,7 @@ jobs:
         # `zig-pkg` is where fetched dependencies land when the Zig cache
         # is inside the tree, and zigwin32 is a hundred thousand generated
         # lines that are not this project's to format.
-        run: nix develop .#default -c zig fmt --check . --exclude zig-pkg
+        run: nix develop .#default -c zig fmt --check . --exclude zig-pkg --exclude upstream/zig-pkg
 
       - name: Check REUSE compliance
         run: nix develop .#default -c reuse lint

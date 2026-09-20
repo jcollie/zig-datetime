@@ -443,9 +443,11 @@ zig build -Dembed-locales
 ```
 
 The data is moment's own, read out of its locale files by
-`tools/gen_locales.js` the way the timezone database is read out of IANA's
-sources — a locale transcribed by hand would be a divergence built in at
-the source. The two pieces moment holds as functions rather than data, the
+`upstream/src/gen_locales.js` — a locale transcribed by hand would be a
+divergence built in at the source. The table it writes,
+`src/locales/all.zig`, is committed, so `-Dembed-locales` compiles a file
+that is already here and fetches nothing; `zig build gen-locales`
+regenerates it when moment makes a release. The two pieces moment holds as functions rather than data, the
 meridiem and the ordinal, are enumerated rather than reimplemented: their
 domains are finite, so what comes out is a table that answers the same
 questions.
@@ -572,8 +574,12 @@ formality — CLDR ships no `pt-BR`, because Brazilian Portuguese is the
 default content of `pt`.
 
 The data is the Unicode Consortium's own, read out of its JSON
-distribution by `tools/gen_cldr.js` the way the timezone database is read
-out of IANA's sources and the moment locales out of moment's. It carries
+distribution by `upstream/src/gen_cldr.js`. The table it writes,
+`src/cldrlocales/all.zig`, is committed and holds every locale CLDR ships,
+so `-Dembed-cldr` compiles a file that is already here and fetches nothing,
+and `-Dcldr-locales` narrows what that build compiles rather than what was
+generated — an entry no locale is built from costs a binary nothing.
+`zig build gen-cldr` regenerates the table when CLDR makes a release. It carries
 what CLDR has and moment has no notion of: era names, quarter names, the
 narrow width, the difference between the name inside a date and the name
 standing alone, the flexible day periods that make `B` write "in the
@@ -946,17 +952,27 @@ zig build bench                    # always ReleaseFast, whatever -Doptimize say
 ```
 
 Every oracle is part of `zig build test`, so an ordinary run needs `node`,
-`go` and ICU, and fetches moment and CLDR the first time. moment and CLDR
-are pinned in `build.zig.zon`, because each is the specification being
-tested against and a floating version would move the target; Go and ICU
-are not, because their behaviour is part of a toolchain rather than
-something to fetch, and each oracle prints the version it ran against.
-`-Dcldr-locales` narrows the CLDR oracle as well as the embedded table,
-which is the quick way to iterate on one locale.
+`go` and ICU, and fetches moment and CLDR the first time.
 
-The C++ in `tools/oracle_cldr.cpp` is compiled by Zig rather than by a
-toolchain of its own, so the dev shell needs ICU and `pkg-config` and
-nothing more. The C in `tools/oracle_strftime.c` is compiled the same
+They live in `upstream/`, which is a Zig project of its own with a manifest
+of its own, and the steps above run it from here. The reason is what a
+declared dependency costs: moment and the three CLDR packages are 143 MB,
+and anything that reads a manifest rather than running a build — `zon2nix`,
+and every Nix expression generated from it — reads every entry whether the
+build ever calls for that package or not. Guarding the `b.lazyDependency`
+call stops the fetch and not the declaration, so the entry has to live
+somewhere a consumer's tooling does not read. Each oracle can also be run
+from inside that directory, which is the same thing without the hop.
+
+moment and CLDR are pinned there, because each is the specification being
+tested against and a floating version would move the target; Go and ICU are
+not, because their behaviour is part of a toolchain rather than something to
+fetch, and each oracle prints the version it ran against. `-Dcldr-locales`
+narrows the embedded table, which is the quick way to iterate on one locale.
+
+The C++ in `upstream/src/oracle_cldr.cpp` is compiled by Zig rather than by
+a toolchain of its own, so the dev shell needs ICU and `pkg-config` and
+nothing more. The C in `upstream/src/oracle_strftime.c` is compiled the same
 way and needs nothing at all beyond a libc, which is also why that one
 step is the only oracle that does not join `zig build test` on Windows:
 `strptime`, `tm_gmtoff` and `tm_zone` are not there to compare against.
@@ -1027,7 +1043,7 @@ collection called `zig-datetime`, with the full text of each RFC attached.
   <https://www.gnu.org/software/libc/manual/html_node/Formatting-Calendar-Time.html>.
   The extensions POSIX does not have — `%P`, `%k`, `%l`, `%s`, the `-`, `_`,
   `0`, `^` and `#` flags and the field width — and, through
-  `tools/oracle_strftime.c`, the behaviour those are checked against.
+  `upstream/src/oracle_strftime.c`, the behaviour those are checked against.
 - **[COREUTILS]** Free Software Foundation, "date invocation", *GNU Coreutils
   Manual*,
   <https://www.gnu.org/software/coreutils/manual/html_node/date-invocation.html>.

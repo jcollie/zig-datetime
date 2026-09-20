@@ -1,0 +1,58 @@
+// SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
+// SPDX-License-Identifier: MIT
+
+.{
+    .name = .datetime_upstream,
+    .version = "0.0.0",
+    .fingerprint = 0x5d5549a60e2b5b3b, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        // The library these check and generate for, taken from the checkout
+        // this sits in rather than fetched, so the two are always the same
+        // code.
+        .datetime = .{
+            .path = "..",
+        },
+        // moment.js, which the format strings are modelled on and which the
+        // embedded locale table is read out of.
+        //
+        // Pinned to a version rather than taken from the dev shell, because
+        // moment is the specification being tested against and a different
+        // release would silently move the target.
+        .moment = .{
+            .url = "https://registry.npmjs.org/moment/-/moment-2.30.1.tgz",
+            .hash = "N-V-__8AAHNhQgCiWfjOCo_LQgx55jnHBr2Z61ZAqPU9n5Uo",
+            .lazy = true,
+        },
+        // The Unicode CLDR, in the JSON distribution the Unicode Consortium
+        // publishes. Three packages because CLDR is split by what the data is
+        // about: the calendars and the timezone name formats are in
+        // cldr-dates-full, the week rules and the digits of each numbering
+        // system in cldr-core, and which numbering system a locale writes its
+        // numbers in is in cldr-numbers-full.
+        //
+        // Pinned to release 48, which is the release ICU 78 ships, so that
+        // the oracle is comparing this library against an ICU that holds the
+        // same data rather than a later or earlier one.
+        .cldr_core = .{
+            .url = "https://registry.npmjs.org/cldr-core/-/cldr-core-48.2.0.tgz",
+            .hash = "N-V-__8AAJ77GgCr4jV_q5d8vuaUZIWMrHbXUMYV7il4sgLB",
+            .lazy = true,
+        },
+        .cldr_dates = .{
+            .url = "https://registry.npmjs.org/cldr-dates-full/-/cldr-dates-full-48.2.0.tgz",
+            .hash = "N-V-__8AAGszqAU24FLBIkgdecxizqeniOtXvaJyJNhnerSV",
+            .lazy = true,
+        },
+        .cldr_numbers = .{
+            .url = "https://registry.npmjs.org/cldr-numbers-full/-/cldr-numbers-full-48.2.0.tgz",
+            .hash = "N-V-__8AAP5iTQJ7vhRS_dLVKhpakujqxJsIbu89VYJgXryk",
+            .lazy = true,
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
