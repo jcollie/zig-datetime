@@ -378,7 +378,17 @@ fn parseMarkingZone(value: []const u8) ParseError!struct { result: ParseResult, 
     var date = try parseDate(&cursor, &extended, &precision);
     var time: Time = .{};
 
-    if (cursor.eatAny("Tt ")) {
+    // A `T` promises a time, so what follows it has to be one. A space
+    // promises nothing: it is RFC 3339's stand-in for the `T`, but it is
+    // also the most ordinary way for a date to end and prose to begin. So
+    // it is taken as the separator only when a digit follows it, which
+    // leaves `2024-03-15 and more` as a date and trailing text rather than
+    // an error, while `2024-03-15 25:00` is still an hour out of range
+    // rather than a date with something odd after it.
+    const spaced = cursor.index + 1 < cursor.text.len and
+        cursor.text[cursor.index] == ' ' and
+        std.ascii.isDigit(cursor.text[cursor.index + 1]);
+    if (cursor.eatAny("Tt") or (spaced and cursor.eat(' '))) {
         time = try parseTime(&cursor, &extended, &precision);
         // 24:00 is the end of the day, which is the same instant as
         // midnight starting the next one.
@@ -1013,11 +1023,11 @@ test parseInterval {
     // taken for the separator.
     try std.testing.expectEqualStrings(
         "2024-03-15/03-16",
-        (try parseInterval("2024-03-15/03-16, and/or later")).str,
+        (try parseInterval("2024-03-15/03-16 and/or later")).str,
     );
     try std.testing.expectEqualStrings(
         "2008-02-15/17",
-        (try parseInterval("2008-02-15/17, later")).str,
+        (try parseInterval("2008-02-15/17 later")).str,
     );
 
     for ([_][]const u8{
@@ -1228,13 +1238,13 @@ const Cursor = struct {
     }
 
     test eatAny {
-        // The date and time may be joined by either case of T, or by a
-        // space, so the separator is matched against a set.
+        // The date and time may be joined by either case of T, so the
+        // separator is matched against a set.
         var cursor: Cursor = .{ .text = "t14" };
-        try std.testing.expect(cursor.eatAny("Tt "));
+        try std.testing.expect(cursor.eatAny("Tt"));
         try std.testing.expectEqual(@as(usize, 1), cursor.index);
 
-        try std.testing.expect(!cursor.eatAny("Tt "));
+        try std.testing.expect(!cursor.eatAny("Tt"));
     }
 
     /// The length of the run of digits at the cursor.
@@ -1357,8 +1367,6 @@ test parse {
     try testing.expect(!local.has_offset);
 
     // Only the representation is consumed; the rest is the caller's.
-    // Note that a space is one of the separators a time may follow the
-    // date with, so trailing text has to start past a complete one.
     const trailing = try parse("2024-03-15T14:30:00Z and then some");
     try testing.expectEqualStrings("2024-03-15T14:30:00Z", trailing.str);
 
@@ -1648,6 +1656,18 @@ test "trailing text is left for the caller" {
     try testing.expectEqualStrings("2024-03-15T14:30:00Z", result.str);
     try testing.expectEqual(@as(u5, 14), result.value.hour);
 
+    // A space after a date is only the separator when a time follows it,
+    // so a bare date can be followed by prose too.
+    const date = try parse("2024-03-15 and then some");
+    try testing.expectEqualStrings("2024-03-15", date.str);
+    try testing.expectEqual(Precision.day, date.precision);
+    try testing.expectEqualStrings("2024-03", (try parse("2024-03 or so")).str);
+    try testing.expectEqualStrings("2024-03-15", (try parse("2024-03-15 ")).str);
+
+    // A digit after the space is a time, and has to be a good one.
+    try testing.expectError(error.OutOfRange, parse("2024-03-15 25:00"));
+    // A `T` still promises one, whatever follows it.
+    try testing.expectError(error.ParseError, parse("2024-03-15T and then some"));
 }
 
 /// Returns `base` with the time of day replaced, so that the test cases
