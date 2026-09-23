@@ -10,7 +10,8 @@
 //!
 //! `Duration` is a length of time as ISO 8601 writes one -- months, days
 //! and everything below a day, kept apart because a month is not a fixed
-//! number of days. `DateTime.add` applies one.
+//! number of days. `DateTime.add` applies one. `Interval` is a stretch of
+//! the timeline, written with two endpoints or with one and a duration.
 //!
 //! Text goes in and out through four routes. `DateTime.format` and
 //! `DateTime.parse` work from a comptime format string of the sequences
@@ -58,6 +59,9 @@ pub const Instant = @import("Instant.zig");
 /// A length of time as ISO 8601 writes one, in months, days and everything
 /// below a day.
 pub const Duration = @import("Duration.zig");
+/// A stretch of the timeline as ISO 8601 writes one: two endpoints, or one
+/// endpoint and a `Duration`, kept in whichever form it was written.
+pub const Interval = @import("interval.zig").Interval;
 /// The language a date is written in: month and day names, the meridiem,
 /// ordinals, the week rule, and what the `L` sequences stand for.
 /// `locale.en` is built in; `-Dembed-locales` adds moment.js's other
@@ -65,7 +69,7 @@ pub const Duration = @import("Duration.zig");
 pub const locale = @import("locale.zig");
 
 /// Parsing of the ISO 8601 date and time representations, and of its
-/// durations.
+/// durations and time intervals.
 pub const iso8601 = @import("iso8601.zig");
 /// Parsing of the RFC 822 date and time syntax used by mail and HTTP.
 pub const rfc822 = @import("rfc822.zig");

@@ -25,13 +25,17 @@
 //!     ...T14:30:00.5Z         time, fraction, and zone
 //!     ...T143000+0530         basic time and zone
 //!
+//! `parseDuration` reads `P3Y6M4DT12H30M5S` and its relatives, and
+//! `parseInterval` the three forms of a time interval, with a solidus or a
+//! double hyphen between the parts and the end abbreviated if it likes.
+//!
 //! What is not:
 //!
 //!   * Expanded years such as `+002024`, which ISO 8601 allows only by
 //!     prior agreement between the parties exchanging the data.
-//!   * Intervals and recurring intervals. Durations *are* read, by
-//!     `parseDuration`, but not the alternative `P0003-06-04T12:30:05`
-//!     form of one.
+//!   * Recurring intervals, `R5/…`. Durations *are* read, by
+//!     `parseDuration`, and time intervals by `parseInterval`, but not the
+//!     alternative `P0003-06-04T12:30:05` form of a duration.
 //!   * Mixing the basic and extended forms between the date and the time,
 //!     which ISO 8601 forbids. The zone is the one deliberate exception;
 //!     see `parse`.
@@ -41,6 +45,7 @@ const std = @import("std");
 const Date = @import("Date.zig");
 const DateTime = @import("DateTime.zig");
 const Duration = @import("Duration.zig");
+const Interval = @import("interval.zig").Interval;
 const Day = @import("day.zig").Day;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Hour = @import("hour.zig").Hour;
@@ -355,6 +360,14 @@ fn addNanoseconds(total: i128, term: i128) ParseError!i128 {
 /// A time of `24:00` is the end of its date rather than the start, so it
 /// is returned as midnight on the following day.
 pub fn parse(value: []const u8) ParseError!ParseResult {
+    return (try parseMarkingZone(value)).result;
+}
+
+/// `parse`, also saying where in `result.str` the zone began, which is
+/// `result.str.len` when there was none. An abbreviated interval end takes
+/// its missing components from the start's text, and the start's zone is
+/// not one of the things it can take.
+fn parseMarkingZone(value: []const u8) ParseError!struct { result: ParseResult, zone_start: usize } {
     var cursor: Cursor = .{ .text = value };
 
     // Which form the date was written in, or null when it was too short
@@ -374,6 +387,7 @@ pub fn parse(value: []const u8) ParseError!ParseResult {
         }
     }
 
+    const zone_start = cursor.index;
     var offset: i32 = 0;
     var has_offset = false;
     if (try parseZone(&cursor)) |zone| {
@@ -395,11 +409,22 @@ pub fn parse(value: []const u8) ParseError!ParseResult {
     datetime.updateDayOfWeek();
 
     return .{
-        .str = value[0..cursor.index],
-        .value = datetime,
-        .has_offset = has_offset,
-        .precision = precision,
+        .result = .{
+            .str = value[0..cursor.index],
+            .value = datetime,
+            .has_offset = has_offset,
+            .precision = precision,
+        },
+        .zone_start = zone_start,
     };
+}
+
+test parseMarkingZone {
+    const zoned = try parseMarkingZone("2024-03-15T14:30-05:00");
+    try std.testing.expectEqualStrings("2024-03-15T14:30", zoned.result.str[0..zoned.zone_start]);
+
+    const local = try parseMarkingZone("2024-03-15T14:30");
+    try std.testing.expectEqual(local.result.str.len, local.zone_start);
 }
 
 /// Reads the date, in whichever of the three forms it is written.
@@ -777,6 +802,363 @@ test dayFrom {
     try std.testing.expectError(error.OutOfRange, dayFrom(29, .Feb, 2025));
     try std.testing.expectError(error.OutOfRange, dayFrom(31, .Apr, 2024));
     try std.testing.expectError(error.OutOfRange, dayFrom(0, .Jan, 2024));
+}
+
+/// What a successful `parseInterval` yields.
+pub const IntervalParseResult = struct {
+    /// The prefix of the input that was consumed.
+    str: []const u8,
+    value: Interval,
+    /// What `parse` reported of the start, or null when the interval began
+    /// with a duration.
+    start: ?Endpoint = null,
+    /// What `parse` reported of the end, or null when the interval ended
+    /// with a duration. An abbreviated end reports the precision it was read
+    /// at once completed from the start, which is always the start's.
+    end: ?Endpoint = null,
+    /// `DurationParseResult.fractional`, for whichever part was a duration.
+    fractional: ?u8 = null,
+
+    /// The two things `ParseResult` records beside the value, which an
+    /// `Interval` holding plain `DateTime`s cannot.
+    pub const Endpoint = struct {
+        /// Whether the endpoint carried a zone, or took the start's.
+        has_offset: bool,
+        /// The smallest component the endpoint named.
+        precision: Precision,
+    };
+};
+
+/// Parses an ISO 8601 time interval at the start of `value`, in any of the
+/// three forms `Interval` holds:
+///
+///     2007-03-01T13:00:00Z/2008-05-11T15:30:00Z
+///     2007-03-01T13:00:00Z/P1Y2M10DT2H30M
+///     P1Y2M10DT2H30M/2008-05-11T15:30:00Z
+///
+/// The two parts are separated by a solidus, or by the double hyphen `--`
+/// that ISO 8601 allows where a solidus cannot go, a file name for one. The
+/// separator is found first, at whichever of the two comes earlier, and the
+/// first part has to be exactly what comes before it. That is what lets a
+/// reduced start such as `2024-03--2024-04` be read at all: `parse` on its
+/// own would take the hyphen after the month as the promise of a day.
+///
+/// **The end may be abbreviated.** ISO 8601 lets it leave out any of its
+/// higher-order components, which it then takes from the start, so
+/// `2007-12-14T13:30/15:30` ends at half past three the same afternoon and
+/// `2008-02-15/03-14` a month later. This is read by laying the end over
+/// the tail of the start's text: each point in the start where one
+/// component ends and the next begins — after a `-`, `:`, `T` or `W` — is
+/// tried as the place the end's text starts, and the completed text is
+/// parsed. A splice counts only when it reads to the same precision as the
+/// start, since the end replaces the start's lowest components rather than
+/// adding new ones; of those that do, the one that consumes the most of the
+/// end wins, which is what tells `03-14` as a month and day from `03` as a
+/// day followed by trailing text, and a tie goes to the earliest splice. A
+/// full end is tried alongside, and preferred only when it consumes more. An abbreviated end without a zone
+/// is in the start's, as ISO 8601 says it is; a full end without one is a
+/// local time, as it would be anywhere else.
+///
+/// The splice is at component separators only, so an end abbreviated from
+/// a start in the basic form can leave out the date, after the `T`, and
+/// nothing finer: `20080215/0314` is not read as a month later, because
+/// without separators there is no telling where in `20080215` the `0314`
+/// should go. Such an end is not an error but a full representation, here
+/// the year 314, which then fails the check below.
+///
+/// The interval has to run forwards. An end before its start, compared as
+/// instants, is `error.OutOfRange`; an interval of no length is not. A
+/// duration cannot carry a sign here, since `-P1D` would say the same
+/// thing as swapping the parts. A duration that would carry the other
+/// endpoint outside the years a `Year` can hold is `error.OutOfRange`
+/// too, which is what makes `Interval.start` and `end` safe to call on
+/// anything this returns.
+///
+/// Recurring intervals, `R5/…`, are not read, and neither is a bare
+/// duration: ISO 8601 counts one as an interval whose place on the
+/// timeline is given by context, and there is no context here to give it.
+///
+/// Trailing text after the second part is left unconsumed, as with `parse`.
+pub fn parseInterval(value: []const u8) ParseError!IntervalParseResult {
+    const separator = findSeparator(value) orelse return error.ParseError;
+    const first = value[0..separator.index];
+    const second = value[separator.index + separator.len ..];
+    const consumed = separator.index + separator.len;
+
+    // Duration, then end.
+    if (first.len != 0 and (first[0] == 'P' or first[0] == 'p')) {
+        const d = try parseDuration(first);
+        if (d.str.len != first.len) return error.ParseError;
+        const e = try parse(second);
+        _ = e.value.addChecked(d.value.negate()) catch return error.OutOfRange;
+        return .{
+            .str = value[0 .. consumed + e.str.len],
+            .value = .{ .duration_end = .{ .duration = d.value, .end = e.value } },
+            .end = .{ .has_offset = e.has_offset, .precision = e.precision },
+            .fractional = d.fractional,
+        };
+    }
+
+    const s = try parseMarkingZone(first);
+    if (s.result.str.len != first.len) return error.ParseError;
+    const start: IntervalParseResult.Endpoint = .{
+        .has_offset = s.result.has_offset,
+        .precision = s.result.precision,
+    };
+
+    // Start, then duration.
+    if (second.len != 0 and (second[0] == 'P' or second[0] == 'p')) {
+        const d = try parseDuration(second);
+        _ = s.result.value.addChecked(d.value) catch return error.OutOfRange;
+        return .{
+            .str = value[0 .. consumed + d.str.len],
+            .value = .{ .start_duration = .{ .start = s.result.value, .duration = d.value } },
+            .start = start,
+            .fractional = d.fractional,
+        };
+    }
+
+    // Start, then end.
+    const e = try parseEnd(first[0..s.zone_start], s.result, second);
+    if (e.result.value.toInstant().timestamp < s.result.value.toInstant().timestamp) {
+        return error.OutOfRange;
+    }
+    return .{
+        .str = value[0 .. consumed + e.len],
+        .value = .{ .start_end = .{ .start = s.result.value, .end = e.result.value } },
+        .start = start,
+        .end = .{ .has_offset = e.result.has_offset, .precision = e.result.precision },
+    };
+}
+
+test parseInterval {
+    const chicago = -6 * std.time.s_per_hour;
+    const cases = [_]struct { []const u8, Interval }{
+        .{ "2007-03-01T13:00:00Z/2008-05-11T15:30:00Z", .{ .start_end = .{
+            .start = .{ .year = 2007, .month = .Mar, .day = 1, .hour = 13, .weekday = .Thu },
+            .end = .{ .year = 2008, .month = .May, .day = 11, .hour = 15, .minute = 30, .weekday = .Sun },
+        } } },
+        .{ "2007-03-01T13:00:00Z/P1Y2M10DT2H30M", .{ .start_duration = .{
+            .start = .{ .year = 2007, .month = .Mar, .day = 1, .hour = 13, .weekday = .Thu },
+            .duration = .{ .months = 14, .days = 10, .nanoseconds = 150 * Duration.nanoseconds_per_minute },
+        } } },
+        .{ "P1Y2M10DT2H30M/2008-05-11T15:30:00Z", .{ .duration_end = .{
+            .duration = .{ .months = 14, .days = 10, .nanoseconds = 150 * Duration.nanoseconds_per_minute },
+            .end = .{ .year = 2008, .month = .May, .day = 11, .hour = 15, .minute = 30, .weekday = .Sun },
+        } } },
+        // The double hyphen, which also lets a reduced start be read.
+        .{ "2024-03--2024-04", .{ .start_end = .{
+            .start = .{ .year = 2024, .month = .Mar, .day = 1, .weekday = .Fri },
+            .end = .{ .year = 2024, .month = .Apr, .day = 1, .weekday = .Mon },
+        } } },
+        // Abbreviated ends, which take what they leave out from the start,
+        // the zone included.
+        .{ "2007-12-14T13:30-06:00/15:30", .{ .start_end = .{
+            .start = .{ .year = 2007, .month = .Dec, .day = 14, .hour = 13, .minute = 30, .weekday = .Fri, .offset = chicago },
+            .end = .{ .year = 2007, .month = .Dec, .day = 14, .hour = 15, .minute = 30, .weekday = .Fri, .offset = chicago },
+        } } },
+        .{ "2008-02-15/03-14", .{ .start_end = .{
+            .start = .{ .year = 2008, .month = .Feb, .day = 15, .weekday = .Fri },
+            .end = .{ .year = 2008, .month = .Mar, .day = 14, .weekday = .Fri },
+        } } },
+        .{ "2008-02-15/16", .{ .start_end = .{
+            .start = .{ .year = 2008, .month = .Feb, .day = 15, .weekday = .Fri },
+            .end = .{ .year = 2008, .month = .Feb, .day = 16, .weekday = .Sat },
+        } } },
+        .{ "2008-02-15T09:00/16T17:00", .{ .start_end = .{
+            .start = .{ .year = 2008, .month = .Feb, .day = 15, .hour = 9, .weekday = .Fri },
+            .end = .{ .year = 2008, .month = .Feb, .day = 16, .hour = 17, .weekday = .Sat },
+        } } },
+        .{ "20071214T1330/1530", .{ .start_end = .{
+            .start = .{ .year = 2007, .month = .Dec, .day = 14, .hour = 13, .minute = 30, .weekday = .Fri },
+            .end = .{ .year = 2007, .month = .Dec, .day = 14, .hour = 15, .minute = 30, .weekday = .Fri },
+        } } },
+        // An abbreviated end of 24:00 is the end of the start's day.
+        .{ "2024-03-15T09:00/24:00", .{ .start_end = .{
+            .start = .{ .year = 2024, .month = .Mar, .day = 15, .hour = 9, .weekday = .Fri },
+            .end = .{ .year = 2024, .month = .Mar, .day = 16, .weekday = .Sat },
+        } } },
+        // An interval of no length is still an interval.
+        .{ "2024-03-15/2024-03-15", .{ .start_end = .{
+            .start = .{ .year = 2024, .month = .Mar, .day = 15, .weekday = .Fri },
+            .end = .{ .year = 2024, .month = .Mar, .day = 15, .weekday = .Fri },
+        } } },
+    };
+    for (cases) |case| {
+        const got = parseInterval(case[0]) catch |err| {
+            std.debug.print("{s}: {any}\n", .{ case[0], err });
+            return err;
+        };
+        std.testing.expectEqualDeep(case[1], got.value) catch |err| {
+            std.debug.print("{s}: {any}\n", .{ case[0], got.value });
+            return err;
+        };
+        try std.testing.expectEqualStrings(case[0], got.str);
+    }
+
+    // What each endpoint said, beside the value.
+    const reduced = try parseInterval("2024-03-15T09:00Z/P1D");
+    try std.testing.expectEqual(
+        @as(?IntervalParseResult.Endpoint, .{ .has_offset = true, .precision = .minute }),
+        reduced.start,
+    );
+    try std.testing.expectEqual(@as(?IntervalParseResult.Endpoint, null), reduced.end);
+    try std.testing.expectEqual(@as(?u8, 'S'), (try parseInterval("2024-03-15/PT1.5S")).fractional);
+
+    // A full end without a zone is a local time, even after a start with one.
+    const local = try parseInterval("2024-03-15T09:00Z/2024-03-15T17:00");
+    try std.testing.expect(!local.end.?.has_offset);
+
+    // Trailing text is left, as with `parse`, and a solidus in it is not
+    // taken for the separator.
+    try std.testing.expectEqualStrings(
+        "2024-03-15/03-16",
+        (try parseInterval("2024-03-15/03-16, and/or later")).str,
+    );
+    try std.testing.expectEqualStrings(
+        "2008-02-15/17",
+        (try parseInterval("2008-02-15/17, later")).str,
+    );
+
+    for ([_][]const u8{
+        "",
+        "2024-03-15",
+        "P1D",
+        "/",
+        "2024-03-15/",
+        "/2024-03-15",
+        // A duration cannot stand on both sides, or carry a sign.
+        "P1D/P2D",
+        "2024-03-15/-P1D",
+        "-P1D/2024-03-15",
+        // Backwards.
+        "2024-03-16/2024-03-15",
+        "2024-03-15T10:00/09:00",
+        // The first part has to be all of what comes before the separator.
+        "2024-03-15x/2024-03-16",
+        "P1Dx/2024-03-16",
+        // Too far for a `Year` to hold.
+        "2024-03-15/P9999999999Y",
+        "P9999999999Y/2024-03-15",
+        // A basic end cannot be spliced into a basic date; read whole, it is
+        // the year 314, and so before the start.
+        "20080215/0314",
+    }) |bad| {
+        std.testing.expect(std.meta.isError(parseInterval(bad))) catch |err| {
+            std.debug.print("parsed but should not have: \"{s}\"\n", .{bad});
+            return err;
+        };
+    }
+}
+
+/// Where the two parts of an interval divide: the first solidus or double
+/// hyphen, whichever comes first. Neither can occur inside a date, a time
+/// or a duration this reads, so the first one found is the separator.
+fn findSeparator(value: []const u8) ?struct { index: usize, len: usize } {
+    const solidus = std.mem.findScalar(u8, value, '/');
+    const hyphens = std.mem.find(u8, value, "--");
+    if (solidus) |i| {
+        if (hyphens) |j| if (j < i) return .{ .index = j, .len = 2 };
+        return .{ .index = i, .len = 1 };
+    }
+    if (hyphens) |j| return .{ .index = j, .len = 2 };
+    return null;
+}
+
+test findSeparator {
+    try std.testing.expectEqual(@as(usize, 10), findSeparator("2024-03-15/2024-03-16").?.index);
+    try std.testing.expectEqual(@as(usize, 2), findSeparator("2024-03--2024-04").?.len);
+    // A negative offset is a single hyphen, and not the separator.
+    try std.testing.expectEqual(@as(usize, 22), findSeparator("2024-03-15T10:00-05:00--2024-03-16").?.index);
+    try std.testing.expectEqual(null, findSeparator("2024-03-15"));
+}
+
+/// Reads the end of a start and end interval, full or abbreviated; see
+/// `parseInterval` for how an abbreviated one is completed. `start_text` is
+/// the start as written, without its zone.
+fn parseEnd(start_text: []const u8, start: ParseResult, text: []const u8) ParseError!End {
+    var best: ?End = null;
+    var first_error: ?ParseError = null;
+
+    var best_is_full = false;
+    if (parse(text)) |full| {
+        best = .{ .result = full, .len = full.str.len };
+        best_is_full = true;
+    } else |err| first_error = err;
+
+    // The start and the end spliced together. Bounded, because a fraction
+    // may run to any number of digits; an end too long to splice is still
+    // read whole above.
+    var buffer: [128]u8 = undefined;
+    for (1..start_text.len + 1) |k| {
+        if (std.mem.findScalar(u8, "-:TtWw ", start_text[k - 1]) == null) continue;
+        if (k + text.len > buffer.len) continue;
+        @memcpy(buffer[0..k], start_text[0..k]);
+        @memcpy(buffer[k..][0..text.len], text);
+
+        const spliced = parseMarkingZone(buffer[0 .. k + text.len]) catch continue;
+        var result = spliced.result;
+        if (result.str.len <= k) continue;
+        if (result.precision != start.precision) continue;
+        // `parse` takes a zone after a bare date, which ISO 8601 does not,
+        // and a splice is where that bites: `03-16` laid over the day of
+        // `2024-03-15` reads as the 3rd at an offset of -16:00. So a date
+        // spliced from a start that had no zone may not grow one.
+        if (result.has_offset and !start.has_offset and isDatePrecision(start.precision)) continue;
+
+        const len = result.str.len - k;
+        // A tie goes to a splice, which read to the start's precision, over
+        // the full reading, which need not have. Between splices it goes to
+        // the earliest, which reads the most of the end as the start's
+        // higher components.
+        if (best) |b| {
+            if (len < b.len) continue;
+            if (len == b.len and !best_is_full) continue;
+        }
+
+        if (!result.has_offset and start.has_offset) {
+            result.value.offset = start.value.offset;
+            result.has_offset = true;
+        }
+        // The result points into the buffer, which is about to go; what the
+        // caller wants is how much of `text` was read.
+        result.str = text[0..len];
+        best = .{ .result = result, .len = len };
+        best_is_full = false;
+    }
+
+    if (best) |b| return b;
+    return first_error orelse error.ParseError;
+}
+
+/// Whether a representation stopping at `precision` named no time of day.
+fn isDatePrecision(precision: Precision) bool {
+    return switch (precision) {
+        .year, .month, .week, .day => true,
+        .hour, .minute, .second => false,
+    };
+}
+
+test isDatePrecision {
+    try std.testing.expect(isDatePrecision(.week));
+    try std.testing.expect(!isDatePrecision(.hour));
+}
+
+/// What `parseEnd` read, and how much of its text that took.
+const End = struct { result: ParseResult, len: usize };
+
+test parseEnd {
+    const start = try parse("2007-12-14T13:30");
+    const end = try parseEnd("2007-12-14T13:30", start, "15:30 and after");
+    try std.testing.expectEqual(@as(usize, 5), end.len);
+    try std.testing.expectEqual(@as(Hour, 15), end.result.value.hour);
+    try std.testing.expectEqual(@as(Day, 14), end.result.value.day);
+
+    // `15` alone replaces the lowest component, the minute, rather than
+    // being read as an hour and falling short of the start's precision.
+    const minute = try parseEnd("2007-12-14T13:30", start, "45");
+    try std.testing.expectEqual(@as(Hour, 13), minute.result.value.hour);
+    try std.testing.expectEqual(@as(Minute, 45), minute.result.value.minute);
 }
 
 /// A position in the input, with the small operations the grammar is
@@ -1265,6 +1647,7 @@ test "trailing text is left for the caller" {
     const result = try parse("2024-03-15T14:30:00Z and then some");
     try testing.expectEqualStrings("2024-03-15T14:30:00Z", result.str);
     try testing.expectEqual(@as(u5, 14), result.value.hour);
+
 }
 
 /// Returns `base` with the time of day replaced, so that the test cases

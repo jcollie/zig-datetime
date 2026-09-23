@@ -181,14 +181,48 @@ test format {
 /// — which ISO 8601 cannot write, and which is why it cannot — would be the
 /// 2nd. Adding a duration is not commutative and not associative, and the
 /// clamp is the reason.
+///
+/// A result outside the years a `Year` can hold is a panic; `addToDateChecked`
+/// is the one to use on a duration somebody else chose.
 pub fn addToDate(self: Duration, date: Date) Date {
-    const total_months = @as(i64, date.year) * 12 + (@intFromEnum(date.month) - 1) + self.months;
-    const year: Year = @intCast(@divFloor(total_months, 12));
+    return self.addToDateChecked(date) catch
+        @panic("Duration.addToDate: the result is outside the years a Year can hold");
+}
+
+/// `addToDate`, answering `error.OutOfRange` rather than panicking when the
+/// result would land outside the years a `Year` can hold.
+///
+/// The arithmetic is done in an `i128` throughout, which no `i64` month or
+/// day count can overflow, and narrowed only once the answer is known to
+/// fit. Narrowing first is what would make a large duration a crash instead
+/// of an error.
+pub fn addToDateChecked(self: Duration, date: Date) error{OutOfRange}!Date {
+    const total_months = @as(i128, date.year) * 12 + (@intFromEnum(date.month) - 1) + self.months;
+    const year = std.math.cast(Year, @divFloor(total_months, 12)) orelse return error.OutOfRange;
     const month: Month = @enumFromInt(@as(u8, @intCast(@mod(total_months, 12) + 1)));
 
     const clamped: Day = @min(date.day, month.lastDay(year));
-    const days = (Date{ .year = year, .month = month, .day = clamped }).toDaysSinceStartOfEra();
-    return Date.fromDaysSinceStartOfEra(@intCast(days + self.days));
+    const days = @as(i128, (Date{ .year = year, .month = month, .day = clamped }).toDaysSinceStartOfEra()) + self.days;
+    if (days < Date.min_days or days > Date.max_days) return error.OutOfRange;
+    return Date.fromDaysSinceStartOfEra(@intCast(days));
+}
+
+test addToDateChecked {
+    const jan31: Date = .{ .year = 2001, .month = .Jan, .day = 31 };
+    // In range, it is `addToDate`.
+    try std.testing.expectEqual(
+        Date{ .year = 2001, .month = .Feb, .day = 28 },
+        try (Duration{ .months = 1 }).addToDateChecked(jan31),
+    );
+    // Past the last year a `Year` can hold, by months and by days.
+    try std.testing.expectError(
+        error.OutOfRange,
+        (Duration{ .months = std.math.maxInt(i64) }).addToDateChecked(jan31),
+    );
+    try std.testing.expectError(
+        error.OutOfRange,
+        (Duration{ .days = std.math.minInt(i64) }).addToDateChecked(jan31),
+    );
 }
 
 test addToDate {

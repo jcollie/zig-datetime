@@ -208,6 +208,78 @@ test "mutate iso8601.parse" {
     try overMutations(iso8601Property, &iso8601_seeds);
 }
 
+// ISO 8601 intervals ---------------------------------------------------
+
+/// Whatever `iso8601.parseInterval` accepts has well formed endpoints that
+/// run forwards, can be resolved without a panic, and survives being
+/// written out and read back.
+fn iso8601IntervalProperty(text: []const u8) !void {
+    const result = iso8601.parseInterval(text) catch return;
+
+    try std.testing.expect(result.str.len <= text.len);
+    try std.testing.expectEqualStrings(result.str, text[0..result.str.len]);
+
+    // The parser promises that both of these are safe to call, which is
+    // the point of its range check.
+    const interval = result.value;
+    const start = interval.start();
+    const end = interval.end();
+    try isWellFormed(start);
+    try isWellFormed(end);
+    try std.testing.expect(interval.length() >= 0);
+
+    // Written out, it reads back as the same interval, in the same form.
+    // Only while the years stay within the four digits ISO 8601 allows,
+    // which a duration or an end of 24:00 can carry them past.
+    if (start.year < 0 or start.year > 9999 or end.year < 0 or end.year > 9999) return;
+    var buffer: [max_input * 2]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    try interval.format(&writer);
+    const again = iso8601.parseInterval(writer.buffered()) catch |err| {
+        std.debug.print("wrote \"{s}\", which does not read back\n", .{writer.buffered()});
+        return err;
+    };
+    try std.testing.expectEqualStrings(writer.buffered(), again.str);
+    try std.testing.expectEqual(std.meta.activeTag(interval), std.meta.activeTag(again.value));
+    try std.testing.expectEqual(start.toInstant(), again.value.start().toInstant());
+    try std.testing.expectEqual(end.toInstant(), again.value.end().toInstant());
+    if (interval.duration()) |d| try std.testing.expect(d.eql(again.value.duration().?));
+}
+
+const iso8601_interval_seeds = [_][]const u8{
+    "",
+    "2007-03-01T13:00:00Z/2008-05-11T15:30:00Z",
+    "2007-03-01T13:00:00Z/P1Y2M10DT2H30M",
+    "P1Y2M10DT2H30M/2008-05-11T15:30:00Z",
+    "2024-03--2024-04",
+    "2007-12-14T13:30-06:00/15:30",
+    "2008-02-15/03-14",
+    "2008-02-15T09:00/16T17:00",
+    "20071214T1330/1530",
+    "2024-03-15T09:00/24:00",
+    "9999-12-31T23:00/24:00",
+    "9999-12-31/P1D",
+    "P1M/0000-01-31",
+    "2024-03-15/PT1.5S",
+    "2024-W11-5/W12-1",
+    "2024-075/080",
+    "2024-03-15/P9999999999Y",
+    "//",
+    "----",
+};
+
+test "iso8601.parseInterval over the seeds" {
+    try overSeeds(iso8601IntervalProperty, &iso8601_interval_seeds);
+}
+
+test "fuzz iso8601.parseInterval" {
+    try overFuzzer(iso8601IntervalProperty);
+}
+
+test "mutate iso8601.parseInterval" {
+    try overMutations(iso8601IntervalProperty, &iso8601_interval_seeds);
+}
+
 // RFC 822 --------------------------------------------------------------
 
 fn rfc822Property(text: []const u8) !void {

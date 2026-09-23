@@ -816,7 +816,8 @@ ISO 8601 forbids mixing the basic and extended forms, and so does this:
 `2024-03-15T143000` is `error.MixedFormats`. The zone is the one
 deliberate exception, since `+0530` after an extended time is common in
 real data. Expanded years such as `+002024`, which ISO 8601 permits only
-by prior agreement, are not accepted, and neither are intervals.
+by prior agreement, are not accepted. Durations and time intervals have
+parsers of their own, below.
 
 ### Durations
 
@@ -861,6 +862,69 @@ fraction is folded into `nanoseconds` there is nothing left to tell from.
 Fractions of a year, a month or a week are refused outright rather than
 guessed at, since none of the three has a length in days to divide. The
 alternative `P0003-06-04T12:30:05` spelling of a duration is not read.
+
+### Intervals
+
+`iso8601.parseInterval` reads a time interval in any of ISO 8601's three
+forms, and `Interval` is what it reads into:
+
+```zig
+const a = try datetime.iso8601.parseInterval("2007-03-01T13:00:00Z/2008-05-11T15:30:00Z");
+const b = try datetime.iso8601.parseInterval("2007-03-01T13:00:00Z/P1Y2M10DT2H30M");
+const c = try datetime.iso8601.parseInterval("P1Y2M10DT2H30M/2008-05-11T15:30:00Z");
+
+if (b.value.contains(datetime.Instant.now(io))) { ... }
+```
+
+An `Interval` is a tagged union that keeps the **form it was written in**,
+for the reason `Duration` keeps its months apart: `2001-01-31/P1M` means a
+month from the 31st of January, and the pair of endpoints it resolves to
+would say only 28 days. `start` and `end` resolve whichever endpoint was
+not written, by `DateTime.add` — or, for a duration and an end, by adding
+the negated duration, since subtraction has no better definition once a
+month has been clamped: `P1M/2001-02-28` could have started on any of four
+days in January, and it answers the 28th, the latest of them.
+`duration` answers only when one was written, because which calendar
+duration lies between two dates has no single answer, and `length` is the
+fixed span in nanoseconds, taken between the endpoints' instants.
+
+`contains` and `overlaps` treat an interval as **half-open**, holding its
+start and not its end. ISO 8601 leaves that to the application, and it is
+the choice that lets intervals tile: `2024-03-15/2024-03-16` and
+`2024-03-16/2024-03-17` share no instant and leave none out.
+
+The parts are separated by a solidus, or by the `--` that ISO 8601 allows
+where a solidus cannot go, and the end may leave out its higher-order
+components, which it takes from the start along with the start's zone:
+
+| interval | ends at |
+| --- | --- |
+| `2007-12-14T13:30/15:30` | 15:30 the same day |
+| `2008-02-15/03-14` | 2008-03-14 |
+| `2008-02-15T09:00/16T17:00` | 17:00 the next day |
+| `20071214T1330/1530` | 15:30 the same day |
+
+The abbreviated end is read by laying it over the tail of the start's text
+at each place one component ends and the next begins, and keeping the
+splice that reads to the start's precision and consumes the most of the
+end. Without separators there is nowhere to lay it, so a start in the
+basic form can have its date left out and nothing finer. The result also
+reports, for each endpoint that was a date, the `has_offset` and
+`precision` that `parse` would have.
+
+An interval has to run forwards — an end before its start is
+`error.OutOfRange` — and a duration in one may not carry a sign. A
+duration that would carry the other endpoint outside the years a `Year`
+can hold is refused at parse time, which is what makes `start` and `end`
+safe on anything the parser returns; `DateTime.addChecked` is the same
+check for a duration from somewhere else. Recurring intervals, `R5/…`, are
+not read, and neither is a bare duration, which ISO 8601 counts as an
+interval placed by context that there is none of here.
+
+`Interval.format` writes one back in its own form, each endpoint in full in
+the extended form with `Z` for a zero offset. A `DateTime` cannot say it
+was read without a zone, so a local endpoint comes back as `Z` — the
+instant `length` and `contains` took it to be.
 
 ## The calendar arithmetic
 
@@ -1053,8 +1117,8 @@ collection called `zig-datetime`, with the full text of each RFC attached.
 - **[ISO8601]** International Organization for Standardization, *Date and
   time — Representations for information interchange — Part 1: Basic rules*,
   ISO 8601-1:2019, <https://www.iso.org/standard/70907.html>. The calendar,
-  ordinal and week date forms that `iso8601` reads, and the duration syntax
-  `Duration` holds.
+  ordinal and week date forms that `iso8601` reads, the duration syntax
+  `Duration` holds, and the time interval forms `Interval` holds.
 - **[UTS35]** Unicode Consortium, *Unicode Locale Data Markup Language (LDML)
   Part 4: Dates*, UTS #35,
   <https://unicode.org/reports/tr35/tr35-dates.html>. The pattern vocabulary

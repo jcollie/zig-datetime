@@ -1927,7 +1927,6 @@ pub fn parseWith(
     };
 }
 
-/// This date as a `Date`, dropping the time of day and the offset.
 /// Adds a `Duration` to this date and time, by the calendar rather than by
 /// the clock.
 ///
@@ -1951,20 +1950,35 @@ pub fn parseWith(
 /// the next day, whatever the zone did in between. The zone's `designation`
 /// is dropped, since the name a zone went by at the old instant is not
 /// something this can know for the new one — ask a `TimeZone` for it.
+///
+/// A result outside the years a `Year` can hold is a panic; `addChecked` is
+/// the one to use on a duration somebody else chose.
 pub fn add(self: DateTime, duration: Duration) DateTime {
+    return self.addChecked(duration) catch
+        @panic("DateTime.add: the result is outside the years a Year can hold");
+}
+
+/// `add`, answering `error.OutOfRange` rather than panicking when the result
+/// would land outside the years a `Year` can hold.
+///
+/// Two places can overflow and both are checked: the whole days carried out
+/// of the sub-day part, which for a duration of `i128` nanoseconds need not
+/// fit the `i64` the days are counted in, and the calendar step itself,
+/// which `Duration.addToDateChecked` checks.
+pub fn addChecked(self: DateTime, duration: Duration) error{OutOfRange}!DateTime {
     const time_of_day: i128 = @as(i128, self.hour) * Duration.nanoseconds_per_hour +
         @as(i128, self.minute) * Duration.nanoseconds_per_minute +
         @as(i128, self.second) * Duration.nanoseconds_per_second +
         @as(i128, self.nanosecond);
 
-    const total = time_of_day + duration.nanoseconds;
+    const total = std.math.add(i128, time_of_day, duration.nanoseconds) catch return error.OutOfRange;
     const carry = @divFloor(total, Duration.nanoseconds_per_day);
     const rest = total - carry * Duration.nanoseconds_per_day;
 
-    const date = (Duration{
+    const date = try (Duration{
         .months = duration.months,
-        .days = duration.days + @as(i64, @intCast(carry)),
-    }).addToDate(self.asDate());
+        .days = std.math.cast(i64, duration.days + carry) orelse return error.OutOfRange,
+    }).addToDateChecked(self.asDate());
 
     var result: DateTime = .{
         .year = date.year,
@@ -2016,6 +2030,20 @@ test add {
     );
 }
 
+test addChecked {
+    // In range, it is `add`.
+    try std.testing.expectEqual(
+        DateTime{ .year = 2001, .month = .Feb, .day = 28, .weekday = .Wed },
+        try (DateTime{ .year = 2001, .month = .Jan, .day = 31 }).addChecked(.{ .months = 1 }),
+    );
+    // Too many years, and too many hours: the sub-day part carries more
+    // whole days than an `i64` counts.
+    const start: DateTime = .{ .year = 2001, .month = .Jan, .day = 1 };
+    try std.testing.expectError(error.OutOfRange, start.addChecked(.{ .months = std.math.maxInt(i64) }));
+    try std.testing.expectError(error.OutOfRange, start.addChecked(.{ .nanoseconds = std.math.maxInt(i128) }));
+}
+
+/// This date as a `Date`, dropping the time of day and the offset.
 pub fn asDate(self: DateTime) Date {
     return .{
         .year = self.year,
