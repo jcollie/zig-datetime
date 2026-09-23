@@ -926,6 +926,62 @@ the extended form with `Z` for a zero offset. A `DateTime` cannot say it
 was read without a zone, so a local endpoint comes back as `Z` — the
 instant `length` and `contains` took it to be.
 
+## JSON
+
+`Date`, `DateTime`, `Instant`, `Duration` and `Interval` carry the hooks
+`std.json` looks for, `jsonStringify`, `jsonParse` and `jsonParseFromValue`,
+so they can be fields of anything you read or write with it:
+
+```zig
+const Event = struct {
+    name: []const u8,
+    at: datetime.DateTime,
+    lasts: datetime.Duration,
+};
+
+const parsed = try std.json.parseFromSlice(Event, gpa,
+    \\{"name":"standup","at":"2024-03-15T09:00:00-05:00","lasts":"PT15M"}
+, .{});
+defer parsed.deinit();
+
+const text = try std.json.Stringify.valueAlloc(gpa, parsed.value, .{});
+```
+
+Each is a JSON **string** holding its ISO 8601 spelling, not an object of
+its fields, because that string is what every other JSON producer and
+consumer of dates speaks — JavaScript's `Date.prototype.toJSON` writes one
+— and this library reads it back:
+
+| type | written as |
+| --- | --- |
+| `Date` | `"2024-03-15"` |
+| `DateTime` | `"2024-03-15T14:30:00-05:00"`, with `Z` for a zero offset |
+| `Instant` | `"2024-03-15T19:30:00Z"`, always in UTC |
+| `Duration` | `"P1Y2M10DT2H30M"` |
+| `Interval` | `"2024-03-15T09:00:00Z/P1D"`, in the form it was built in |
+
+A fraction of a second is written only when there is one. Reading goes
+through the ISO 8601 parsers above and has to consume the whole string. It
+is as lenient as they are with two exceptions: a `Date` refuses a time of
+day and a date that names no day, since it has nowhere to keep the one and
+nothing to hold for the other, and an `Instant` refuses a time without a
+zone, which would name a different instant in every zone.
+
+A string that is not the representation is `error.InvalidCharacter`, and
+one whose components are out of range — a month of 13, an interval that
+runs backwards — is `error.Overflow`. Those are the errors `std.json`
+gives for a malformed and an oversized number, so they sit in the error
+sets it already has. Anything but a string is `error.UnexpectedToken`.
+
+Three things do not survive the trip. A `DateTime`'s `designation` has
+nowhere to go in ISO 8601 and comes back empty. A local time read without
+a zone comes back with an offset of zero, the same as `Z`; read the string
+yourself with `iso8601.parse` if the difference matters. And a `Duration`
+comes back canonical, `P14M` as `P1Y2M`, the same length of time.
+
+`iso8601.writeDateTime` and `iso8601.writeDate` are the writers the hooks
+use, public for anyone who wants the same text without JSON around it.
+
 ## The calendar arithmetic
 
 Turning a date into a day number and back is Howard Hinnant's, from

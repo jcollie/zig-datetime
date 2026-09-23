@@ -34,6 +34,8 @@ const Month = @import("month.zig").Month;
 const Day = @import("day.zig").Day;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const leap = @import("leap.zig");
+const iso8601 = @import("iso8601.zig");
+const json = @import("json.zig");
 
 year: Year,
 month: Month,
@@ -788,4 +790,60 @@ test dayOfWeek {
     // The epoch was a Thursday.
     try std.testing.expectEqual(DayOfWeek.Thu, (Date{ .year = 1970, .month = .Jan, .day = 1 }).dayOfWeek());
     try std.testing.expectEqual(DayOfWeek.Fri, (Date{ .year = 2024, .month = .Mar, .day = 15 }).dayOfWeek());
+}
+
+/// Writes this date as a JSON string of a calendar date, `"2024-03-15"`, which is
+/// what `std.json.Stringify` calls when it meets one, in a field or on its
+/// own.
+///
+/// Reading refuses a time of day, which a `Date` has nowhere to keep, and a
+/// date reduced to a month or a year, which does not name a day; see
+/// `json.readDate`.
+pub fn jsonStringify(self: Date, jw: anytype) !void {
+    return json.stringify(jw, self, iso8601.writeDate);
+}
+
+test jsonStringify {
+    const text = try std.json.Stringify.valueAlloc(std.testing.allocator, @as(Date, .{ .year = 2024, .month = .Mar, .day = 15 }), .{});
+    defer std.testing.allocator.free(text);
+    try std.testing.expectEqualStrings("\"2024-03-15\"", text);
+}
+
+/// Reads one of these from the next token of a JSON document, which has to
+/// be a string; `std.json.parseFromSlice` and its relatives call this when
+/// they meet the type. See `jsonStringify` for the text, and `json.parse`
+/// for what happens to the token.
+///
+/// A string that is not the representation is `error.InvalidCharacter`, and
+/// one whose components are out of range is `error.Overflow`, the errors
+/// `std.json` gives for a malformed and an oversized number.
+pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Date {
+    return json.parse(Date, allocator, source, options, json.readDate);
+}
+
+test jsonParse {
+    const Record = struct { value: Date };
+    const parsed = try std.json.parseFromSlice(Record, std.testing.allocator, "{\"value\":\"2024-03-15\"}", .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(Date{ .year = 2024, .month = .Mar, .day = 15 }, parsed.value.value);
+
+    try std.testing.expectError(
+        error.InvalidCharacter,
+        std.json.parseFromSlice(Date, std.testing.allocator, "\"not a date\"", .{}),
+    );
+}
+
+/// Reads one of these from a `std.json.Value` that has already been
+/// parsed, which has to be a string; `std.json.parseFromValue` calls this
+/// when it meets the type. See `jsonParse`.
+pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Date {
+    _ = allocator;
+    _ = options;
+    return json.parseFromValue(Date, source, json.readDate);
+}
+
+test jsonParseFromValue {
+    const parsed = try std.json.parseFromValue(Date, std.testing.allocator, .{ .string = "2024-03-15" }, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(Date{ .year = 2024, .month = .Mar, .day = 15 }, parsed.value);
 }

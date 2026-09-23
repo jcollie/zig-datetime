@@ -29,6 +29,9 @@
 //! `parseInterval` the three forms of a time interval, with a solidus or a
 //! double hyphen between the parts and the end abbreviated if it likes.
 //!
+//! Going the other way, `writeDateTime` and `writeDate` write the extended
+//! form in full, which is what the `std.json` hooks on the types write.
+//!
 //! What is not:
 //!
 //!   * Expanded years such as `+002024`, which ISO 8601 allows only by
@@ -1169,6 +1172,104 @@ test parseEnd {
     const minute = try parseEnd("2007-12-14T13:30", start, "45");
     try std.testing.expectEqual(@as(Hour, 13), minute.result.value.hour);
     try std.testing.expectEqual(@as(Minute, 45), minute.result.value.minute);
+}
+
+/// Writes `datetime` as an ISO 8601 date and time in full, in the extended
+/// form: `2024-03-15T14:30:00Z`, which is also RFC 3339's `date-time`.
+///
+/// Every component down to the second is written whatever it holds, since
+/// the reader cannot know which ones were meant to be left out. A decimal
+/// fraction of the second follows only when there is one, with its trailing
+/// zeroes dropped, so `.5` rather than `.500000000`.
+///
+/// The offset is `Z` when it is zero and `±hh:mm` otherwise. A historical
+/// offset that is not a whole number of minutes, such as the local mean
+/// time a zone kept before standard time, gets `:ss` after the minutes.
+/// ISO 8601 has no spelling for that and `parse` does not read it, but
+/// rounding it would name a different instant, and a string that fails to
+/// read back is better than one that reads back wrong.
+///
+/// A year from 0 to 9999 is written as four digits. Any other year is
+/// written in the expanded form, with a sign and at least four digits, so
+/// the output never names a different year than the one it holds. ISO 8601
+/// allows the expanded form only by prior agreement, and `parse` does not
+/// read it.
+pub fn writeDateTime(writer: *std.Io.Writer, datetime: DateTime) std.Io.Writer.Error!void {
+    try writeDate(writer, datetime.asDate());
+    try writer.print("T{d:0>2}:{d:0>2}:{d:0>2}", .{ datetime.hour, datetime.minute, datetime.second });
+
+    if (datetime.nanosecond != 0) {
+        var digits: [9]u8 = undefined;
+        _ = std.fmt.printInt(&digits, datetime.nanosecond, 10, .lower, .{ .fill = '0', .width = 9 });
+        var len: usize = digits.len;
+        while (len > 1 and digits[len - 1] == '0') len -= 1;
+        try writer.print(".{s}", .{digits[0..len]});
+    }
+
+    if (datetime.offset == 0) return writer.writeByte('Z');
+
+    const magnitude: u32 = @abs(datetime.offset);
+    try writer.print("{c}{d:0>2}:{d:0>2}", .{
+        @as(u8, if (datetime.offset < 0) '-' else '+'),
+        magnitude / std.time.s_per_hour,
+        magnitude % std.time.s_per_hour / std.time.s_per_min,
+    });
+    if (magnitude % std.time.s_per_min != 0) {
+        try writer.print(":{d:0>2}", .{magnitude % std.time.s_per_min});
+    }
+}
+
+test writeDateTime {
+    const cases = [_]struct { DateTime, []const u8 }{
+        .{ .{ .year = 2024, .month = .Mar, .day = 15, .hour = 14, .minute = 30 }, "2024-03-15T14:30:00Z" },
+        .{ .{ .year = 2024, .month = .Mar, .day = 15, .nanosecond = 1 }, "2024-03-15T00:00:00.000000001Z" },
+        .{ .{ .year = 2024, .month = .Mar, .day = 15, .nanosecond = 500_000_000 }, "2024-03-15T00:00:00.5Z" },
+        .{ .{ .year = 2024, .month = .Mar, .day = 15, .offset = 5 * 3600 + 30 * 60 }, "2024-03-15T00:00:00+05:30" },
+        // America/Chicago's local mean time, which is not whole minutes.
+        .{ .{ .year = 1883, .month = .Nov, .day = 18, .offset = -(5 * 3600 + 50 * 60 + 36) }, "1883-11-18T00:00:00-05:50:36" },
+    };
+    for (cases) |case| {
+        var buf: [64]u8 = undefined;
+        var w = std.Io.Writer.fixed(&buf);
+        try writeDateTime(&w, case[0]);
+        try std.testing.expectEqualStrings(case[1], w.buffered());
+    }
+
+    // What it writes, `parse` reads back as the same value.
+    const datetime: DateTime = .{ .year = 2024, .month = .Mar, .day = 15, .hour = 14, .nanosecond = 250, .offset = -5 * 3600, .weekday = .Fri };
+    var buf: [64]u8 = undefined;
+    var w = std.Io.Writer.fixed(&buf);
+    try writeDateTime(&w, datetime);
+    try std.testing.expectEqual(datetime, (try parse(w.buffered())).value);
+}
+
+/// Writes `date` as an ISO 8601 calendar date in the extended form,
+/// `2024-03-15`.
+///
+/// The year is four digits from 0 to 9999, and otherwise the expanded form
+/// with a sign and at least four digits; see `writeDateTime`.
+pub fn writeDate(writer: *std.Io.Writer, date: Date) std.Io.Writer.Error!void {
+    if (date.year >= 0 and date.year <= 9999) {
+        try writer.print("{d:0>4}", .{@as(u32, @intCast(date.year))});
+    } else {
+        try writer.print("{c}{d:0>4}", .{ @as(u8, if (date.year < 0) '-' else '+'), @abs(date.year) });
+    }
+    try writer.print("-{d:0>2}-{d:0>2}", .{ @intFromEnum(date.month), date.day });
+}
+
+test writeDate {
+    const cases = [_]struct { Date, []const u8 }{
+        .{ .{ .year = 2024, .month = .Mar, .day = 15 }, "2024-03-15" },
+        .{ .{ .year = 12, .month = .Jan, .day = 1 }, "0012-01-01" },
+        .{ .{ .year = -1, .month = .Jan, .day = 1 }, "-0001-01-01" },
+        .{ .{ .year = 10000, .month = .Jan, .day = 1 }, "+10000-01-01" },
+    };
+    for (cases) |case| {
+        var buf: [32]u8 = undefined;
+        var w = std.Io.Writer.fixed(&buf);
+        try writeDate(&w, case[0]);
+        try std.testing.expectEqualStrings(case[1], w.buffered());
+    }
 }
 
 /// A position in the input, with the small operations the grammar is

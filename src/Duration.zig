@@ -24,6 +24,7 @@ const Date = @import("Date.zig");
 const Day = @import("day.zig").Day;
 const Month = @import("month.zig").Month;
 const Year = @import("year.zig").Year;
+const json = @import("json.zig");
 
 /// Whole calendar months, years included at twelve to the year.
 months: i64 = 0,
@@ -259,6 +260,63 @@ test addToDate {
         Date{ .year = 0, .month = .Jan, .day = 1 },
         (Duration{ .months = 12 }).addToDate(.{ .year = -1, .month = .Jan, .day = 1 }),
     );
+}
+
+/// Writes this duration as a JSON string of its ISO 8601 spelling, `"P1Y2M10DT2H30M"`, which is
+/// what `std.json.Stringify` calls when it meets one, in a field or on its
+/// own.
+///
+/// The text is `format`'s, so it is canonical rather than as parsed —
+/// `P14M` comes back as `P1Y2M`, the same length of time. A duration whose
+/// fields disagree in sign has no spelling that reads back, and is written
+/// as `format` writes it; see `sign`.
+pub fn jsonStringify(self: Duration, jw: anytype) !void {
+    return json.stringify(jw, self, json.writeDuration);
+}
+
+test jsonStringify {
+    const text = try std.json.Stringify.valueAlloc(std.testing.allocator, @as(Duration, .{ .months = 14, .days = 10, .nanoseconds = 150 * nanoseconds_per_minute }), .{});
+    defer std.testing.allocator.free(text);
+    try std.testing.expectEqualStrings("\"P1Y2M10DT2H30M\"", text);
+}
+
+/// Reads one of these from the next token of a JSON document, which has to
+/// be a string; `std.json.parseFromSlice` and its relatives call this when
+/// they meet the type. See `jsonStringify` for the text, and `json.parse`
+/// for what happens to the token.
+///
+/// A string that is not the representation is `error.InvalidCharacter`, and
+/// one whose components are out of range is `error.Overflow`, the errors
+/// `std.json` gives for a malformed and an oversized number.
+pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Duration {
+    return json.parse(Duration, allocator, source, options, json.readDuration);
+}
+
+test jsonParse {
+    const Record = struct { value: Duration };
+    const parsed = try std.json.parseFromSlice(Record, std.testing.allocator, "{\"value\":\"P1Y2M10DT2H30M\"}", .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.value.eql(Duration{ .months = 14, .days = 10, .nanoseconds = 150 * nanoseconds_per_minute }));
+
+    try std.testing.expectError(
+        error.InvalidCharacter,
+        std.json.parseFromSlice(Duration, std.testing.allocator, "\"not a date\"", .{}),
+    );
+}
+
+/// Reads one of these from a `std.json.Value` that has already been
+/// parsed, which has to be a string; `std.json.parseFromValue` calls this
+/// when it meets the type. See `jsonParse`.
+pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Duration {
+    _ = allocator;
+    _ = options;
+    return json.parseFromValue(Duration, source, json.readDuration);
+}
+
+test jsonParseFromValue {
+    const parsed = try std.json.parseFromValue(Duration, std.testing.allocator, .{ .string = "P1Y2M10DT2H30M" }, .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.eql(Duration{ .months = 14, .days = 10, .nanoseconds = 150 * nanoseconds_per_minute }));
 }
 
 test {

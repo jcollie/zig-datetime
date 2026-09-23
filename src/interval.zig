@@ -25,6 +25,8 @@ const std = @import("std");
 const DateTime = @import("DateTime.zig");
 const Duration = @import("Duration.zig");
 const Instant = @import("Instant.zig");
+const iso8601 = @import("iso8601.zig");
+const json = @import("json.zig");
 
 /// A time interval in one of ISO 8601's three forms. The duration-only form
 /// is not one of them: a duration on its own has no place on the timeline
@@ -252,33 +254,28 @@ pub const Interval = union(enum) {
     /// Writes this interval in ISO 8601's own syntax, which is what `{f}`
     /// gets, in the form it was built in: the two parts joined by a solidus.
     ///
-    /// An endpoint is written in full in the extended form,
-    /// `2024-03-15T14:30:00`, with a decimal fraction of the second only
-    /// when there is one and with no trailing zeroes on it. Its offset is
-    /// written as `Z` when it is zero and `±hh:mm` otherwise, with `:ss`
-    /// after that for the historical offsets that are not whole minutes —
-    /// which ISO 8601 has no spelling for, and which is written anyway
-    /// rather than rounded to a different instant. A `DateTime` cannot say
-    /// that it was read without a zone, so an endpoint that was comes out
-    /// as `Z`: the same instant `length` and `contains` took it to be.
+    /// Each endpoint is written in full by `iso8601.writeDateTime`. A
+    /// `DateTime` cannot say that it was read without a zone, so an endpoint
+    /// that was comes out as `Z`: the same instant `length` and `contains`
+    /// took it to be.
     ///
     /// The duration is written by `Duration.format`.
     pub fn format(self: Interval, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         switch (self) {
             .start_end => |i| {
-                try writeDateTime(writer, i.start);
+                try iso8601.writeDateTime(writer, i.start);
                 try writer.writeByte('/');
-                try writeDateTime(writer, i.end);
+                try iso8601.writeDateTime(writer, i.end);
             },
             .start_duration => |i| {
-                try writeDateTime(writer, i.start);
+                try iso8601.writeDateTime(writer, i.start);
                 try writer.writeByte('/');
                 try i.duration.format(writer);
             },
             .duration_end => |i| {
                 try i.duration.format(writer);
                 try writer.writeByte('/');
-                try writeDateTime(writer, i.end);
+                try iso8601.writeDateTime(writer, i.end);
             },
         }
     }
@@ -314,64 +311,63 @@ pub const Interval = union(enum) {
             try std.testing.expectEqualStrings(case[1], w.buffered());
         }
     }
+
+    /// Writes this interval as a JSON string of its ISO 8601 spelling, in the form it was built in, `"2024-03-15T09:00:00Z/P1D"`, which is
+    /// what `std.json.Stringify` calls when it meets one, in a field or on its
+    /// own.
+    ///
+    /// Reading is `iso8601.parseInterval`, so a string that runs backwards, or
+    /// whose duration would carry an endpoint outside the years a `Year` can
+    /// hold, is refused, and `start` and `end` are safe on what comes back.
+    pub fn jsonStringify(self: Interval, jw: anytype) !void {
+        return json.stringify(jw, self, json.writeInterval);
+    }
+
+    test jsonStringify {
+        const text = try std.json.Stringify.valueAlloc(std.testing.allocator, @as(Interval, .{ .start_duration = .{ .start = .{ .year = 2024, .month = .Mar, .day = 15, .hour = 9, .weekday = .Fri }, .duration = .{ .days = 1 } } }), .{});
+        defer std.testing.allocator.free(text);
+        try std.testing.expectEqualStrings("\"2024-03-15T09:00:00Z/P1D\"", text);
+    }
+
+    /// Reads one of these from the next token of a JSON document, which has to
+    /// be a string; `std.json.parseFromSlice` and its relatives call this when
+    /// they meet the type. See `jsonStringify` for the text, and `json.parse`
+    /// for what happens to the token.
+    ///
+    /// A string that is not the representation is `error.InvalidCharacter`, and
+    /// one whose components are out of range is `error.Overflow`, the errors
+    /// `std.json` gives for a malformed and an oversized number.
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Interval {
+        return json.parse(Interval, allocator, source, options, json.readInterval);
+    }
+
+    test jsonParse {
+        const Record = struct { value: Interval };
+        const parsed = try std.json.parseFromSlice(Record, std.testing.allocator, "{\"value\":\"2024-03-15T09:00:00Z/P1D\"}", .{});
+        defer parsed.deinit();
+        try std.testing.expectEqualDeep(@as(Interval, .{ .start_duration = .{ .start = .{ .year = 2024, .month = .Mar, .day = 15, .hour = 9, .weekday = .Fri }, .duration = .{ .days = 1 } } }), parsed.value.value);
+
+        try std.testing.expectError(
+            error.InvalidCharacter,
+            std.json.parseFromSlice(Interval, std.testing.allocator, "\"not a date\"", .{}),
+        );
+    }
+
+    /// Reads one of these from a `std.json.Value` that has already been
+    /// parsed, which has to be a string; `std.json.parseFromValue` calls this
+    /// when it meets the type. See `jsonParse`.
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Interval {
+        _ = allocator;
+        _ = options;
+        return json.parseFromValue(Interval, source, json.readInterval);
+    }
+
+    test jsonParseFromValue {
+        const parsed = try std.json.parseFromValue(Interval, std.testing.allocator, .{ .string = "2024-03-15T09:00:00Z/P1D" }, .{});
+        defer parsed.deinit();
+        try std.testing.expectEqualDeep(@as(Interval, .{ .start_duration = .{ .start = .{ .year = 2024, .month = .Mar, .day = 15, .hour = 9, .weekday = .Fri }, .duration = .{ .days = 1 } } }), parsed.value);
+    }
 };
-
-/// One endpoint in ISO 8601's extended form; see `Interval.format`.
-fn writeDateTime(writer: *std.Io.Writer, datetime: DateTime) std.Io.Writer.Error!void {
-    // Four digits is all ISO 8601 allows without prior agreement, and a year
-    // outside them is written with the sign its expanded form asks for rather
-    // than truncated to something that means a different year.
-    if (datetime.year >= 0 and datetime.year <= 9999) {
-        try writer.print("{d:0>4}", .{@as(u32, @intCast(datetime.year))});
-    } else {
-        try writer.print("{c}{d:0>4}", .{ @as(u8, if (datetime.year < 0) '-' else '+'), @abs(datetime.year) });
-    }
-    try writer.print("-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}", .{
-        @intFromEnum(datetime.month),
-        datetime.day,
-        datetime.hour,
-        datetime.minute,
-        datetime.second,
-    });
-
-    if (datetime.nanosecond != 0) {
-        var digits: [9]u8 = undefined;
-        _ = std.fmt.printInt(&digits, datetime.nanosecond, 10, .lower, .{ .fill = '0', .width = 9 });
-        var len: usize = digits.len;
-        while (len > 1 and digits[len - 1] == '0') len -= 1;
-        try writer.print(".{s}", .{digits[0..len]});
-    }
-
-    if (datetime.offset == 0) return writer.writeByte('Z');
-
-    const magnitude: u32 = @abs(datetime.offset);
-    try writer.print("{c}{d:0>2}:{d:0>2}", .{
-        @as(u8, if (datetime.offset < 0) '-' else '+'),
-        magnitude / std.time.s_per_hour,
-        magnitude % std.time.s_per_hour / std.time.s_per_min,
-    });
-    if (magnitude % std.time.s_per_min != 0) {
-        try writer.print(":{d:0>2}", .{magnitude % std.time.s_per_min});
-    }
-}
-
-test writeDateTime {
-    const cases = [_]struct { DateTime, []const u8 }{
-        .{ .{ .year = 2024, .month = .Mar, .day = 15, .hour = 14, .minute = 30 }, "2024-03-15T14:30:00Z" },
-        .{ .{ .year = 2024, .month = .Mar, .day = 15, .nanosecond = 1 }, "2024-03-15T00:00:00.000000001Z" },
-        .{ .{ .year = 12, .month = .Jan, .day = 1 }, "0012-01-01T00:00:00Z" },
-        .{ .{ .year = -1, .month = .Jan, .day = 1 }, "-0001-01-01T00:00:00Z" },
-        .{ .{ .year = 10000, .month = .Jan, .day = 1 }, "+10000-01-01T00:00:00Z" },
-        // America/Chicago's local mean time, which is not whole minutes.
-        .{ .{ .year = 1883, .month = .Nov, .day = 18, .offset = -(5 * 3600 + 50 * 60 + 36) }, "1883-11-18T00:00:00-05:50:36" },
-    };
-    for (cases) |case| {
-        var buf: [64]u8 = undefined;
-        var w = std.Io.Writer.fixed(&buf);
-        try writeDateTime(&w, case[0]);
-        try std.testing.expectEqualStrings(case[1], w.buffered());
-    }
-}
 
 test {
     std.testing.refAllDecls(@This());

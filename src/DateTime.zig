@@ -41,6 +41,8 @@ const Designation = @import("designation.zig").Designation;
 const locale = @import("locale.zig");
 const print = @import("print.zig");
 const read = @import("read.zig");
+const iso8601 = @import("iso8601.zig");
+const json = @import("json.zig");
 
 nanosecond: Nanosecond = 0, // [0..999999999]
 second: Second = 0, // [0..61]
@@ -3373,4 +3375,62 @@ test "day of the year is checked against the length of the year" {
     try std.testing.expectError(error.ParseError, DateTime.parse("YYYY-DDD", "2025-366"));
     try std.testing.expectError(error.ParseError, DateTime.parse("YYYY-DDD", "2024-367"));
     try std.testing.expectError(error.ParseError, DateTime.parse("YYYY-DDD", "2024-000"));
+}
+
+/// Writes this date and time as a JSON string of a date and time with its offset, `"2024-03-15T14:30:00-05:00"`, which is
+/// what `std.json.Stringify` calls when it meets one, in a field or on its
+/// own.
+///
+/// The weekday is not written, since the date decides it, and is worked out
+/// again on the way back in. `designation` is not written either, because
+/// ISO 8601 has nowhere to put a zone's name, so it comes back empty; ask a
+/// `TimeZone` for it. A local time read without a zone comes back with an
+/// offset of zero, the same as `Z`; see `json.readDateTime`.
+pub fn jsonStringify(self: DateTime, jw: anytype) !void {
+    return json.stringify(jw, self, iso8601.writeDateTime);
+}
+
+test jsonStringify {
+    const text = try std.json.Stringify.valueAlloc(std.testing.allocator, @as(DateTime, .{ .year = 2024, .month = .Mar, .day = 15, .hour = 14, .minute = 30, .offset = -5 * 3600, .weekday = .Fri }), .{});
+    defer std.testing.allocator.free(text);
+    try std.testing.expectEqualStrings("\"2024-03-15T14:30:00-05:00\"", text);
+}
+
+/// Reads one of these from the next token of a JSON document, which has to
+/// be a string; `std.json.parseFromSlice` and its relatives call this when
+/// they meet the type. See `jsonStringify` for the text, and `json.parse`
+/// for what happens to the token.
+///
+/// A string that is not the representation is `error.InvalidCharacter`, and
+/// one whose components are out of range is `error.Overflow`, the errors
+/// `std.json` gives for a malformed and an oversized number.
+pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !DateTime {
+    return json.parse(DateTime, allocator, source, options, json.readDateTime);
+}
+
+test jsonParse {
+    const Record = struct { value: DateTime };
+    const parsed = try std.json.parseFromSlice(Record, std.testing.allocator, "{\"value\":\"2024-03-15T14:30:00-05:00\"}", .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(DateTime{ .year = 2024, .month = .Mar, .day = 15, .hour = 14, .minute = 30, .offset = -5 * 3600, .weekday = .Fri }, parsed.value.value);
+
+    try std.testing.expectError(
+        error.InvalidCharacter,
+        std.json.parseFromSlice(DateTime, std.testing.allocator, "\"not a date\"", .{}),
+    );
+}
+
+/// Reads one of these from a `std.json.Value` that has already been
+/// parsed, which has to be a string; `std.json.parseFromValue` calls this
+/// when it meets the type. See `jsonParse`.
+pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !DateTime {
+    _ = allocator;
+    _ = options;
+    return json.parseFromValue(DateTime, source, json.readDateTime);
+}
+
+test jsonParseFromValue {
+    const parsed = try std.json.parseFromValue(DateTime, std.testing.allocator, .{ .string = "2024-03-15T14:30:00-05:00" }, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(DateTime{ .year = 2024, .month = .Mar, .day = 15, .hour = 14, .minute = 30, .offset = -5 * 3600, .weekday = .Fri }, parsed.value);
 }

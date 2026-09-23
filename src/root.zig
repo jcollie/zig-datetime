@@ -24,6 +24,9 @@
 //! format string can be written in, taken from Go, from UTS #35 and from
 //! the C library.
 //!
+//! `Date`, `DateTime`, `Instant`, `Duration` and `Interval` carry the
+//! hooks `std.json` looks for, and go to and from JSON as ISO 8601 strings.
+//!
 //! Timezone support starts at `tzdb`, which loads a `TimeZone` either
 //! from the operating system's copy of the IANA database or from one
 //! embedded in the binary at build time. `tzif` and `posixtz` are the

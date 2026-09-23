@@ -22,6 +22,7 @@ const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Year = @import("year.zig").Year;
 const Month = @import("month.zig").Month;
 const Day = @import("day.zig").Day;
+const json = @import("json.zig");
 
 timestamp: i128,
 
@@ -261,4 +262,64 @@ test asDateTime {
 
     // The result is always UTC, so it carries no offset.
     try std.testing.expectEqual(@as(i32, 0), epoch.offset);
+}
+
+/// Writes this instant as a JSON string of the instant in UTC, `"2024-03-15T19:30:00Z"`, which is
+/// what `std.json.Stringify` calls when it meets one, in a field or on its
+/// own.
+///
+/// Reading accepts any offset, since a zoned time names one instant
+/// whichever zone it was written in, but refuses a time **without** one,
+/// which names a different instant in every zone; see `json.readInstant`.
+///
+/// An instant beyond the years a `Year` can hold is written as the first or
+/// last date there is, since `asDateTime` saturates and a hook that writes
+/// has no error of its own to report it with.
+pub fn jsonStringify(self: Instant, jw: anytype) !void {
+    return json.stringify(jw, self, json.writeInstant);
+}
+
+test jsonStringify {
+    const text = try std.json.Stringify.valueAlloc(std.testing.allocator, @as(Instant, .{ .timestamp = 1710531000 * std.time.ns_per_s }), .{});
+    defer std.testing.allocator.free(text);
+    try std.testing.expectEqualStrings("\"2024-03-15T19:30:00Z\"", text);
+}
+
+/// Reads one of these from the next token of a JSON document, which has to
+/// be a string; `std.json.parseFromSlice` and its relatives call this when
+/// they meet the type. See `jsonStringify` for the text, and `json.parse`
+/// for what happens to the token.
+///
+/// A string that is not the representation is `error.InvalidCharacter`, and
+/// one whose components are out of range is `error.Overflow`, the errors
+/// `std.json` gives for a malformed and an oversized number.
+pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Instant {
+    return json.parse(Instant, allocator, source, options, json.readInstant);
+}
+
+test jsonParse {
+    const Record = struct { value: Instant };
+    const parsed = try std.json.parseFromSlice(Record, std.testing.allocator, "{\"value\":\"2024-03-15T19:30:00Z\"}", .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(Instant{ .timestamp = 1710531000 * std.time.ns_per_s }, parsed.value.value);
+
+    try std.testing.expectError(
+        error.InvalidCharacter,
+        std.json.parseFromSlice(Instant, std.testing.allocator, "\"not a date\"", .{}),
+    );
+}
+
+/// Reads one of these from a `std.json.Value` that has already been
+/// parsed, which has to be a string; `std.json.parseFromValue` calls this
+/// when it meets the type. See `jsonParse`.
+pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Instant {
+    _ = allocator;
+    _ = options;
+    return json.parseFromValue(Instant, source, json.readInstant);
+}
+
+test jsonParseFromValue {
+    const parsed = try std.json.parseFromValue(Instant, std.testing.allocator, .{ .string = "2024-03-15T19:30:00Z" }, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(Instant{ .timestamp = 1710531000 * std.time.ns_per_s }, parsed.value);
 }
