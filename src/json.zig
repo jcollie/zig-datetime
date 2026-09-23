@@ -168,17 +168,46 @@ test readDate {
     try std.testing.expectError(error.Overflow, readDate("2024-02-30"));
 }
 
-/// `text` as a `DateTime`: whatever `iso8601.parse` reads, as long as it
-/// reads all of it.
+/// Whether an endpoint `iso8601.parse` read is a complete date and time:
+/// named down to the second, and carrying its offset from UTC.
 ///
-/// That includes a reduced representation, `2024-03-15` being midnight at
-/// its start, and a local time without a zone, which comes back with an
-/// offset of zero. A `DateTime` cannot tell that apart from `Z`, so a
-/// reader that has to know should read the string itself and ask
-/// `iso8601.parse`, whose `has_offset` says.
+/// This is the check that keeps the readers from filling in what the text
+/// left out. `iso8601.parse` reads a reduced representation by defaulting
+/// the components it did not see, midnight for a missing time and zero for
+/// missing seconds, and reads a time without a zone with an offset of zero,
+/// and its result says so with `precision` and `has_offset`. A `DateTime`
+/// or an `Instant` has no field to carry either, so a value read from such
+/// text would look complete and not be: `2024-03-15T14:30` would come back
+/// indistinguishable from `2024-03-15T14:30:00Z`. Refusing it is the only
+/// answer that does not make something up.
+///
+/// What passes is exactly the shape of RFC 3339's `date-time`, which is
+/// what JSON Schema's `date-time` format means and what JSON producers
+/// write, extended only to the week and ordinal dates and the basic form,
+/// which name a day just as exactly.
+fn isComplete(has_offset: bool, precision: iso8601.Precision) bool {
+    return has_offset and precision == .second;
+}
+
+test isComplete {
+    try std.testing.expect(isComplete(true, .second));
+    try std.testing.expect(!isComplete(false, .second));
+    try std.testing.expect(!isComplete(true, .minute));
+}
+
+/// `text` as a `DateTime`: a date and time named down to the second, with
+/// its offset from UTC — the shape of RFC 3339's `date-time`. See
+/// `isComplete` for why anything less is refused rather than completed.
+///
+/// A fraction of the second is kept, and an offset of any size `iso8601`
+/// reads is kept as it was written, which is the point of reading into a
+/// `DateTime` rather than an `Instant`. `iso8601.parse` itself stays
+/// lenient, and is the way to read a local time on purpose: its
+/// `has_offset` says when it was one.
 pub fn readDateTime(text: []const u8) TextError!DateTime {
     const result = iso8601.parse(text) catch |err| return textError(err);
     if (result.str.len != text.len) return error.InvalidCharacter;
+    if (!isComplete(result.has_offset, result.precision)) return error.InvalidCharacter;
     return result.value;
 }
 
@@ -187,25 +216,36 @@ test readDateTime {
         DateTime{ .year = 2024, .month = .Mar, .day = 15, .hour = 14, .minute = 30, .offset = -5 * 3600, .weekday = .Fri },
         try readDateTime("2024-03-15T14:30:00-05:00"),
     );
+    try std.testing.expectEqual(
+        DateTime{ .year = 2024, .month = .Mar, .day = 15, .hour = 14, .minute = 30, .nanosecond = 500_000_000, .weekday = .Fri },
+        try readDateTime("2024-03-15T14:30:00.5Z"),
+    );
+    // A local time, which would have come back looking like UTC.
+    try std.testing.expectError(error.InvalidCharacter, readDateTime("2024-03-15T14:30:00"));
+    // Reduced, which would have had its missing components made up.
+    try std.testing.expectError(error.InvalidCharacter, readDateTime("2024-03-15T14:30Z"));
+    try std.testing.expectError(error.InvalidCharacter, readDateTime("2024-03-15"));
     try std.testing.expectError(error.InvalidCharacter, readDateTime("2024-03-15T14:30:00Z trailing"));
-    try std.testing.expectError(error.Overflow, readDateTime("2024-03-15T25:00"));
+    try std.testing.expectError(error.Overflow, readDateTime("2024-03-15T25:00:00Z"));
 }
 
-/// `text` as an `Instant`: a date and time that **has** to carry a zone.
+/// `text` as an `Instant`: a date and time held to the same shape as
+/// `readDateTime`, then taken to the instant it names by removing its
+/// offset.
 ///
-/// A local time names a different instant in every zone, so reading one as
-/// UTC would be a guess, and an `Instant` has no field to record that it
-/// was one. `DateTime` is the type to read a zoneless time into.
+/// The offset is used and not kept, because an `Instant` is a point on the
+/// timeline and has nowhere to put one. Where the local offset is part of
+/// what the value means — a forecast for a place, a meeting in a zone —
+/// the field wants to be a `DateTime`, which keeps it.
 pub fn readInstant(text: []const u8) TextError!Instant {
-    const result = iso8601.parse(text) catch |err| return textError(err);
-    if (result.str.len != text.len or !result.has_offset) return error.InvalidCharacter;
-    return result.value.toInstant();
+    return (try readDateTime(text)).toInstant();
 }
 
 test readInstant {
     try std.testing.expectEqual(Instant{ .timestamp = 0 }, try readInstant("1970-01-01T00:00:00Z"));
     try std.testing.expectEqual(Instant{ .timestamp = 0 }, try readInstant("1969-12-31T19:00:00-05:00"));
     try std.testing.expectError(error.InvalidCharacter, readInstant("1970-01-01T00:00:00"));
+    try std.testing.expectError(error.InvalidCharacter, readInstant("1970-01-01T00:00Z"));
 }
 
 /// `text` as a `Duration`: whatever `iso8601.parseDuration` reads, as long
@@ -222,17 +262,44 @@ test readDuration {
 }
 
 /// `text` as an `Interval`: whatever `iso8601.parseInterval` reads, as
-/// long as it reads all of it.
+/// long as it reads all of it and every endpoint it wrote is complete in
+/// the sense of `isComplete`, named to the second with an offset.
+///
+/// An abbreviated end passes when the start does. It takes the start's
+/// zone when it has none of its own, but that is ISO 8601's rule for the
+/// abbreviated form rather than a default: the text says which zone, by
+/// saying it once. It reads to the start's precision by construction.
 pub fn readInterval(text: []const u8) TextError!Interval {
     const result = iso8601.parseInterval(text) catch |err| return textError(err);
     if (result.str.len != text.len) return error.InvalidCharacter;
+    inline for (.{ result.start, result.end }) |endpoint| {
+        if (endpoint) |e| if (!isComplete(e.has_offset, e.precision)) return error.InvalidCharacter;
+    }
     return result.value;
 }
 
 test readInterval {
-    const interval = try readInterval("2024-03-15/P1D");
+    const interval = try readInterval("2024-03-15T00:00:00Z/P1D");
     try std.testing.expect(interval.duration().?.eql(.{ .days = 1 }));
-    try std.testing.expectError(error.Overflow, readInterval("2024-03-16/2024-03-15"));
+
+    // An abbreviated end takes the start's zone, which the text did give.
+    const afternoon = try readInterval("2024-03-15T13:30:00-05:00/15:30:00");
+    try std.testing.expectEqual(@as(i32, -5 * 3600), afternoon.end().offset);
+
+    // Either endpoint local or reduced is refused, whichever form.
+    for ([_][]const u8{
+        "2024-03-15/P1D",
+        "2024-03-15T00:00:00/P1D",
+        "P1D/2024-03-15T00:00:00",
+        "2024-03-15T00:00:00Z/2024-03-16T00:00:00",
+        "2024-03-15T00:00Z/2024-03-16T00:00Z",
+    }) |bad| {
+        std.testing.expectError(error.InvalidCharacter, readInterval(bad)) catch |err| {
+            std.debug.print("read but should not have: \"{s}\"\n", .{bad});
+            return err;
+        };
+    }
+    try std.testing.expectError(error.Overflow, readInterval("2024-03-16T00:00:00Z/2024-03-15T00:00:00Z"));
 }
 
 /// `Instant.jsonStringify`'s text: the instant in UTC, by way of

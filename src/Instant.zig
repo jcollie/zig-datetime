@@ -269,8 +269,10 @@ test asDateTime {
 /// own.
 ///
 /// Reading accepts any offset, since a zoned time names one instant
-/// whichever zone it was written in, but refuses a time **without** one,
-/// which names a different instant in every zone; see `json.readInstant`.
+/// whichever zone it was written in, and then drops it, having nowhere to
+/// keep it; a field whose local offset matters wants to be a `DateTime`. It
+/// refuses a time **without** an offset, which names a different instant in
+/// every zone, and one not named to the second; see `json.readInstant`.
 ///
 /// An instant beyond the years a `Year` can hold is written as the first or
 /// last date there is, since `asDateTime` saturates and a hook that writes

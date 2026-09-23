@@ -319,6 +319,10 @@ pub const Interval = union(enum) {
     /// Reading is `iso8601.parseInterval`, so a string that runs backwards, or
     /// whose duration would carry an endpoint outside the years a `Year` can
     /// hold, is refused, and `start` and `end` are safe on what comes back.
+    /// It is stricter than that parser in one way: every endpoint written has
+    /// to be named to the second and carry an offset, as `DateTime` requires,
+    /// rather than being read as UTC or completed with zeroes. An abbreviated
+    /// end may leave its zone to the start's; see `json.readInterval`.
     pub fn jsonStringify(self: Interval, jw: anytype) !void {
         return json.stringify(jw, self, json.writeInterval);
     }

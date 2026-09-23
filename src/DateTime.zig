@@ -3384,8 +3384,12 @@ test "day of the year is checked against the length of the year" {
 /// The weekday is not written, since the date decides it, and is worked out
 /// again on the way back in. `designation` is not written either, because
 /// ISO 8601 has nowhere to put a zone's name, so it comes back empty; ask a
-/// `TimeZone` for it. A local time read without a zone comes back with an
-/// offset of zero, the same as `Z`; see `json.readDateTime`.
+/// `TimeZone` for it.
+///
+/// Reading is strict: the string has to name the time to the second and
+/// carry its offset, the shape of RFC 3339's `date-time`, and anything less
+/// is refused rather than completed with a made-up zone or zeroes; see
+/// `json.readDateTime`.
 pub fn jsonStringify(self: DateTime, jw: anytype) !void {
     return json.stringify(jw, self, iso8601.writeDateTime);
 }
@@ -3417,6 +3421,11 @@ test jsonParse {
     try std.testing.expectError(
         error.InvalidCharacter,
         std.json.parseFromSlice(DateTime, std.testing.allocator, "\"not a date\"", .{}),
+    );
+    // A local time is refused rather than read as UTC.
+    try std.testing.expectError(
+        error.InvalidCharacter,
+        std.json.parseFromSlice(DateTime, std.testing.allocator, "\"2024-03-15T14:30:00\"", .{}),
     );
 }
 

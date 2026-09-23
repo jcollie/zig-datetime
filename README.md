@@ -961,11 +961,23 @@ consumer of dates speaks — JavaScript's `Date.prototype.toJSON` writes one
 | `Interval` | `"2024-03-15T09:00:00Z/P1D"`, in the form it was built in |
 
 A fraction of a second is written only when there is one. Reading goes
-through the ISO 8601 parsers above and has to consume the whole string. It
-is as lenient as they are with two exceptions: a `Date` refuses a time of
-day and a date that names no day, since it has nowhere to keep the one and
-nothing to hold for the other, and an `Instant` refuses a time without a
-zone, which would name a different instant in every zone.
+through the ISO 8601 parsers above and has to consume the whole string, and
+it is **strict**: it refuses anything it would otherwise have to complete
+with something the text did not say.
+
+- A `DateTime`, an `Instant`, and every endpoint an `Interval` writes out
+  have to be named to the second and carry an offset — the shape of RFC
+  3339's `date-time`, which is what JSON Schema's `date-time` format means.
+  `"2024-03-15T14:30:00"` is refused rather than read as UTC, and
+  `"2024-03-15T14:30Z"` rather than given a `:00`. An abbreviated interval
+  end may still leave its zone to the start, since ISO 8601 says the
+  start's zone applies to it.
+- A `Date` refuses a time of day and a date that names no day, since it has
+  nowhere to keep the one and nothing to hold for the other.
+
+The parsers themselves stay lenient, and are the way to read a local or
+reduced time on purpose: `iso8601.parse` reports `has_offset` and
+`precision` beside the value, which a `DateTime` has no fields for.
 
 A string that is not the representation is `error.InvalidCharacter`, and
 one whose components are out of range — a month of 13, an interval that
@@ -974,10 +986,11 @@ gives for a malformed and an oversized number, so they sit in the error
 sets it already has. Anything but a string is `error.UnexpectedToken`.
 
 Three things do not survive the trip. A `DateTime`'s `designation` has
-nowhere to go in ISO 8601 and comes back empty. A local time read without
-a zone comes back with an offset of zero, the same as `Z`; read the string
-yourself with `iso8601.parse` if the difference matters. And a `Duration`
-comes back canonical, `P14M` as `P1Y2M`, the same length of time.
+nowhere to go in ISO 8601 and comes back empty. An `Instant` is read by
+removing the offset it was written with, and has nowhere to keep it, so a
+field whose local offset matters — a forecast for a place — wants to be a
+`DateTime`, which keeps it as written. And a `Duration` comes back
+canonical, `P14M` as `P1Y2M`, the same length of time.
 
 `iso8601.writeDateTime` and `iso8601.writeDate` are the writers the hooks
 use, public for anyone who wants the same text without JSON around it.
