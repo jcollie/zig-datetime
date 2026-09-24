@@ -266,10 +266,10 @@ test readDuration {
 /// long as it reads all of it and every endpoint it wrote is complete in
 /// the sense of `isComplete`, named to the second with an offset.
 ///
-/// An abbreviated end passes when the start does. It takes the start's
-/// zone when it has none of its own, but that is ISO 8601's rule for the
-/// abbreviated form rather than a default: the text says which zone, by
-/// saying it once. It reads to the start's precision by construction.
+/// An end with no zone of its own passes when the start has one, because
+/// it is in the start's zone: that is ISO 8601's rule for the part after
+/// the separator, not a default, and the text did say which zone, once. An
+/// abbreviated end reads to the start's precision by construction.
 pub fn readInterval(text: []const u8) TextError!Interval {
     const result = iso8601.parseInterval(text) catch |err| return textError(err);
     if (result.str.len != text.len) return error.InvalidCharacter;
@@ -283,16 +283,19 @@ test readInterval {
     const interval = try readInterval("2024-03-15T00:00:00Z/P1D");
     try std.testing.expect(interval.duration().?.eql(.{ .days = 1 }));
 
-    // An abbreviated end takes the start's zone, which the text did give.
+    // An end takes the start's zone, which the text did give, whether it is
+    // abbreviated or written out in full.
     const afternoon = try readInterval("2024-03-15T13:30:00-05:00/15:30:00");
     try std.testing.expectEqual(@as(i32, -5 * 3600), afternoon.end().offset);
+    const full = try readInterval("2024-03-15T13:30:00-05:00/2024-03-15T15:30:00");
+    try std.testing.expectEqual(@as(i32, -5 * 3600), full.end().offset);
 
     // Either endpoint local or reduced is refused, whichever form.
     for ([_][]const u8{
         "2024-03-15/P1D",
         "2024-03-15T00:00:00/P1D",
         "P1D/2024-03-15T00:00:00",
-        "2024-03-15T00:00:00Z/2024-03-16T00:00:00",
+        "2024-03-15T00:00:00/2024-03-16T00:00:00Z",
         "2024-03-15T00:00Z/2024-03-16T00:00Z",
     }) |bad| {
         std.testing.expectError(error.InvalidCharacter, readInterval(bad)) catch |err| {

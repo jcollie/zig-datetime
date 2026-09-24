@@ -894,8 +894,12 @@ the choice that lets intervals tile: `2024-03-15/2024-03-16` and
 `2024-03-16/2024-03-17` share no instant and leave none out.
 
 The parts are separated by a solidus, or by the `--` that ISO 8601 allows
-where a solidus cannot go, and the end may leave out its higher-order
-components, which it takes from the start along with the start's zone:
+where a solidus cannot go. An end with no zone of its own is in the
+start's, whether or not it is abbreviated: ISO 8601-1:2019/Amd 1:2022 says
+a time shift written before the separator applies after it, and makes
+`2018-01-15T12:00:00+05:00/2018-02-20T12:00:00` end at `+05:00`. And the
+end may leave out its higher-order components, which it takes from the
+start:
 
 | interval | ends at |
 | --- | --- |
@@ -1022,8 +1026,8 @@ with something the text did not say.
   an offset — the shape of RFC 3339's `date-time`, which is what JSON
   Schema's `date-time` format means. `"2024-03-15T14:30:00"` is refused
   rather than read as UTC, and `"2024-03-15T14:30Z"` rather than given a
-  `:00`. An abbreviated interval end may still leave its zone to the
-  start, since ISO 8601 says the start's zone applies to it.
+  `:00`. An interval's end may still leave its zone to the start, since
+  ISO 8601 says the start's zone applies to it.
 - A `Date` refuses a time of day and a date that names no day, since it has
   nowhere to keep the one and nothing to hold for the other.
 
@@ -1249,6 +1253,20 @@ collection called `zig-datetime`, with the full text of each RFC attached.
   The repeat rules a recurring interval may carry in its clause 13, which
   `parseRecurringInterval` leaves unread, and, with Part 1, the evidence
   that the standard gives `R0` and `R-1` no meaning.
+- **[ISO8601-1-AMD1]** International Organization for Standardization, *Date
+  and time — Representations for information interchange — Part 1: Basic
+  rules — Amendment 1: Technical corrections*, ISO 8601-1:2019/Amd 1:2022,
+  <https://www.iso.org/standard/81801.html>. Its restated 5.5.1 is why an
+  interval's end without a zone takes the start's, written out in full or
+  not, and its 5.3.2 on the ending of the day is how `24:00` is read: the
+  first instant of the next day.
+- **[ISO8601-2-AMD1]** International Organization for Standardization, *Date
+  and time — Representations for information interchange — Part 2:
+  Extensions — Amendment 1: Canonical expressions, extensions to time scale
+  components and date time arithmetic*, ISO 8601-2:2019/Amd 1:2025,
+  <https://www.iso.org/standard/86124.html>. Which pairs of units convert
+  exactly — years and months, weeks and days, as `Duration` folds them —
+  and which do not.
 - **[ISO8601-1-WD]** ISO/TC 154/WG 5, *Data elements and interchange formats
   — Information interchange — Representation of dates and times — Part 1:
   Basic rules*, ISO/WD 8601-1, working draft N0038, 16 February 2016,

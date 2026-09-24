@@ -872,9 +872,14 @@ pub const IntervalParseResult = struct {
 /// adding new ones; of those that do, the one that consumes the most of the
 /// end wins, which is what tells `03-14` as a month and day from `03` as a
 /// day followed by trailing text, and a tie goes to the earliest splice. A
-/// full end is tried alongside, and preferred only when it consumes more. An abbreviated end without a zone
-/// is in the start's, as ISO 8601 says it is; a full end without one is a
-/// local time, as it would be anywhere else.
+/// full end is tried alongside, and preferred only when it consumes more.
+///
+/// **An end without a zone is in the start's**, abbreviated or not. ISO
+/// 8601-1:2019/Amd 1:2022, 5.5.1, says a time shift written with the part
+/// before the separator applies to the part after it unless that part has
+/// its own, and its example makes `2018-01-15T12:00:00+05:00/2018-02-20T12:00:00`
+/// end at `+05:00`. So the end's `has_offset` reports true when it took the
+/// start's zone, since the text did give one, once.
 ///
 /// The splice is at component separators only, so an end abbreviated from
 /// a start in the basic form can leave out the date, after the `T`, and
@@ -1022,8 +1027,30 @@ test parseInterval {
     try std.testing.expectEqual(@as(?IntervalParseResult.Endpoint, null), reduced.end);
     try std.testing.expectEqual(@as(?u8, 'S'), (try parseInterval("2024-03-15/PT1.5S")).fractional);
 
-    // A full end without a zone is a local time, even after a start with one.
-    const local = try parseInterval("2024-03-15T09:00Z/2024-03-15T17:00");
+    // A full end without a zone takes the start's, as an abbreviated one
+    // does: this is ISO 8601-1:2019/Amd 1:2022's own example.
+    const shifted = try parseInterval("2018-01-15T12:00:00+05:00/2018-02-20T12:00:00");
+    try std.testing.expect(shifted.end.?.has_offset);
+    try std.testing.expectEqual(@as(i32, 5 * 3600), shifted.value.end().offset);
+    // An end with a zone of its own keeps it.
+    const own = try parseInterval("2018-01-15T12:00:00+05:00/2018-02-20T12:00:00Z");
+    try std.testing.expectEqual(@as(i32, 0), own.value.end().offset);
+    // The ending of the day is the first instant of the next, so these five
+    // are one interval: ISO 8601-1:2019/Amd 1:2022, 5.3.2, EXAMPLE 12.
+    const day = try parseInterval("2022-04-19T00:00:00Z/P1D");
+    for ([_][]const u8{
+        "2022-04-19T00:00:00Z/2022-04-19T24:00:00",
+        "2022-04-19T00:00:00Z/2022-04-20T00:00:00",
+        "2022-04-18T24:00:00Z/2022-04-19T24:00:00",
+        "2022-04-18T24:00:00Z/2022-04-20T00:00:00",
+    }) |same| {
+        const got = try parseInterval(same);
+        try std.testing.expectEqual(day.value.start().toInstant(), got.value.start().toInstant());
+        try std.testing.expectEqual(day.value.end().toInstant(), got.value.end().toInstant());
+    }
+
+    // And a local start leaves a local end local.
+    const local = try parseInterval("2024-03-15T09:00/2024-03-15T17:00");
     try std.testing.expect(!local.end.?.has_offset);
 
     // Trailing text is left, as with `parse`, and a solidus in it is not
@@ -1259,10 +1286,6 @@ fn parseEnd(start_text: []const u8, start: ParseResult, text: []const u8) ParseE
             if (len == b.len and !best_is_full) continue;
         }
 
-        if (!result.has_offset and start.has_offset) {
-            result.value.offset = start.value.offset;
-            result.has_offset = true;
-        }
         // The result points into the buffer, which is about to go; what the
         // caller wants is how much of `text` was read.
         result.str = text[0..len];
@@ -1270,8 +1293,14 @@ fn parseEnd(start_text: []const u8, start: ParseResult, text: []const u8) ParseE
         best_is_full = false;
     }
 
-    if (best) |b| return b;
-    return first_error orelse error.ParseError;
+    var end = best orelse return first_error orelse error.ParseError;
+    // The start's zone carries over to an end that has none of its own,
+    // whichever way the end was read; see `parseInterval`.
+    if (!end.result.has_offset and start.has_offset) {
+        end.result.value.offset = start.value.offset;
+        end.result.has_offset = true;
+    }
+    return end;
 }
 
 /// Whether a representation stopping at `precision` named no time of day.

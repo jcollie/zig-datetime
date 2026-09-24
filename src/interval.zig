@@ -325,7 +325,8 @@ pub const Interval = union(enum) {
     /// It is stricter than that parser in one way: every endpoint written has
     /// to be named to the second and carry an offset, as `DateTime` requires,
     /// rather than being read as UTC or completed with zeroes. An abbreviated
-    /// end may leave its zone to the start's; see `json.readInterval`.
+    /// end without a zone of its own is in the start's, as ISO 8601 says; see
+    /// `json.readInterval`.
     pub fn jsonStringify(self: Interval, jw: anytype) !void {
         return json.stringify(jw, self, json.writeInterval);
     }
