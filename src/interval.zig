@@ -22,7 +22,10 @@
 
 const std = @import("std");
 
+const Date = @import("Date.zig");
 const DateTime = @import("DateTime.zig");
+const Day = @import("day.zig").Day;
+const Year = @import("year.zig").Year;
 const Duration = @import("Duration.zig");
 const Instant = @import("Instant.zig");
 const iso8601 = @import("iso8601.zig");
@@ -372,6 +375,295 @@ pub const Interval = union(enum) {
         try std.testing.expectEqualDeep(@as(Interval, .{ .start_duration = .{ .start = .{ .year = 2024, .month = .Mar, .day = 15, .hour = 9, .weekday = .Fri }, .duration = .{ .days = 1 } } }), parsed.value);
     }
 };
+
+/// A recurring time interval as ISO 8601 writes one: `R5/` or `R/` in front
+/// of an `Interval`, as in `R12/1985-04-12T23:20:50Z/P1Y2M15DT12H30M`.
+///
+/// ISO 8601 defines one as "a series of consecutive time intervals of the
+/// same duration or nominal duration" (ISO 8601-1, 2.1.17), and both
+/// halves of that do work here:
+///
+///  * **Consecutive** means each interval begins where the one before it
+///    ended. So the series is built by adding the duration to each
+///    occurrence in turn, not by multiplying it from the first one, and the
+///    two differ once a month has been clamped. `R/2024-01-31T00:00:00Z/P1M`
+///    runs to the 29th of February, then the 29th of March, and stays on the
+///    29th from then on. Multiplying would give the 31st of March, but then
+///    the third interval would not start where the second ended, which is
+///    what the definition asks for. RFC 5545's `RRULE` multiplies, because
+///    it describes a pattern of events rather than a run of intervals; this
+///    is not that.
+///  * **The same duration** is the one the interval was written with, when
+///    it was written with one. An interval written as two endpoints has a
+///    length and no calendar duration (see `Interval.duration`), so its
+///    series repeats that length, measured on the timeline in nanoseconds.
+///
+/// Which occurrence the text names depends on the form (ISO 8601-1, 4.5.1).
+/// A start and an end, or a start and a duration, name the **first**
+/// interval, and the series runs forwards from it. A duration and an end
+/// name the **last**, and the series runs backwards from it: `R/P1Y/1985-
+/// 04-12T23:20:50Z` is an unbounded run of years that finished in April
+/// 1985. `iterator` walks outward from the named occurrence in whichever
+/// direction that is.
+///
+/// `count` is how many intervals the series has, the first included: ISO
+/// 8601's own example reads `R15/…` as "fifteen recurrences". It is null
+/// when the text wrote `R/`, which the standard reads as unbounded.
+pub const RecurringInterval = struct {
+    /// How many intervals the series holds, or null for an unbounded one.
+    /// Never zero; see `iso8601.parseRecurringInterval`.
+    count: ?u64,
+    /// The occurrence the text wrote: the first of the series, or the last
+    /// when it was written as a duration and an end.
+    interval: Interval,
+
+    /// Whether the series runs forwards from `interval`, which is the case
+    /// unless it was written as a duration and an end, where `interval` is
+    /// the last occurrence and the rest came before it.
+    pub fn isForwards(self: RecurringInterval) bool {
+        return self.interval != .duration_end;
+    }
+
+    test isForwards {
+        const monthly: RecurringInterval = .{ .count = null, .interval = .{ .start_duration = .{
+            .start = .{ .year = 2024, .month = .Jan, .day = 1 },
+            .duration = .{ .months = 1 },
+        } } };
+        try std.testing.expect(monthly.isForwards());
+
+        const ending: RecurringInterval = .{ .count = null, .interval = .{ .duration_end = .{
+            .duration = .{ .months = 1 },
+            .end = .{ .year = 2024, .month = .Jan, .day = 1 },
+        } } };
+        try std.testing.expect(!ending.isForwards());
+    }
+
+    /// The occurrences of the series, starting with the one the text wrote
+    /// and walking away from it — forwards in time, or backwards when
+    /// `isForwards` says not.
+    pub fn iterator(self: RecurringInterval) Iterator {
+        return .{ .remaining = self.count, .current = self.interval };
+    }
+
+    test iterator {
+        const series: RecurringInterval = .{ .count = 3, .interval = .{ .start_duration = .{
+            .start = .{ .year = 2024, .month = .Jan, .day = 31 },
+            .duration = .{ .months = 1 },
+        } } };
+        var it = series.iterator();
+        const expected = [_]Date{
+            .{ .year = 2024, .month = .Jan, .day = 31 },
+            // Clamped: February has no 31st.
+            .{ .year = 2024, .month = .Feb, .day = 29 },
+            // And consecutive, so the clamp is carried on: the 29th of March,
+            // where the second interval ended, not the 31st.
+            .{ .year = 2024, .month = .Mar, .day = 29 },
+        };
+        for (expected) |date| {
+            const occurrence = (try it.next()).?;
+            try std.testing.expectEqual(date, occurrence.start().asDate());
+        }
+        try std.testing.expectEqual(@as(?Interval, null), try it.next());
+    }
+
+    /// Walks the occurrences of a `RecurringInterval`; see `iterator`.
+    pub const Iterator = struct {
+        /// How many occurrences are still to come, or null for no end.
+        remaining: ?u64,
+        /// The next occurrence to hand out, or, once one has been, the one
+        /// most recently handed out.
+        current: Interval,
+        /// Whether `current` has been handed out yet.
+        started: bool = false,
+
+        /// The next occurrence, or null once the series is finished.
+        ///
+        /// Each occurrence after the first is made from the one before it,
+        /// keeping the form the text was written in:
+        ///
+        ///  * start and duration: the new start is the old start plus the
+        ///    duration, which is where the old interval ended;
+        ///  * duration and end: the new end is the old end less the
+        ///    duration, which is where the old interval started — see
+        ///    `Interval.start` for what less means once a month is clamped;
+        ///  * start and end: the new start is the old end, and the new end is
+        ///    the old interval's length after it, in nanoseconds of the
+        ///    timeline. The new endpoints carry the old end's offset.
+        ///
+        /// An unbounded series runs into the edge of the years a `Year` can
+        /// hold eventually, and a bounded one can too. The occurrence past
+        /// that edge does exist; it just cannot be represented. So it is
+        /// `error.OutOfRange`, not the end of the series, which would say the
+        /// series stopped when it did not.
+        pub fn next(self: *Iterator) error{OutOfRange}!?Interval {
+            if (self.remaining) |remaining| {
+                if (remaining == 0) return null;
+            }
+            if (self.started) self.current = try step(self.current);
+            self.started = true;
+            if (self.remaining) |*remaining| remaining.* -= 1;
+            return self.current;
+        }
+
+        test next {
+            // Written as a duration and an end, so the text names the last
+            // occurrence and the series runs backwards from it.
+            const series: RecurringInterval = .{ .count = 2, .interval = .{ .duration_end = .{
+                .duration = .{ .days = 1 },
+                .end = .{ .year = 2024, .month = .Mar, .day = 15 },
+            } } };
+            var it = series.iterator();
+            try std.testing.expectEqual(@as(Day, 14), (try it.next()).?.start().day);
+            try std.testing.expectEqual(@as(Day, 13), (try it.next()).?.start().day);
+            try std.testing.expectEqual(@as(?Interval, null), try it.next());
+
+            // Unbounded, into the end of the calendar.
+            const forever: RecurringInterval = .{ .count = null, .interval = .{ .start_duration = .{
+                .start = .{ .year = std.math.maxInt(Year), .month = .Dec, .day = 30 },
+                .duration = .{ .days = 1 },
+            } } };
+            var edge = forever.iterator();
+            _ = try edge.next(); // the 30th to the 31st
+            // The 31st fits and the day after it does not, so the occurrence
+            // is refused whole, before `end` could be asked for it.
+            try std.testing.expectError(error.OutOfRange, edge.next());
+        }
+    };
+
+    /// Writes this series in ISO 8601's own syntax, which is what `{f}`
+    /// gets: `R`, the count unless the series is unbounded, a solidus, and
+    /// the interval as `Interval.format` writes it.
+    pub fn format(self: RecurringInterval, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        try writer.writeByte('R');
+        if (self.count) |count| try writer.print("{d}", .{count});
+        try writer.writeByte('/');
+        try self.interval.format(writer);
+    }
+
+    test format {
+        var buf: [96]u8 = undefined;
+        var w = std.Io.Writer.fixed(&buf);
+        const series: RecurringInterval = .{ .count = 12, .interval = .{ .start_duration = .{
+            .start = .{ .year = 1985, .month = .Apr, .day = 12, .hour = 23, .minute = 20, .second = 50 },
+            .duration = .{ .months = 14, .days = 15, .nanoseconds = 12 * Duration.nanoseconds_per_hour + 30 * Duration.nanoseconds_per_minute },
+        } } };
+        try series.format(&w);
+        try std.testing.expectEqualStrings("R12/1985-04-12T23:20:50Z/P1Y2M15DT12H30M", w.buffered());
+
+        w = std.Io.Writer.fixed(&buf);
+        try (RecurringInterval{ .count = null, .interval = series.interval }).format(&w);
+        try std.testing.expectEqualStrings("R/1985-04-12T23:20:50Z/P1Y2M15DT12H30M", w.buffered());
+    }
+
+    /// Writes this series as a JSON string of its ISO 8601 spelling,
+    /// `"R5/2024-03-15T09:00:00Z/P1W"`, which is what `std.json.Stringify`
+    /// calls when it meets one, in a field or on its own.
+    ///
+    /// Reading is `iso8601.parseRecurringInterval`, held to the same strict
+    /// endpoints as `Interval.jsonParse`: every endpoint written has to be
+    /// named to the second and carry an offset; see
+    /// `json.readRecurringInterval`.
+    pub fn jsonStringify(self: RecurringInterval, jw: anytype) !void {
+        return json.stringify(jw, self, json.writeRecurringInterval);
+    }
+
+    test jsonStringify {
+        const text = try std.json.Stringify.valueAlloc(std.testing.allocator, weekly_example, .{});
+        defer std.testing.allocator.free(text);
+        try std.testing.expectEqualStrings("\"R5/2024-03-15T09:00:00Z/P7D\"", text);
+    }
+
+    /// Reads one of these from the next token of a JSON document, which has
+    /// to be a string; `std.json.parseFromSlice` and its relatives call this
+    /// when they meet the type. See `jsonStringify` for the text, and
+    /// `json.parse` for what happens to the token.
+    ///
+    /// A string that is not the representation is `error.InvalidCharacter`,
+    /// and one whose components are out of range — `R0` among them — is
+    /// `error.Overflow`, the errors `std.json` gives for a malformed and an
+    /// oversized number.
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !RecurringInterval {
+        return json.parse(RecurringInterval, allocator, source, options, json.readRecurringInterval);
+    }
+
+    test jsonParse {
+        const Record = struct { value: RecurringInterval };
+        const parsed = try std.json.parseFromSlice(Record, std.testing.allocator, "{\"value\":\"R5/2024-03-15T09:00:00Z/P7D\"}", .{});
+        defer parsed.deinit();
+        try std.testing.expectEqualDeep(weekly_example, parsed.value.value);
+
+        try std.testing.expectError(
+            error.InvalidCharacter,
+            std.json.parseFromSlice(RecurringInterval, std.testing.allocator, "\"not a series\"", .{}),
+        );
+    }
+
+    /// Reads one of these from a `std.json.Value` that has already been
+    /// parsed, which has to be a string; `std.json.parseFromValue` calls this
+    /// when it meets the type. See `jsonParse`.
+    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !RecurringInterval {
+        _ = allocator;
+        _ = options;
+        return json.parseFromValue(RecurringInterval, source, json.readRecurringInterval);
+    }
+
+    test jsonParseFromValue {
+        const parsed = try std.json.parseFromValue(RecurringInterval, std.testing.allocator, .{ .string = "R5/2024-03-15T09:00:00Z/P7D" }, .{});
+        defer parsed.deinit();
+        try std.testing.expectEqualDeep(weekly_example, parsed.value);
+    }
+
+    /// Five weeks from 09:00 UTC on the 15th of March 2024, for the tests.
+    const weekly_example: RecurringInterval = .{ .count = 5, .interval = .{ .start_duration = .{
+        .start = .{ .year = 2024, .month = .Mar, .day = 15, .hour = 9, .weekday = .Fri },
+        .duration = .{ .days = 7 },
+    } } };
+};
+
+/// The occurrence after `interval` in a series; see `Iterator.next`.
+///
+/// Both endpoints of the new occurrence are checked, including the one it
+/// does not store. `Interval.end` of a start and a duration adds the
+/// duration when it is asked, and panics if that leaves the calendar, so an
+/// occurrence whose start fits and whose end does not must be refused here,
+/// where there is an error to refuse it with.
+fn step(interval: Interval) error{OutOfRange}!Interval {
+    return switch (interval) {
+        .start_duration => |i| blk: {
+            const start = try i.start.addChecked(i.duration);
+            _ = try start.addChecked(i.duration);
+            break :blk .{ .start_duration = .{ .start = start, .duration = i.duration } };
+        },
+        .duration_end => |i| blk: {
+            const end = try i.end.addChecked(i.duration.negate());
+            _ = try end.addChecked(i.duration.negate());
+            break :blk .{ .duration_end = .{ .duration = i.duration, .end = end } };
+        },
+        .start_end => |i| blk: {
+            const length: Duration = .{ .nanoseconds = interval.length() };
+            // Both new endpoints are measured from the old end, so they share
+            // its offset, and adding nanoseconds to a reading at a fixed offset
+            // moves it exactly that far along the timeline.
+            break :blk .{ .start_end = .{
+                .start = i.end,
+                .end = try i.end.addChecked(length),
+            } };
+        },
+    };
+}
+
+test step {
+    // Two endpoints repeat their length, not a calendar duration: the 31st
+    // of January to the 29th of February is 29 days, and so is the next.
+    const first: Interval = .{ .start_end = .{
+        .start = .{ .year = 2024, .month = .Jan, .day = 31 },
+        .end = .{ .year = 2024, .month = .Feb, .day = 29 },
+    } };
+    const second = try step(first);
+    try std.testing.expectEqual(Date{ .year = 2024, .month = .Feb, .day = 29 }, second.start().asDate());
+    try std.testing.expectEqual(Date{ .year = 2024, .month = .Mar, .day = 29 }, second.end().asDate());
+    try std.testing.expectEqual(first.length(), second.length());
+}
 
 test {
     std.testing.refAllDecls(@This());

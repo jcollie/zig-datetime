@@ -28,6 +28,7 @@ const Date = @import("Date.zig");
 const DateTime = @import("DateTime.zig");
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Instant = @import("Instant.zig");
+const Interval = @import("interval.zig").Interval;
 const Month = @import("month.zig").Month;
 const TimeZone = @import("TimeZone.zig");
 const Year = @import("year.zig").Year;
@@ -278,6 +279,91 @@ test "fuzz iso8601.parseInterval" {
 
 test "mutate iso8601.parseInterval" {
     try overMutations(iso8601IntervalProperty, &iso8601_interval_seeds);
+}
+
+// ISO 8601 recurring intervals -----------------------------------------
+
+/// Whatever `iso8601.parseRecurringInterval` accepts walks as a series
+/// without a panic: each occurrence is well formed, meets the one before it
+/// end to end, and the walk stops at its count or at an `OutOfRange` at the
+/// edge of the calendar. And it reads back as itself once written out.
+fn iso8601RecurringProperty(text: []const u8) !void {
+    const result = iso8601.parseRecurringInterval(text) catch return;
+
+    try std.testing.expect(result.str.len <= text.len);
+    try std.testing.expectEqualStrings(result.str, text[0..result.str.len]);
+    const series = result.value;
+    try std.testing.expect(series.count != 0);
+
+    var it = series.iterator();
+    var previous: ?Interval = null;
+    var seen: u64 = 0;
+    while (seen < 64) : (seen += 1) {
+        const occurrence = (it.next() catch |err| switch (err) {
+            error.OutOfRange => break,
+        }) orelse break;
+        try isWellFormed(occurrence.start());
+        try isWellFormed(occurrence.end());
+        try std.testing.expect(occurrence.length() >= 0);
+        if (previous) |p| {
+            // Consecutive: the series has no gaps and no overlaps.
+            if (series.isForwards()) {
+                try std.testing.expectEqual(p.end().toInstant(), occurrence.start().toInstant());
+            } else {
+                try std.testing.expectEqual(p.start().toInstant(), occurrence.end().toInstant());
+            }
+        }
+        previous = occurrence;
+    }
+    if (series.count) |count| {
+        if (count <= 64) try std.testing.expect(seen <= count);
+    }
+
+    const first = series.interval;
+    const start = first.start();
+    const end = first.end();
+    if (start.year < 0 or start.year > 9999 or end.year < 0 or end.year > 9999) return;
+    var buffer: [max_input * 2]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    try series.format(&writer);
+    const again = iso8601.parseRecurringInterval(writer.buffered()) catch |err| {
+        std.debug.print("wrote \"{s}\", which does not read back\n", .{writer.buffered()});
+        return err;
+    };
+    try std.testing.expectEqualStrings(writer.buffered(), again.str);
+    try std.testing.expectEqual(series.count, again.value.count);
+    try std.testing.expectEqual(start.toInstant(), again.value.interval.start().toInstant());
+    try std.testing.expectEqual(end.toInstant(), again.value.interval.end().toInstant());
+}
+
+const iso8601_recurring_seeds = [_][]const u8{
+    "",
+    "R12/1985-04-12T23:20:50Z/1985-06-25T10:30:00Z",
+    "R12/1985-04-12T23:20:50Z/P1Y2M15DT12H30M",
+    "R/P1Y2M15DT12H/1985-04-12T23:20:50Z",
+    "R5/2024-01-31/P1M",
+    "R/2024-03-15T09:00Z/17:00",
+    "R2/2024-03--2024-04",
+    "R/9999-12-30/P1D",
+    "R/P1D/0000-01-02",
+    "R3/2024-03-15/PT0S",
+    "R0/2024-03-15/P1D",
+    "R-1/2024-03-15/P1D",
+    "R18446744073709551615/2024-03-15/P1D",
+    "R/2024-03-15T09:00:00Z/P1W/FREQ=WK",
+    "RRRR",
+};
+
+test "iso8601.parseRecurringInterval over the seeds" {
+    try overSeeds(iso8601RecurringProperty, &iso8601_recurring_seeds);
+}
+
+test "fuzz iso8601.parseRecurringInterval" {
+    try overFuzzer(iso8601RecurringProperty);
+}
+
+test "mutate iso8601.parseRecurringInterval" {
+    try overMutations(iso8601RecurringProperty, &iso8601_recurring_seeds);
 }
 
 // RFC 822 --------------------------------------------------------------

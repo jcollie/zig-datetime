@@ -917,18 +917,68 @@ An interval has to run forwards — an end before its start is
 duration that would carry the other endpoint outside the years a `Year`
 can hold is refused at parse time, which is what makes `start` and `end`
 safe on anything the parser returns; `DateTime.addChecked` is the same
-check for a duration from somewhere else. Recurring intervals, `R5/…`, are
-not read, and neither is a bare duration, which ISO 8601 counts as an
-interval placed by context that there is none of here.
+check for a duration from somewhere else. A bare duration is not read,
+since ISO 8601 counts it as an interval placed by context and there is none
+of that here.
 
 `Interval.format` writes one back in its own form, each endpoint in full in
 the extended form with `Z` for a zero offset. A `DateTime` cannot say it
 was read without a zone, so a local endpoint comes back as `Z` — the
 instant `length` and `contains` took it to be.
 
+### Recurring intervals
+
+`iso8601.parseRecurringInterval` reads a series of intervals, and
+`RecurringInterval` is what it reads into: `R`, how many intervals, a
+solidus, and an interval in any of the three forms above.
+
+```zig
+const result = try datetime.iso8601.parseRecurringInterval("R12/2024-01-31T09:00:00Z/P1M");
+var occurrences = result.value.iterator();
+while (try occurrences.next()) |occurrence| {
+    // occurrence is an Interval: occurrence.start(), occurrence.end(), ...
+}
+```
+
+ISO 8601 defines one as "a series of consecutive time intervals of the same
+duration or nominal duration", and the word *consecutive* decides the
+arithmetic: each interval starts where the one before it ended, so the
+series is built by adding the duration to each occurrence in turn, not by
+multiplying it from the first. Once a month has been clamped the two
+differ. `R/2024-01-31T00:00:00Z/P1M` runs to the 29th of February, then the
+29th of March, and stays on the 29th, because that is where each interval
+ended. RFC 5545's `RRULE` multiplies instead, and lands on the 31st where
+there is one, but it describes a pattern of events, not a run of intervals
+laid end to end. An interval written as two endpoints has no calendar
+duration to repeat, so its series repeats its length on the timeline.
+
+The count is the number of intervals, the first one included — the
+standard reads its own `R15/…` as "fifteen recurrences" — and `R/` with no
+count is unbounded. The form decides which occurrence the text names. A
+start and an end, or a start and a duration, name the **first**, and the
+series runs forwards. A duration and an end name the **last**:
+`R/P1Y/1985-04-12T23:20:50Z` is an unbounded run of years that ended in
+April 1985. `iterator` walks outward from the one named, and `isForwards`
+says which way.
+
+`R0` and `R-1` are refused. The text this was written against, the 2016
+working draft of ISO 8601-1, defines neither. Later accounts of the
+published standard say `R-1` means unbounded, and disagree about whether
+`R0` is no intervals or one interval not repeated. A count read the wrong
+way gives a series of the wrong length and nothing to say so, so neither
+is guessed at. Neither is the repeat rule ISO 8601-2 adds after the
+interval, `/FREQ=…`: it is left as trailing text.
+
+Only the named occurrence is range-checked when the series is parsed,
+because an unbounded series has no last occurrence to check. Walking one
+into the edge of the years a `Year` can hold makes `next` return
+`error.OutOfRange`. It does not return null there, because the series has
+not ended; the next occurrence just cannot be represented.
+
 ## JSON
 
-`Date`, `DateTime`, `Instant`, `Duration` and `Interval` carry the hooks
+`Date`, `DateTime`, `Instant`, `Duration`, `Interval` and
+`RecurringInterval` carry the hooks
 `std.json` looks for, `jsonStringify`, `jsonParse` and `jsonParseFromValue`,
 so they can be fields of anything you read or write with it:
 
@@ -959,19 +1009,20 @@ consumer of dates speaks — JavaScript's `Date.prototype.toJSON` writes one
 | `Instant` | `"2024-03-15T19:30:00Z"`, always in UTC |
 | `Duration` | `"P1Y2M10DT2H30M"` |
 | `Interval` | `"2024-03-15T09:00:00Z/P1D"`, in the form it was built in |
+| `RecurringInterval` | `"R5/2024-03-15T09:00:00Z/P7D"` |
 
 A fraction of a second is written only when there is one. Reading goes
 through the ISO 8601 parsers above and has to consume the whole string, and
 it is **strict**: it refuses anything it would otherwise have to complete
 with something the text did not say.
 
-- A `DateTime`, an `Instant`, and every endpoint an `Interval` writes out
-  have to be named to the second and carry an offset — the shape of RFC
-  3339's `date-time`, which is what JSON Schema's `date-time` format means.
-  `"2024-03-15T14:30:00"` is refused rather than read as UTC, and
-  `"2024-03-15T14:30Z"` rather than given a `:00`. An abbreviated interval
-  end may still leave its zone to the start, since ISO 8601 says the
-  start's zone applies to it.
+- A `DateTime`, an `Instant`, and every endpoint an `Interval` or a
+  `RecurringInterval` writes out have to be named to the second and carry
+  an offset — the shape of RFC 3339's `date-time`, which is what JSON
+  Schema's `date-time` format means. `"2024-03-15T14:30:00"` is refused
+  rather than read as UTC, and `"2024-03-15T14:30Z"` rather than given a
+  `:00`. An abbreviated interval end may still leave its zone to the
+  start, since ISO 8601 says the start's zone applies to it.
 - A `Date` refuses a time of day and a date that names no day, since it has
   nowhere to keep the one and nothing to hold for the other.
 
@@ -1188,6 +1239,22 @@ collection called `zig-datetime`, with the full text of each RFC attached.
   ISO 8601-1:2019, <https://www.iso.org/standard/70907.html>. The calendar,
   ordinal and week date forms that `iso8601` reads, the duration syntax
   `Duration` holds, and the time interval forms `Interval` holds.
+- **[ISO8601-1-WD]** ISO/TC 154/WG 5, *Data elements and interchange formats
+  — Information interchange — Representation of dates and times — Part 1:
+  Basic rules*, ISO/WD 8601-1, working draft N0038, 16 February 2016,
+  <https://www.loc.gov/standards/datetime/iso-tc154-wg5_n0038_iso_wd_8601-1_2016-02-16.pdf>.
+  A draft of ISO 8601-1 that the Library of Congress made public, and the
+  only text of the standard read for this library. Its clause 4.5 and
+  definition 2.1.17 are what `RecurringInterval` follows: a series of
+  *consecutive* intervals, the count read as the number of intervals, and
+  the duration-and-end form naming the last one rather than the first.
+- **[ISO8601-2-WD]** ISO/TC 154/WG 5, *Data elements and interchange formats
+  — Information interchange — Representation of dates and times — Part 2:
+  Extensions*, ISO/WD 8601-2, working draft N0039, 16 February 2016,
+  <https://www.loc.gov/standards/datetime/iso-tc154-wg5_n0039_iso_wd_8601-2_2016-02-16.pdf>.
+  The repeat rules a recurring interval may carry, which
+  `parseRecurringInterval` leaves unread, and confirmation that neither draft
+  defines `R0` or `R-1`.
 - **[UTS35]** Unicode Consortium, *Unicode Locale Data Markup Language (LDML)
   Part 4: Dates*, UTS #35,
   <https://unicode.org/reports/tr35/tr35-dates.html>. The pattern vocabulary

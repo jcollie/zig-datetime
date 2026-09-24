@@ -27,7 +27,8 @@
 //!
 //! `parseDuration` reads `P3Y6M4DT12H30M5S` and its relatives, and
 //! `parseInterval` the three forms of a time interval, with a solidus or a
-//! double hyphen between the parts and the end abbreviated if it likes.
+//! double hyphen between the parts and the end abbreviated if it likes, and
+//! `parseRecurringInterval` a series of them, `R12/…`.
 //!
 //! Going the other way, `writeDateTime` and `writeDate` write the extended
 //! form in full, which is what the `std.json` hooks on the types write.
@@ -36,9 +37,11 @@
 //!
 //!   * Expanded years such as `+002024`, which ISO 8601 allows only by
 //!     prior agreement between the parties exchanging the data.
-//!   * Recurring intervals, `R5/…`. Durations *are* read, by
-//!     `parseDuration`, and time intervals by `parseInterval`, but not the
-//!     alternative `P0003-06-04T12:30:05` form of a duration.
+//!   * The alternative `P0003-06-04T12:30:05` form of a duration, and a
+//!     duration standing alone as an interval, which ISO 8601 places on the
+//!     timeline by context that a parser does not have.
+//!   * The repeat rules ISO 8601-2 adds to a recurring interval, and the
+//!     `R0` and `R-1` counts; see `parseRecurringInterval`.
 //!   * Mixing the basic and extended forms between the date and the time,
 //!     which ISO 8601 forbids. The zone is the one deliberate exception;
 //!     see `parse`.
@@ -49,6 +52,7 @@ const Date = @import("Date.zig");
 const DateTime = @import("DateTime.zig");
 const Duration = @import("Duration.zig");
 const Interval = @import("interval.zig").Interval;
+const RecurringInterval = @import("interval.zig").RecurringInterval;
 const Day = @import("day.zig").Day;
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Hour = @import("hour.zig").Hour;
@@ -1058,6 +1062,127 @@ test parseInterval {
         "20080215/0314",
     }) |bad| {
         std.testing.expect(std.meta.isError(parseInterval(bad))) catch |err| {
+            std.debug.print("parsed but should not have: \"{s}\"\n", .{bad});
+            return err;
+        };
+    }
+}
+
+/// What a successful `parseRecurringInterval` yields.
+pub const RecurringIntervalParseResult = struct {
+    /// The prefix of the input that was consumed.
+    str: []const u8,
+    value: RecurringInterval,
+    /// `IntervalParseResult.start`, for the interval after the `R`.
+    start: ?IntervalParseResult.Endpoint = null,
+    /// `IntervalParseResult.end`, for the interval after the `R`.
+    end: ?IntervalParseResult.Endpoint = null,
+    /// `IntervalParseResult.fractional`, for the interval after the `R`.
+    fractional: ?u8 = null,
+};
+
+/// Parses an ISO 8601 recurring time interval at the start of `value`: the
+/// designator `R`, the number of intervals in the series or nothing for an
+/// unbounded one, a solidus, and a time interval as `parseInterval` reads
+/// it.
+///
+///     R12/1985-04-12T23:20:50Z/1985-06-25T10:30:00Z
+///     R12/1985-04-12T23:20:50Z/P1Y2M15DT12H30M
+///     R/P1Y2M15DT12H/1985-04-12T23:20:50Z
+///
+/// The count is the number of intervals, the first included, which is how
+/// ISO 8601 reads its own example `R15/…`: fifteen recurrences. It has to
+/// be at least one. `R0` and `R-1` are refused, because the text this was
+/// written against, the 2016 working draft of ISO 8601-1, defines neither.
+/// Later accounts of the published standard say `R-1` means unbounded, like
+/// `R/`, and disagree about whether `R0` means no intervals or one that is
+/// not repeated; a reading picked from those would be a guess, and a count
+/// read wrongly produces a series of the wrong length without complaint.
+///
+/// A bare duration after the `R`, as in `R8/PT72H`, is refused for the
+/// reason `parseInterval` refuses one: ISO 8601 places it on the timeline
+/// by context, and there is none here. So is the repeat rule that ISO 8601-2
+/// appends to the end, `/FREQ=…`; it is left as trailing text, like anything
+/// else after the interval.
+///
+/// The interval itself is range-checked as `parseInterval` checks it. The
+/// later occurrences are not, since an unbounded series has no last one to
+/// check; `RecurringInterval.Iterator.next` reports the first one that
+/// leaves the calendar as `error.OutOfRange` when it gets there.
+pub fn parseRecurringInterval(value: []const u8) ParseError!RecurringIntervalParseResult {
+    var cursor: Cursor = .{ .text = value };
+    if (!cursor.eatAny("Rr")) return error.ParseError;
+
+    var count: ?u64 = null;
+    const digits = cursor.digitsAhead();
+    if (digits != 0) {
+        var n: u64 = 0;
+        for (cursor.text[cursor.index..][0..digits]) |char| {
+            n = std.math.mul(u64, n, 10) catch return error.OutOfRange;
+            n = std.math.add(u64, n, char - '0') catch return error.OutOfRange;
+        }
+        cursor.index += digits;
+        if (n == 0) return error.OutOfRange;
+        count = n;
+    }
+
+    if (!cursor.eat('/')) return error.ParseError;
+
+    const interval = try parseInterval(value[cursor.index..]);
+    return .{
+        .str = value[0 .. cursor.index + interval.str.len],
+        .value = .{ .count = count, .interval = interval.value },
+        .start = interval.start,
+        .end = interval.end,
+        .fractional = interval.fractional,
+    };
+}
+
+test parseRecurringInterval {
+    const twelve = try parseRecurringInterval("R12/1985-04-12T23:20:50Z/P1Y2M15DT12H30M");
+    try std.testing.expectEqual(@as(?u64, 12), twelve.value.count);
+    try std.testing.expect(twelve.value.interval.duration().?.eql(.{
+        .months = 14,
+        .days = 15,
+        .nanoseconds = 12 * Duration.nanoseconds_per_hour + 30 * Duration.nanoseconds_per_minute,
+    }));
+    try std.testing.expectEqual(
+        @as(?IntervalParseResult.Endpoint, .{ .has_offset = true, .precision = .second }),
+        twelve.start,
+    );
+
+    // Unbounded, and written as a duration and an end, so the series runs
+    // backwards from the interval the text names.
+    const ending = try parseRecurringInterval("R/P1Y2M15DT12H/1985-04-12T23:20:50Z");
+    try std.testing.expectEqual(@as(?u64, null), ending.value.count);
+    try std.testing.expect(!ending.value.isForwards());
+
+    // Both endpoints, and the abbreviated end `parseInterval` reads.
+    const pair = try parseRecurringInterval("R2/2024-03-15T09:00Z/17:00");
+    try std.testing.expectEqual(@as(Hour, 17), pair.value.interval.end().hour);
+
+    // Trailing text is left, the repeat rule of ISO 8601-2 included.
+    try std.testing.expectEqualStrings(
+        "R/2024-03-15T09:00:00Z/P1W",
+        (try parseRecurringInterval("R/2024-03-15T09:00:00Z/P1W/FREQ=WK")).str,
+    );
+
+    for ([_][]const u8{
+        "",
+        "R",
+        "R5",
+        "R5/",
+        "5/2024-03-15/P1D",
+        "R5 /2024-03-15/P1D",
+        // Neither is defined by the text this was written against.
+        "R0/2024-03-15/P1D",
+        "R-1/2024-03-15/P1D",
+        // A duration on its own has no place on the timeline.
+        "R8/PT72H",
+        // More intervals than a `u64` counts.
+        "R99999999999999999999/2024-03-15/P1D",
+    }) |bad| {
+        std.testing.expect(std.meta.isError(parseRecurringInterval(bad))) catch |err| {
             std.debug.print("parsed but should not have: \"{s}\"\n", .{bad});
             return err;
         };

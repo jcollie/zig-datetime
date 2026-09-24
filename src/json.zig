@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
-//! What the `std.json` hooks on `Date`, `DateTime`, `Instant`, `Duration`
-//! and `Interval` have in common.
+//! What the `std.json` hooks on `Date`, `DateTime`, `Instant`, `Duration`,
+//! `Interval` and `RecurringInterval` have in common.
 //!
 //! Each of those types is a JSON **string** holding its ISO 8601 spelling,
 //! `"2024-03-15T14:30:00Z"` and `"P1Y2M"`, rather than an object of its
@@ -15,8 +15,8 @@
 //! the type being read or written, so each type declares three: one to
 //! write it, one to read it from a token stream, and one to read it from a
 //! `std.json.Value` that has already been parsed. What those have to do is
-//! the same for all five types apart from the text in the middle, and that
-//! is what is here. The five `read*` functions are that text, one per type.
+//! the same for all six types apart from the text in the middle, and that
+//! is what is here. The six `read*` functions are that text, one per type.
 
 const std = @import("std");
 
@@ -25,6 +25,7 @@ const DateTime = @import("DateTime.zig");
 const Duration = @import("Duration.zig");
 const Instant = @import("Instant.zig");
 const Interval = @import("interval.zig").Interval;
+const RecurringInterval = @import("interval.zig").RecurringInterval;
 const iso8601 = @import("iso8601.zig");
 
 /// How reading a type's text can fail, spelled in errors `std.json` already
@@ -302,6 +303,26 @@ test readInterval {
     try std.testing.expectError(error.Overflow, readInterval("2024-03-16T00:00:00Z/2024-03-15T00:00:00Z"));
 }
 
+/// `text` as a `RecurringInterval`: whatever
+/// `iso8601.parseRecurringInterval` reads, as long as it reads all of it and
+/// the interval after the `R` passes `readInterval`'s check on its
+/// endpoints.
+pub fn readRecurringInterval(text: []const u8) TextError!RecurringInterval {
+    const result = iso8601.parseRecurringInterval(text) catch |err| return textError(err);
+    if (result.str.len != text.len) return error.InvalidCharacter;
+    inline for (.{ result.start, result.end }) |endpoint| {
+        if (endpoint) |e| if (!isComplete(e.has_offset, e.precision)) return error.InvalidCharacter;
+    }
+    return result.value;
+}
+
+test readRecurringInterval {
+    const series = try readRecurringInterval("R5/2024-03-15T09:00:00-05:00/P1W");
+    try std.testing.expectEqual(@as(?u64, 5), series.count);
+    try std.testing.expectError(error.InvalidCharacter, readRecurringInterval("R5/2024-03-15T09:00:00/P1W"));
+    try std.testing.expectError(error.Overflow, readRecurringInterval("R0/2024-03-15T09:00:00Z/P1W"));
+}
+
 /// `Instant.jsonStringify`'s text: the instant in UTC, by way of
 /// `Instant.asDateTime` and `iso8601.writeDateTime`.
 pub fn writeInstant(writer: *std.Io.Writer, instant: Instant) std.Io.Writer.Error!void {
@@ -362,6 +383,19 @@ test "a record of the types reads and writes whole" {
     const written = try std.json.Stringify.valueAlloc(std.testing.allocator, parsed.value, .{});
     defer std.testing.allocator.free(written);
     try std.testing.expectEqualStrings(text, written);
+}
+
+/// `RecurringInterval.jsonStringify`'s text, which is
+/// `RecurringInterval.format`.
+pub fn writeRecurringInterval(writer: *std.Io.Writer, series: RecurringInterval) std.Io.Writer.Error!void {
+    return series.format(writer);
+}
+
+test writeRecurringInterval {
+    var buf: [64]u8 = undefined;
+    var w = std.Io.Writer.fixed(&buf);
+    try writeRecurringInterval(&w, .{ .count = null, .interval = .{ .start_duration = .{ .start = .{ .year = 2024, .month = .Mar, .day = 15 }, .duration = .{ .days = 7 } } } });
+    try std.testing.expectEqualStrings("R/2024-03-15T00:00:00Z/P7D", w.buffered());
 }
 
 test {
