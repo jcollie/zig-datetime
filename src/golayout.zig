@@ -955,6 +955,13 @@ test scaleFraction {
 
 /// Reads an offset written the way `shape` says, and returns it in seconds
 /// east of UTC.
+///
+/// Each part is held to Go's bounds, which are looser than a clock's: the
+/// hours may be up to 24 and the minutes and seconds up to 60, both
+/// inclusive, because, as the comment in Go's `format.go` has it, some
+/// people do write offsets of 24 hours or 60 minutes. So `+24:60` is read,
+/// as 25 hours east, and `+25:00` and `+05:61` are refused, which is what
+/// Go 1.26's `time.Parse` answers for each.
 fn readOffset(rest: *[]const u8, shape: OffsetShape) ParseError!i32 {
     var text = rest.*;
     if (text.len < 1) return error.ParseError;
@@ -967,6 +974,7 @@ fn readOffset(rest: *[]const u8, shape: OffsetShape) ParseError!i32 {
     text = text[1..];
 
     const hours = try twoDigits(&text);
+    if (hours > 24) return error.ParseError;
     if (shape.hours_only) {
         rest.* = text;
         return sign * hours * std.time.s_per_hour;
@@ -977,6 +985,7 @@ fn readOffset(rest: *[]const u8, shape: OffsetShape) ParseError!i32 {
         text = text[1..];
     }
     const minutes = try twoDigits(&text);
+    if (minutes > 60) return error.ParseError;
 
     var seconds: i32 = 0;
     if (shape.seconds) {
@@ -985,10 +994,34 @@ fn readOffset(rest: *[]const u8, shape: OffsetShape) ParseError!i32 {
             text = text[1..];
         }
         seconds = try twoDigits(&text);
+        if (seconds > 60) return error.ParseError;
     }
 
     rest.* = text;
     return sign * (hours * std.time.s_per_hour + minutes * std.time.s_per_min + seconds);
+}
+
+test readOffset {
+    const colons: OffsetShape = .{ .colons = true, .seconds = false, .hours_only = false };
+    const cases = [_]struct { []const u8, ?i32 }{
+        .{ "-05:00", -5 * std.time.s_per_hour },
+        .{ "+23:59", 23 * std.time.s_per_hour + 59 * std.time.s_per_min },
+        // Go's bounds, and what Go 1.26's `time.Parse` makes of each.
+        .{ "+24:00", 24 * std.time.s_per_hour },
+        .{ "+24:60", 25 * std.time.s_per_hour },
+        .{ "+25:00", null },
+        .{ "+05:61", null },
+        .{ "+29:59", null },
+        .{ "+99:99", null },
+    };
+    for (cases) |case| {
+        var rest: []const u8 = case[0];
+        const got = readOffset(&rest, colons) catch null;
+        try std.testing.expectEqual(case[1], got);
+    }
+
+    var seconds: []const u8 = "+000061";
+    try std.testing.expectError(error.ParseError, readOffset(&seconds, .{ .colons = false, .seconds = true, .hours_only = false }));
 }
 
 /// Reads exactly two digits, which every part of an offset is written as.

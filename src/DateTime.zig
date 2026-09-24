@@ -1975,7 +1975,11 @@ pub fn addChecked(self: DateTime, duration: Duration) error{OutOfRange}!DateTime
 
     const total = std.math.add(i128, time_of_day, duration.nanoseconds) catch return error.OutOfRange;
     const carry = @divFloor(total, Duration.nanoseconds_per_day);
-    const rest = total - carry * Duration.nanoseconds_per_day;
+    // `@mod` rather than `total - carry * nanoseconds_per_day`: flooring
+    // rounds `carry` down, so near the bottom of an `i128` the product lands
+    // below it and the subtraction overflows before it can be taken back.
+    // The remainder is the same number and never leaves the range of a day.
+    const rest = @mod(total, Duration.nanoseconds_per_day);
 
     const date = try (Duration{
         .months = duration.months,
@@ -2043,6 +2047,9 @@ test addChecked {
     const start: DateTime = .{ .year = 2001, .month = .Jan, .day = 1 };
     try std.testing.expectError(error.OutOfRange, start.addChecked(.{ .months = std.math.maxInt(i64) }));
     try std.testing.expectError(error.OutOfRange, start.addChecked(.{ .nanoseconds = std.math.maxInt(i128) }));
+    // And at the bottom of an `i128`, where working out the time of day
+    // used to overflow on the way to the refusal.
+    try std.testing.expectError(error.OutOfRange, start.addChecked(.{ .nanoseconds = std.math.minInt(i128) }));
 }
 
 /// This date as a `Date`, dropping the time of day and the offset.
