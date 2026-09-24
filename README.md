@@ -801,10 +801,15 @@ and the basic one without, at whatever precision the input stops at:
 | ordinal | `2024-075` | `2024075` |
 | week | `2024-W11-5`, `2024-W11` | `2024W115` |
 
-Times may stop at the hour, minute, or second, and any of those may carry
-a decimal fraction with either separator, so `T14.5` is half past two.
-`24:00` is the end of its date and comes back as midnight on the next
-one. Zones are `Z`, `±hh`, `±hh:mm`, or `±hhmm`.
+A time follows a `T`, and only after a complete date: `2024-03T10:15`
+is refused, because ISO 8601 says "The date part of a date and time
+expression shall be complete" and a time on no particular day means
+nothing. Times may stop at the hour, minute, or second, and any of those
+may carry a decimal fraction with either separator, so `T14.5` is half
+past two. `24:00` is the end of its date and comes back as midnight on the
+next one. Zones are `Z`, `±hh`, `±hh:mm`, or `±hhmm`, and come only after
+a time: a zone after a bare date, `2024-03-15Z`, is not read, and is left
+as trailing text.
 
 Two fields on the result carry what the string itself said. `has_offset`
 distinguishes a local time that named no zone from one that ended in `Z`,
@@ -813,11 +818,10 @@ component the input stopped at, so a caller can tell `2024-03` from
 `2024-03-01`.
 
 ISO 8601 forbids mixing the basic and extended forms, and so does this:
-`2024-03-15T143000` is `error.MixedFormats`. The zone is the one
-deliberate exception, since `+0530` after an extended time is common in
-real data. Expanded years such as `+002024`, which ISO 8601 permits only
-by prior agreement, are not accepted. Durations and time intervals have
-parsers of their own, below.
+`2024-03-15T143000` is `error.MixedFormats`, and so is an interval whose
+two ends differ. The zone is the one deliberate exception, since `+0530`
+after an extended time is common in real data. Durations and time
+intervals have parsers of their own, below.
 
 ### Durations
 

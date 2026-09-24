@@ -6,6 +6,11 @@
 //! is what most internet protocols actually mean by "ISO 8601", is the
 //! subset of this that always writes the extended form.
 //!
+//! The text followed is ISO 8601-1:2019 as amended by Amendment 1:2022,
+//! and, for the few things this reads that Part 1 does not define,
+//! ISO 8601-2:2019. Clause numbers in these doc comments are Part 1's
+//! unless they say otherwise.
+//!
 //! Like `rfc822`, this does not go through the comptime format strings,
 //! because the shape of the input is not known ahead of it being read.
 //! A representation may be a calendar date, an ordinal date or a week
@@ -33,18 +38,44 @@
 //! Going the other way, `writeDateTime` and `writeDate` write the extended
 //! form in full, which is what the `std.json` hooks on the types write.
 //!
-//! What is not:
+//! What ISO 8601 allows and this does not read:
 //!
-//!   * Expanded years such as `+002024`, which ISO 8601 allows only by
-//!     prior agreement between the parties exchanging the data.
-//!   * The alternative `P0003-06-04T12:30:05` form of a duration, and a
-//!     duration standing alone as an interval, which ISO 8601 places on the
-//!     timeline by context that a parser does not have.
-//!   * The repeat rules ISO 8601-2 adds to a recurring interval, and the
-//!     `R0` and `R-1` counts; see `parseRecurringInterval`.
-//!   * Mixing the basic and extended forms between the date and the time,
-//!     which ISO 8601 forbids. The zone is the one deliberate exception;
-//!     see `parse`.
+//!   * Expanded years such as `+002024` (5.2.2.3, 5.2.3.2, 5.2.4.3), which
+//!     ISO 8601 allows only by agreement between the parties (4.4).
+//!   * A date reduced to a decade or a century, `198` or `19` (5.2.2.2 c
+//!     and d).
+//!   * A time with no date, `T232050` or `23:20:50` (5.3.1, 5.3.3, 5.3.5).
+//!   * The alternative `P0003-06-04T12:30:05` form of a duration (5.5.2.4),
+//!     which is again by agreement; a fraction of a year, a month or a week
+//!     in a duration, which 5.5.2.3 b) allows on the lowest component but
+//!     which has no length to divide without a date to measure it from;
+//!     and a duration standing alone as an interval (5.5.1, NOTE), whose
+//!     start or end is "supplied out of band".
+//!   * The repeat rules of ISO 8601-2:2019, clause 13, and the `R0` and
+//!     `R-1` counts that neither part defines; see `parseRecurringInterval`.
+//!
+//! What this reads that ISO 8601 does not allow, on purpose:
+//!
+//!   * A space between the date and the time, where 3.2.1 says "The
+//!     character 'space' shall not be used", and lower-case `t`, `z` and
+//!     `p`. RFC 3339, section 5.6, allows both, and a parser of RFC 3339
+//!     timestamps has to take them.
+//!   * A zone in the basic form after a time in the extended one,
+//!     `14:30:00+0530`, although 5.4.3 has the whole expression in one form.
+//!     It is common in real data and says nothing ambiguous. Mixing the
+//!     forms anywhere else is `error.MixedFormats`.
+//!   * `-00:00`, where 4.3.13 writes a zero time shift with a plus sign.
+//!     RFC 3339, section 4.3, gives `-00:00` a meaning of its own, and the
+//!     instant is the same either way.
+//!   * A time reduced to an hour, or to an hour with a fraction, after a
+//!     date in the extended form, `2024-03-15T14` or `2024-03-15T14.5`.
+//!     5.3.1.3 b) and 5.3.1.4 c) give those only a basic form, so there is
+//!     no fully extended way to write them; they are read as agreeing with
+//!     whichever form the date was in.
+//!   * Weeks beside other components in a duration, `P1W2D`, where 5.5.2.2
+//!     b) has `W` stand alone. It says nothing ambiguous.
+//!   * The sign ISO 8601-2:2019 puts on a duration, in front (4.4.1.9) or on
+//!     each component (14.2); see `parseDuration`.
 
 const std = @import("std");
 
@@ -83,6 +114,10 @@ pub const ParseError = error{
 /// and `week` are alternatives rather than steps: a calendar date reduced
 /// to `2024-03` reports `month`, and a week date reduced to `2024-W11`
 /// reports `week`. Both mean the same thing, that a day was not named.
+///
+/// These are the reduced precisions of 5.2.2.2 a) and b), 5.2.4.2, and
+/// 5.3.1.3; `hour`, `minute` and `second` may each carry a decimal fraction
+/// (5.3.1.4), which is still that precision.
 pub const Precision = enum {
     year,
     month,
@@ -104,8 +139,8 @@ pub const ParseResult = struct {
     /// Whether the input carried a zone. When false, `value.offset` is
     /// zero, but only because there was nothing to put there: the input
     /// was a local time that said nothing about its offset from UTC.
-    /// ISO 8601 calls this a local time, and it is not the same claim as
-    /// a trailing `Z`.
+    /// ISO 8601 calls this a local time (5.3.1), and it is not the same
+    /// claim as a trailing `Z`, which is UTC of day (5.3.3).
     has_offset: bool,
     /// The smallest component the input named.
     precision: Precision,
@@ -119,6 +154,10 @@ pub const DurationParseResult = struct {
     /// The designator of the component that carried a decimal fraction, or
     /// null when none did.
     ///
+    /// ISO 8601-1:2019, 5.5.2.3 b), allows it only on the lowest-order
+    /// component present, which `parseDuration` enforces; this says which
+    /// one that was.
+    ///
     /// It is reported because a caller may be stricter than ISO 8601 about
     /// where a fraction may appear. XML Schema's `duration`, for one, allows
     /// a fraction only on the seconds, so `P1.5D` is a perfectly good ISO
@@ -131,6 +170,14 @@ pub const DurationParseResult = struct {
 /// Parses an ISO 8601 duration at the start of `value`: `P3Y6M4DT12H30M5S`,
 /// `PT30M`, `P2W`, `-P1D`, `P1M-1D`.
 ///
+/// The grammar is ISO 8601-1:2019, 5.5.2: a `P`, then years, months and
+/// days, then a `T` and hours, minutes and seconds, each a number and its
+/// designator, in that order (5.5.2.2 a), or a number of weeks alone
+/// (5.5.2.2 b). A component that is zero may be left out, but at least one
+/// has to be there (5.5.2.3 a), and a `T` has to have something after it.
+/// Weeks are also read beside the other components, which 5.5.2.2 does not
+/// have; see the module's doc comment.
+///
 /// A sign may go in either of two places, and not both. In front of the `P`
 /// it reverses the whole duration, which is ISO 8601-2:2019, 4.4.1.9; that
 /// clause asks every component after it to be positive, so `-P1Y-2M` is
@@ -139,15 +186,19 @@ pub const DurationParseResult = struct {
 /// adding two composite durations component by component — `P3Y15M3DT-10M`
 /// is its own example. That is the only way to write a duration whose
 /// fields disagree in sign, which is what `Duration.format` writes for one.
-/// A `+` is accepted in front of the `P`, as before, and nowhere else.
+/// A `+` is accepted in front of the `P`, as before, and nowhere else; it
+/// is in neither part, and changes nothing.
 ///
 /// Years fold into the duration's months and weeks into its days, since
-/// those two conversions are exact. A decimal fraction is allowed on any
+/// those two conversions are exact: ISO 8601-2:2019/Amd 1:2025, 14.6,
+/// names them "unequivocally convertible", where months and days, or years
+/// and days, are not. A decimal fraction is allowed on any
 /// component that can carry one exactly — days and below — and refused on
-/// years and months, which have no fixed length to divide. ISO 8601 also
-/// asks that only the smallest component present carry one; that is not
-/// enforced here, and `DurationParseResult.fractional` says which one did so
-/// that a stricter caller can.
+/// years and months, which have no fixed length to divide. Only the
+/// lowest-order component present may carry one, as ISO 8601-1:2019,
+/// 5.5.2.3 b) says, so `PT1.5H30M` is `error.BadFraction`, and
+/// `DurationParseResult.fractional` says which component did, so that a
+/// stricter caller can refuse it.
 ///
 /// Trailing text is left unconsumed, as with `parse`.
 pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
@@ -160,6 +211,10 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
     var result: DurationParseResult = .{ .str = &.{}, .value = .{} };
     var count: usize = 0;
     var any_negative = false;
+    // Only the lowest-order component present may carry a fraction, ISO
+    // 8601-1:2019, 5.5.2.3 b): "The lowest order component may have a
+    // decimal fraction". So once one has, nothing may follow it.
+    var fraction_seen = false;
 
     // The date part, whose `M` means months. `W` is an alternative to the
     // whole of it rather than one more component, but accepting it alongside
@@ -168,9 +223,13 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
     var in_time = cursor.eatAny("Tt");
     if (!in_time) {
         while (try component(&cursor)) |c| {
+            if (fraction_seen) return error.BadFraction;
             count += 1;
             any_negative = any_negative or c.negative;
-            if (c.fraction.len != 0) result.fractional = c.designator;
+            if (c.fraction.len != 0) {
+                result.fractional = c.designator;
+                fraction_seen = true;
+            }
             switch (c.designator) {
                 // A fraction of a year or a month is a length of time nobody
                 // can name in days, so it is refused rather than guessed at.
@@ -207,10 +266,14 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
     if (in_time) {
         var time_count: usize = 0;
         while (try component(&cursor)) |c| {
+            if (fraction_seen) return error.BadFraction;
             count += 1;
             time_count += 1;
             any_negative = any_negative or c.negative;
-            if (c.fraction.len != 0) result.fractional = c.designator;
+            if (c.fraction.len != 0) {
+                result.fractional = c.designator;
+                fraction_seen = true;
+            }
             const unit: i128 = switch (c.designator) {
                 'H' => Duration.nanoseconds_per_hour,
                 'M' => Duration.nanoseconds_per_minute,
@@ -289,20 +352,23 @@ test parseDuration {
     // -- `BadFraction` is as much a refusal as `ParseError` -- so the check
     // is only that none of them parses.
     for ([_][]const u8{
-        "",      "1D",    "P",     "-P",      "PT",
-        "P1DT",  "P1X",   "PTS",   "P.5D",
+        "",      "1D",        "P",        "-P",      "PT",
+        "P1DT",  "P1X",       "PTS",      "P.5D",
         // A year, month or week has no fixed length, so a fraction of one is
         // not a duration this can represent.
            "P0.5Y",
         "P0.5M", "P0.5W",
         // A decimal point with no digits after it.
-        "PT1.S",
+            "PT1.S",
         // A sign on the whole and on a component: ISO 8601-2 asks for the
         // components of a negative duration to be positive.
-        "-P1Y-2M",
+           "-P1Y-2M",
         // A sign that is not a minus, or one with nothing after it.
         "P+1D",
         "P-D",
+        // A fraction on a component that is not the lowest one present,
+        // within a part and across the `T`.
+          "PT1.5H30M", "P1.5DT1H",
     }) |bad| {
         std.testing.expect(std.meta.isError(parseDuration(bad))) catch |err| {
             std.debug.print("parsed but should not have: \"{s}\"\n", .{bad});
@@ -414,13 +480,24 @@ fn addNanoseconds(total: i128, term: i128) ParseError!i128 {
 /// Trailing text is left unconsumed; `ParseResult.str` says where the
 /// representation ended.
 ///
-/// The date and the time must agree about which form they are written in:
-/// ISO 8601 does not allow `2024-03-15T143000`, and neither does this.
-/// The zone is deliberately exempt, because `+0530` after an extended
-/// time is common in real data and rejecting it would help nobody.
+/// It reads a date in any of the three forms of 5.2 — calendar (5.2.2),
+/// ordinal (5.2.3) or week (5.2.4) — complete or reduced, and optionally a
+/// `T` and a time of day after it (5.4), with a time shift after that
+/// (5.3.4.2) or `Z` for UTC of day (5.3.3). Only a complete date may have
+/// a time after it, as 5.4.1 requires, and only a time may have a time
+/// shift after it; a `Z` after a bare date is left as trailing text.
 ///
-/// A time of `24:00` is the end of its date rather than the start, so it
-/// is returned as midnight on the following day.
+/// The date and the time must agree about which form they are written in,
+/// basic or extended (5.4.3): ISO 8601 does not allow `2024-03-15T143000`,
+/// and neither does this. The zone is deliberately exempt, because `+0530`
+/// after an extended time is common in real data and rejecting it would
+/// help nobody; the module's doc comment lists this and the other things
+/// read on purpose that ISO 8601 does not allow.
+///
+/// A time of `24:00` is the ending of its day, which ISO 8601-1:2019/Amd
+/// 1:2022, 5.3.2, defines as the same instant as the beginning of the next
+/// and says should be read as that "for processing". So it is returned as
+/// midnight on the following day.
 pub fn parse(value: []const u8) ParseError!ParseResult {
     return (try parseMarkingZone(value)).result;
 }
@@ -429,7 +506,7 @@ pub fn parse(value: []const u8) ParseError!ParseResult {
 /// `result.str.len` when there was none. An abbreviated interval end takes
 /// its missing components from the start's text, and the start's zone is
 /// not one of the things it can take.
-fn parseMarkingZone(value: []const u8) ParseError!struct { result: ParseResult, zone_start: usize } {
+fn parseMarkingZone(value: []const u8) ParseError!Marked {
     var cursor: Cursor = .{ .text = value };
 
     // Which form the date was written in, or null when it was too short
@@ -447,10 +524,20 @@ fn parseMarkingZone(value: []const u8) ParseError!struct { result: ParseResult, 
     // leaves `2024-03-15 and more` as a date and trailing text rather than
     // an error, while `2024-03-15 25:00` is still an hour out of range
     // rather than a date with something odd after it.
-    const spaced = cursor.index + 1 < cursor.text.len and
+    //
+    // Only a complete date may have a time after it: ISO 8601-1:2019,
+    // 5.4.1, "The date part of a date and time expression shall be
+    // complete". `2024-03T10:15` would be a time on no particular day, so
+    // a `T` after a reduced date is refused, and a space after one is not
+    // taken for a separator at all.
+    const spaced = precision == .day and
+        cursor.index + 1 < cursor.text.len and
         cursor.text[cursor.index] == ' ' and
         std.ascii.isDigit(cursor.text[cursor.index + 1]);
+    var has_time = false;
     if (cursor.eatAny("Tt") or (spaced and cursor.eat(' '))) {
+        if (precision != .day) return error.ParseError;
+        has_time = true;
         time = try parseTime(&cursor, &extended, &precision);
         // 24:00 is the end of the day, which is the same instant as
         // midnight starting the next one.
@@ -459,12 +546,19 @@ fn parseMarkingZone(value: []const u8) ParseError!struct { result: ParseResult, 
         }
     }
 
+    // A time shift belongs to a time of day, never to a date alone: ISO
+    // 8601-1:2019, 4.3.13 and 5.3.4.2, appends it "to the local time of
+    // day", and Amendment 1:2022 rewrote the one example in 5.5.1 that had
+    // put it after a bare date. So after a date with no time, a `Z` or an
+    // offset is not read, and is left with the rest of the text.
     const zone_start = cursor.index;
     var offset: i32 = 0;
     var has_offset = false;
-    if (try parseZone(&cursor)) |zone| {
-        offset = zone;
-        has_offset = true;
+    if (has_time) {
+        if (try parseZone(&cursor)) |zone| {
+            offset = zone;
+            has_offset = true;
+        }
     }
 
     var datetime: DateTime = .{
@@ -488,8 +582,20 @@ fn parseMarkingZone(value: []const u8) ParseError!struct { result: ParseResult, 
             .precision = precision,
         },
         .zone_start = zone_start,
+        .extended = extended,
     };
 }
+
+/// What `parseMarkingZone` yields beyond a `ParseResult`.
+const Marked = struct {
+    result: ParseResult,
+    /// Where in `result.str` the zone began, or `result.str.len` for none.
+    zone_start: usize,
+    /// Whether the date and time were in the extended form, or null when
+    /// the text was too short to say, as a bare `2024` is. An interval's two
+    /// ends are held to the same form by comparing these.
+    extended: ?bool,
+};
 
 test parseMarkingZone {
     const zoned = try parseMarkingZone("2024-03-15T14:30-05:00");
@@ -499,7 +605,11 @@ test parseMarkingZone {
     try std.testing.expectEqual(local.result.str.len, local.zone_start);
 }
 
-/// Reads the date, in whichever of the three forms it is written.
+/// Reads the date, in whichever of the three forms it is written: a
+/// calendar date (5.2.2.1), reduced to a month or a year (5.2.2.2 a and
+/// b); an ordinal date (5.2.3.1); or a week date (5.2.4.1), reduced to a
+/// week (5.2.4.2). The year is always four digits (4.3.2), so the expanded
+/// forms are not read.
 fn parseDate(cursor: *Cursor, extended: *?bool, precision: *Precision) ParseError!Date {
     const year: Year = @intCast(try cursor.digits(4));
 
@@ -551,7 +661,9 @@ fn parseDate(cursor: *Cursor, extended: *?bool, precision: *Precision) ParseErro
     }
 }
 
-/// Reads the `DDD` of an ordinal date, the day of its year.
+/// Reads the `DDD` of an ordinal date, the day of its year: `001` to `365`,
+/// or `366` in a leap year (4.3.7, and Table 1 for where each month
+/// begins).
 fn ordinalDate(cursor: *Cursor, year: Year, precision: *Precision) ParseError!Date {
     const ordinal = try cursor.digits(3);
     if (ordinal < 1) return error.OutOfRange;
@@ -595,6 +707,9 @@ test ordinalDate {
 /// Reads the `Www[-D]` of a week date. `year` is the ISO week-numbering
 /// year, which near New Year is not always the calendar year of the date
 /// it produces: 2027-W01-1 is 2027-01-04, while 2026-W53-5 is 2027-01-01.
+///
+/// The week calendar is 4.2.2; the week is `01` to `52` or `53` (4.3.4)
+/// and the weekday `1` for Monday to `7` for Sunday (4.3.6, Table 2).
 fn weekDate(cursor: *Cursor, year: Year, extended: bool, precision: *Precision) ParseError!Date {
     const week = try cursor.digits(2);
     if (week < 1 or week > isoWeeksInYear(year)) return error.OutOfRange;
@@ -658,7 +773,8 @@ test weekDate {
 
 /// The number of ISO weeks in `year`. A year has 53 when it starts on a
 /// Thursday, or when it is a leap year starting on a Wednesday, and 52
-/// otherwise.
+/// otherwise: the "52 or 53, depending on the number of calendar weeks in
+/// that calendar year" of 4.3.4.
 pub fn isoWeeksInYear(year: Year) u8 {
     const first: Date = .{ .year = year, .month = .Jan, .day = 1 };
     const weekday = first.dayOfWeek();
@@ -693,6 +809,14 @@ const Time = struct {
 
 /// Reads the time of day, with a decimal fraction on whichever component
 /// turns out to be the last one.
+///
+/// A complete time is 5.3.1.2, a reduced one 5.3.1.3, and the fraction
+/// 5.3.1.4, with either a comma or a full stop as the decimal sign (3.2.6).
+/// The hour is `00` to `23` (4.3.8), the minute `00` to `59` (4.3.9), and
+/// the second `00` to `60`, the last for a positive leap second (4.3.10).
+/// The one hour past 23 is the ending of the
+/// day, `24:00`, with nothing after it but zeroes (Amendment 1:2022,
+/// 5.3.2).
 fn parseTime(cursor: *Cursor, extended: *?bool, precision: *Precision) ParseError!Time {
     var time: Time = .{};
 
@@ -774,7 +898,9 @@ fn parseTime(cursor: *Cursor, extended: *?bool, precision: *Precision) ParseErro
 }
 
 /// Records which form a component was written in, or fails if it
-/// contradicts what the representation has used so far.
+/// contradicts what the representation has used so far: 5.4.3's "The entire
+/// expression shall either be completely in basic format or completely in
+/// extended format".
 fn agree(extended: *?bool, is_extended: bool) ParseError!void {
     const known = extended.* orelse {
         extended.* = is_extended;
@@ -796,6 +922,10 @@ test agree {
 
 /// Reads a zone, if one is there. Either spelling of the offset is taken
 /// whatever form the rest of the representation used; see `parse`.
+///
+/// A zone is `Z` or a time shift (4.3.13): a sign, two digits of hour and,
+/// optionally, two of minute, with a colon between them in the extended
+/// form (5.3.4.1). The hour is a clock hour, `00` to `23` (4.3.8).
 fn parseZone(cursor: *Cursor) ParseError!?i32 {
     if (cursor.done()) return null;
 
@@ -845,7 +975,7 @@ test parseZone {
 }
 
 /// Turns a parsed month number into a `Month`, rejecting 0 and anything
-/// past 12.
+/// past 12: `01` to `12` (4.3.3).
 fn monthFrom(value: u32) ParseError!Month {
     if (value < 1 or value > 12) return error.OutOfRange;
     return std.enums.fromInt(Month, value) orelse unreachable;
@@ -860,7 +990,8 @@ test monthFrom {
 }
 
 /// Turns a parsed day number into a `Day`, checking it against the length
-/// of the month it falls in, which is why the year is needed as well.
+/// of the month it falls in, which is why the year is needed as well:
+/// `01` to `28`, `29`, `30` or `31` (4.3.5, Table 1).
 fn dayFrom(value: u32, month: Month, year: Year) ParseError!Day {
     if (value < 1 or value > month.lastDay(year)) return error.OutOfRange;
     return @intCast(value);
@@ -902,21 +1033,25 @@ pub const IntervalParseResult = struct {
 };
 
 /// Parses an ISO 8601 time interval at the start of `value`, in any of the
-/// three forms `Interval` holds:
+/// three forms `Interval` holds, which are the three of ISO 8601-1:2019,
+/// 5.5.1 a) to c), and their complete representations 5.5.3.1 to 5.5.3.3:
 ///
 ///     2007-03-01T13:00:00Z/2008-05-11T15:30:00Z
 ///     2007-03-01T13:00:00Z/P1Y2M10DT2H30M
 ///     P1Y2M10DT2H30M/2008-05-11T15:30:00Z
 ///
-/// The two parts are separated by a solidus, or by the double hyphen `--`
-/// that ISO 8601 allows where a solidus cannot go, a file name for one. The
+/// The two parts are separated by a solidus (5.5.1), or by the double
+/// hyphen `--` that may replace it "by mutual agreement" (3.2.6, NOTE),
+/// which is for where a solidus cannot go, a file name for one. The
 /// separator is found first, at whichever of the two comes earlier, and the
 /// first part has to be exactly what comes before it. That is what lets a
 /// reduced start such as `2024-03--2024-04` be read at all: `parse` on its
 /// own would take the hyphen after the month as the promise of a day.
 ///
-/// **The end may be abbreviated.** ISO 8601 lets it leave out any of its
-/// higher-order components, which it then takes from the start, so
+/// **The end may be abbreviated.** 5.5.1 lets it leave out any of its
+/// higher-order components, which it then takes from the start, "provided
+/// that the resulting expression is unambiguous"; its own example is
+/// `2018-01-15/02-20`. So
 /// `2007-12-14T13:30/15:30` ends at half past three the same afternoon and
 /// `2008-02-15/03-14` a month later. This is read by laying the end over
 /// the tail of the start's text: each point in the start where one
@@ -929,12 +1064,17 @@ pub const IntervalParseResult = struct {
 /// day followed by trailing text, and a tie goes to the earliest splice. A
 /// full end is tried alongside, and preferred only when it consumes more.
 ///
-/// **An end without a zone is in the start's**, abbreviated or not. ISO
-/// 8601-1:2019/Amd 1:2022, 5.5.1, says a time shift written with the part
-/// before the separator applies to the part after it unless that part has
-/// its own, and its example makes `2018-01-15T12:00:00+05:00/2018-02-20T12:00:00`
-/// end at `+05:00`. So the end's `has_offset` reports true when it took the
-/// start's zone, since the text did give one, once.
+/// **An end without a zone is in the start's**, abbreviated or not. 5.5.1,
+/// as Amendment 1:2022 restates it, says a time shift written with the
+/// part before the separator applies to the part after it unless that part
+/// has its own, and its example makes
+/// `2018-01-15T12:00:00+05:00/2018-02-20T12:00:00` end at `+05:00`. So the
+/// end's `has_offset` reports true when it took the start's zone, since the
+/// text did give one, once.
+///
+/// **Both ends are in one form**, basic or extended, as 5.5.3.1 requires:
+/// `1985-04-12T23:20:50/19850625T103000` is `error.MixedFormats`. An end
+/// too short to have a form, a bare year, agrees with either.
 ///
 /// The splice is at component separators only, so an end abbreviated from
 /// a start in the basic form can leave out the date, after the `T`, and
@@ -945,15 +1085,17 @@ pub const IntervalParseResult = struct {
 ///
 /// The interval has to run forwards. An end before its start, compared as
 /// instants, is `error.OutOfRange`; an interval of no length is not. A
-/// duration cannot carry a sign here, since `-P1D` would say the same
-/// thing as swapping the parts. A duration that would carry the other
+/// duration cannot carry a sign here, and cannot have a negative component:
+/// ISO 8601-1 writes an interval's duration with no sign at all (5.5.2),
+/// and the signs are ISO 8601-2's (4.4.1.9, 14.2); see `forwards`. A duration that would carry the other
 /// endpoint outside the years a `Year` can hold is `error.OutOfRange`
 /// too, which is what makes `Interval.start` and `end` safe to call on
 /// anything this returns.
 ///
-/// Recurring intervals, `R5/…`, are not read, and neither is a bare
-/// duration: ISO 8601 counts one as an interval whose place on the
-/// timeline is given by context, and there is no context here to give it.
+/// A recurring interval, `R5/…`, is `parseRecurringInterval`'s. A bare
+/// duration is not read: 5.5.1's NOTE counts one as an interval only when
+/// its start or end is "supplied out of band", and there is no band here
+/// to supply it.
 ///
 /// Trailing text after the second part is left unconsumed, as with `parse`.
 pub fn parseInterval(value: []const u8) ParseError!IntervalParseResult {
@@ -999,6 +1141,12 @@ pub fn parseInterval(value: []const u8) ParseError!IntervalParseResult {
 
     // Start, then end.
     const e = try parseEnd(first[0..s.zone_start], s.result, second);
+    // Both ends in one form: ISO 8601-1:2019, 5.5.3.1, combines two date
+    // and time representations "provided that the resulting expression is
+    // either consistently in basic format or consistently in extended
+    // format". A side too short to have a form, a bare year, agrees with
+    // either.
+    if (s.extended != null and e.extended != null and s.extended.? != e.extended.?) return error.MixedFormats;
     if (e.result.value.toInstant().timestamp < s.result.value.toInstant().timestamp) {
         return error.OutOfRange;
     }
@@ -1143,6 +1291,13 @@ test parseInterval {
         // The first part has to be all of what comes before the separator.
         "2024-03-15x/2024-03-16",
         "P1Dx/2024-03-16",
+        // The two ends in different forms: ISO 8601-1:2019, 5.5.3.1.
+        "1985-04-12T23:20:50/19850625T103000",
+        "19850412T232050/1985-06-25T10:30:00",
+        // A time shift after a bare date is not read, so the first part is
+        // not all of what comes before the separator: the 2019 text's own
+        // example, which Amendment 1:2022 replaced for that reason.
+        "2018-01-15+05:00/2018-02-20",
         // Too far for a `Year` to hold.
         "2024-03-15/P9999999999Y",
         "P9999999999Y/2024-03-15",
@@ -1173,14 +1328,18 @@ pub const RecurringIntervalParseResult = struct {
 /// Parses an ISO 8601 recurring time interval at the start of `value`: the
 /// designator `R`, the number of intervals in the series or nothing for an
 /// unbounded one, a solidus, and a time interval as `parseInterval` reads
-/// it.
+/// it. That is ISO 8601-1:2019, 5.6.2, and the three forms are 5.6.1 a) to
+/// c): a start and an end, or a start and a duration, "which identify the
+/// first time interval", or a duration and an end, "which identify the
+/// last".
 ///
 ///     R12/1985-04-12T23:20:50Z/1985-06-25T10:30:00Z
 ///     R12/1985-04-12T23:20:50Z/P1Y2M15DT12H30M
 ///     R/P1Y2M15DT12H/1985-04-12T23:20:50Z
 ///
 /// The count is the number of intervals, the first included, which is how
-/// ISO 8601 reads its own example `R15/…`: fifteen recurrences. It has to
+/// ISO 8601 reads its own example `R15/…` in Annex A, Table A.24: "fifteen
+/// recurrences". An absent count is unbounded (5.6.1). It has to
 /// be at least one. `R0` and `R-1` are refused because neither ISO 8601-1:2019
 /// nor ISO 8601-2:2019 defines them: an absent count is the only spelling of
 /// an unbounded series either part gives. Accounts elsewhere say `R-1` means
@@ -1191,10 +1350,10 @@ pub const RecurringIntervalParseResult = struct {
 ///
 /// A bare duration after the `R`, as in `R8/PT72H`, is refused for the
 /// reason `parseInterval` refuses one: ISO 8601 places it on the timeline
-/// by context, and there is none here. ISO 8601-1:2019 has since moved that
-/// form out of its list of recurring intervals and into a note, as one whose
-/// start or end is "supplied out-of-band". The repeat rule ISO 8601-2:2019
-/// appends to the end, as in `R12/20150929T140000/P1H30M0S/F2W`, is not
+/// by context, and there is none here. ISO 8601-1:2019 lists that form only
+/// in NOTE 1 to 5.6.1, as one whose start or end is "supplied
+/// out-of-band". The repeat rule ISO 8601-2:2019, clause 13, appends to the
+/// end, as in `R12/20150929T140000/P1H30M0S/F2W`, is not
 /// read either; it is left as trailing text, like anything else after the
 /// interval.
 ///
@@ -1304,8 +1463,9 @@ test forwards {
 }
 
 /// Where the two parts of an interval divide: the first solidus or double
-/// hyphen, whichever comes first. Neither can occur inside a date, a time
-/// or a duration this reads, so the first one found is the separator.
+/// hyphen, whichever comes first, the two separators ISO 8601-1:2019, 3.2.6,
+/// gives a time interval. Neither can occur inside a date, a time or a
+/// duration this reads, so the first one found is the separator.
 fn findSeparator(value: []const u8) ?struct { index: usize, len: usize } {
     const solidus = std.mem.findScalar(u8, value, '/');
     const hyphens = std.mem.find(u8, value, "--");
@@ -1333,8 +1493,8 @@ fn parseEnd(start_text: []const u8, start: ParseResult, text: []const u8) ParseE
     var first_error: ?ParseError = null;
 
     var best_is_full = false;
-    if (parse(text)) |full| {
-        best = .{ .result = full, .len = full.str.len };
+    if (parseMarkingZone(text)) |full| {
+        best = .{ .result = full.result, .len = full.result.str.len, .extended = full.extended };
         best_is_full = true;
     } else |err| first_error = err;
 
@@ -1352,11 +1512,6 @@ fn parseEnd(start_text: []const u8, start: ParseResult, text: []const u8) ParseE
         var result = spliced.result;
         if (result.str.len <= k) continue;
         if (result.precision != start.precision) continue;
-        // `parse` takes a zone after a bare date, which ISO 8601 does not,
-        // and a splice is where that bites: `03-16` laid over the day of
-        // `2024-03-15` reads as the 3rd at an offset of -16:00. So a date
-        // spliced from a start that had no zone may not grow one.
-        if (result.has_offset and !start.has_offset and isDatePrecision(start.precision)) continue;
 
         const len = result.str.len - k;
         // A tie goes to a splice, which read to the start's precision, over
@@ -1371,7 +1526,7 @@ fn parseEnd(start_text: []const u8, start: ParseResult, text: []const u8) ParseE
         // The result points into the buffer, which is about to go; what the
         // caller wants is how much of `text` was read.
         result.str = text[0..len];
-        best = .{ .result = result, .len = len };
+        best = .{ .result = result, .len = len, .extended = spliced.extended };
         best_is_full = false;
     }
 
@@ -1385,21 +1540,11 @@ fn parseEnd(start_text: []const u8, start: ParseResult, text: []const u8) ParseE
     return end;
 }
 
-/// Whether a representation stopping at `precision` named no time of day.
-fn isDatePrecision(precision: Precision) bool {
-    return switch (precision) {
-        .year, .month, .week, .day => true,
-        .hour, .minute, .second => false,
-    };
-}
-
-test isDatePrecision {
-    try std.testing.expect(isDatePrecision(.week));
-    try std.testing.expect(!isDatePrecision(.hour));
-}
-
-/// What `parseEnd` read, and how much of its text that took.
-const End = struct { result: ParseResult, len: usize };
+/// What `parseEnd` read, how much of its text that took, and which form it
+/// was in, as `Marked.extended` says. A spliced end reports the form of the
+/// whole spliced text, which is the start's form wherever the end's own text
+/// could not say.
+const End = struct { result: ParseResult, len: usize, extended: ?bool };
 
 test parseEnd {
     const start = try parse("2007-12-14T13:30");
@@ -1416,25 +1561,31 @@ test parseEnd {
 }
 
 /// Writes `datetime` as an ISO 8601 date and time in full, in the extended
-/// form: `2024-03-15T14:30:00Z`, which is also RFC 3339's `date-time`.
+/// form: `2024-03-15T14:30:00Z`, which is also RFC 3339's `date-time`. That
+/// is ISO 8601-1:2019, 5.4.2.1 b), `[dateX]["T"][timeX]` followed by `Z` or
+/// by a time shift in the extended form.
 ///
 /// Every component down to the second is written whatever it holds, since
 /// the reader cannot know which ones were meant to be left out. A decimal
 /// fraction of the second follows only when there is one, with its trailing
-/// zeroes dropped, so `.5` rather than `.500000000`.
+/// zeroes dropped, so `.5` rather than `.500000000` (5.3.1.4, with the full
+/// stop as the decimal sign, 3.2.6).
 ///
-/// The offset is `Z` when it is zero and `±hh:mm` otherwise. A historical
+/// The offset is `Z` when it is zero and `±hh:mm` otherwise, which is
+/// 4.3.13: `Z` for no time shift, and a plus sign for one "ahead of or
+/// equal to UTC". A historical
 /// offset that is not a whole number of minutes, such as the local mean
 /// time a zone kept before standard time, gets `:ss` after the minutes.
 /// ISO 8601 has no spelling for that and `parse` does not read it, but
 /// rounding it would name a different instant, and a string that fails to
 /// read back is better than one that reads back wrong.
 ///
-/// A year from 0 to 9999 is written as four digits. Any other year is
-/// written in the expanded form, with a sign and at least four digits, so
-/// the output never names a different year than the one it holds. ISO 8601
-/// allows the expanded form only by prior agreement, and `parse` does not
-/// read it.
+/// A year from 0 to 9999 is written as four digits (4.3.2). Any other year
+/// is written with a sign and at least four digits, so the output never
+/// names a different year than the one it holds. A negative year of four
+/// digits, `-0001`, is ISO 8601-2:2019, 4.4.1.2; a year of more than four,
+/// `+10000`, is the expanded representation of 4.4 and 5.2.2.3, which the
+/// parties have to agree on. `parse` reads neither.
 pub fn writeDateTime(writer: *std.Io.Writer, datetime: DateTime) std.Io.Writer.Error!void {
     try writeDate(writer, datetime.asDate());
     try writer.print("T{d:0>2}:{d:0>2}:{d:0>2}", .{ datetime.hour, datetime.minute, datetime.second });
@@ -1485,7 +1636,7 @@ test writeDateTime {
 }
 
 /// Writes `date` as an ISO 8601 calendar date in the extended form,
-/// `2024-03-15`.
+/// `2024-03-15`: ISO 8601-1:2019, 5.2.2.1 b).
 ///
 /// The year is four digits from 0 to 9999, and otherwise the expanded form
 /// with a sign and at least four digits; see `writeDateTime`.
@@ -1964,9 +2115,36 @@ test "the basic and extended forms may not be mixed" {
     try testing.expectError(error.MixedFormats, parse("2024-03-15T1430"));
     try testing.expectError(error.MixedFormats, parse("20240315T14:30"));
 
-    // A bare year commits to neither, so either time form follows it.
-    try testing.expect((try parse("2024T14:30")).value.minute == 30);
-    try testing.expect((try parse("2024T1430")).value.minute == 30);
+    // A bare year would commit to neither form, but no time may follow a
+    // reduced date at all; see "a time follows only a complete date".
+    try testing.expectError(error.ParseError, parse("2024T14:30"));
+}
+
+test "a time follows only a complete date" {
+    // ISO 8601-1:2019, 5.4.1: "The date part of a date and time expression
+    // shall be complete." A calendar, ordinal or week date naming a day is
+    // complete; one reduced to a month, a week or a year is not.
+    for ([_][]const u8{ "1985-04-12T10:15", "19850412T1015", "1985-102T10:15", "1985W155T1015" }) |good| {
+        _ = try parse(good);
+    }
+    for ([_][]const u8{ "1985-04T10:15", "1985T10", "1985-W15T10:15", "1985W15T1015" }) |bad| {
+        try testing.expectError(error.ParseError, parse(bad));
+    }
+    // A space after a reduced date is not a separator, so the date is read
+    // and the rest is left, as after any date.
+    try testing.expectEqualStrings("1985-04", (try parse("1985-04 10:15")).str);
+}
+
+test "a time shift follows only a time" {
+    // ISO 8601-1:2019, 4.3.13 and 5.3.4.2: a time shift is appended to a
+    // time of day. After a bare date it is not read, and is left as
+    // trailing text, so a caller that wants the whole string refuses it.
+    const date = try parse("1985-04-12Z");
+    try testing.expectEqualStrings("1985-04-12", date.str);
+    try testing.expect(!date.has_offset);
+    try testing.expectEqualStrings("1985-04-12", (try parse("1985-04-12+05:00")).str);
+    // After a time it is read as ever.
+    try testing.expect((try parse("1985-04-12T10Z")).has_offset);
 }
 
 test "malformed input is rejected" {
