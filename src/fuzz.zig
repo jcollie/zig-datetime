@@ -1395,14 +1395,15 @@ test "mutate golayout.parse" {
 fn arithmeticProperty(random: std.Random) !void {
     const start = randomDateTime(random);
     const duration = randomDuration(random);
-    checkArithmetic(start, duration) catch |err| {
-        std.debug.print("addChecked: {any}\n  plus {any}\n", .{ start, duration });
+    const arithmetic: Duration.Arithmetic = if (random.boolean()) .xml_schema else .composite;
+    checkArithmetic(start, duration, arithmetic) catch |err| {
+        std.debug.print("addChecked ({s}): {any}\n  plus {any}\n", .{ @tagName(arithmetic), start, duration });
         return err;
     };
 }
 
-fn checkArithmetic(start: DateTime, duration: Duration) !void {
-    const got = start.addChecked(duration);
+fn checkArithmetic(start: DateTime, duration: Duration, arithmetic: Duration.Arithmetic) !void {
+    const got = start.addCheckedWith(duration, arithmetic);
 
     const ns_per_day: i256 = Duration.nanoseconds_per_day;
     const time_of_day: i256 = @as(i256, start.hour) * Duration.nanoseconds_per_hour +
@@ -1420,8 +1421,15 @@ fn checkArithmetic(start: DateTime, duration: Duration) !void {
         if (!year_fits) break :blk null;
         const year: Year = @intCast(year_wide);
         const month: Month = @enumFromInt(@as(u4, @intCast(@mod(month_index, 12) + 1)));
-        const day = @min(start.day, month.lastDay(year));
-        const days = @as(i256, (Date{ .year = year, .month = month, .day = day }).toDaysSinceStartOfEra()) + duration.days + carry;
+        const moved = @as(i256, duration.days) + carry;
+        // XML Schema clamps the day to its month and then counts; ISO
+        // 8601-2's composite method does the same unless the day itself was
+        // moved, in which case its full value counts from the first of the
+        // month and the excess runs into the next.
+        const days = if (arithmetic == .composite and moved != 0)
+            @as(i256, (Date{ .year = year, .month = month, .day = 1 }).toDaysSinceStartOfEra()) + (start.day - 1) + moved
+        else
+            @as(i256, (Date{ .year = year, .month = month, .day = @min(start.day, month.lastDay(year)) }).toDaysSinceStartOfEra()) + moved;
         if (days < Date.min_days or days > Date.max_days) break :blk null;
         break :blk Date.fromDaysSinceStartOfEra(@intCast(days));
     };
@@ -1471,16 +1479,16 @@ test "random DateTime.addChecked" {
 // at the other end.
 test "DateTime.addChecked at the ends of the calendar" {
     const last: DateTime = .{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31, .hour = 23, .weekday = (Date{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31 }).dayOfWeek() };
-    try checkArithmetic(last, .{ .nanoseconds = Duration.nanoseconds_per_hour - 1 });
-    try checkArithmetic(last, .{ .nanoseconds = Duration.nanoseconds_per_hour });
-    try checkArithmetic(last, .{ .days = -1 });
-    try checkArithmetic(last, .{ .months = 1 });
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(last, .{ .nanoseconds = Duration.nanoseconds_per_hour - 1 }, a);
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(last, .{ .nanoseconds = Duration.nanoseconds_per_hour }, a);
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(last, .{ .days = -1 }, a);
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(last, .{ .months = 1 }, a);
     const first: DateTime = .{ .year = std.math.minInt(Year), .month = .Jan, .day = 1, .weekday = (Date{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 }).dayOfWeek() };
-    try checkArithmetic(first, .{ .nanoseconds = -1 });
-    try checkArithmetic(first, .{ .days = 1 });
-    try checkArithmetic(first, .{ .months = -1 });
-    try checkArithmetic(first, .{ .months = std.math.minInt(i64), .days = std.math.minInt(i64), .nanoseconds = std.math.minInt(i128) });
-    try checkArithmetic(first, .{ .months = std.math.maxInt(i64), .days = std.math.maxInt(i64), .nanoseconds = std.math.maxInt(i128) });
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(first, .{ .nanoseconds = -1 }, a);
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(first, .{ .days = 1 }, a);
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(first, .{ .months = -1 }, a);
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(first, .{ .months = std.math.minInt(i64), .days = std.math.minInt(i64), .nanoseconds = std.math.minInt(i128) }, a);
+    inline for (.{ Duration.Arithmetic.xml_schema, Duration.Arithmetic.composite }) |a| try checkArithmetic(first, .{ .months = std.math.maxInt(i64), .days = std.math.maxInt(i64), .nanoseconds = std.math.maxInt(i128) }, a);
 }
 
 // Round trips ----------------------------------------------------------

@@ -1953,21 +1953,45 @@ pub fn parseWith(
 /// is dropped, since the name a zone went by at the old instant is not
 /// something this can know for the new one — ask a `TimeZone` for it.
 ///
+/// This is `Duration.Arithmetic.xml_schema`; `addWith` takes the other
+/// method, ISO 8601-2's composite one, which differs only when the months
+/// leave the day invalid and the days then move it.
+///
 /// A result outside the years a `Year` can hold is a panic; `addChecked` is
 /// the one to use on a duration somebody else chose.
 pub fn add(self: DateTime, duration: Duration) DateTime {
-    return self.addChecked(duration) catch
+    return self.addWith(duration, .xml_schema);
+}
+
+/// `add` by the method `arithmetic` names; see `Duration.Arithmetic`.
+pub fn addWith(self: DateTime, duration: Duration, arithmetic: Duration.Arithmetic) DateTime {
+    return self.addCheckedWith(duration, arithmetic) catch
         @panic("DateTime.add: the result is outside the years a Year can hold");
+}
+
+test addWith {
+    const jan31: DateTime = .{ .year = 2001, .month = .Jan, .day = 31, .hour = 23 };
+    // Hours that carry into the day move it as surely as days do, so under
+    // the composite method the 31st carries past February's end.
+    const d: Duration = .{ .months = 1, .nanoseconds = Duration.nanoseconds_per_hour };
+    try std.testing.expectEqual(Date{ .year = 2001, .month = .Mar, .day = 1 }, jan31.addWith(d, .xml_schema).asDate());
+    try std.testing.expectEqual(Date{ .year = 2001, .month = .Mar, .day = 4 }, jan31.addWith(d, .composite).asDate());
 }
 
 /// `add`, answering `error.OutOfRange` rather than panicking when the result
 /// would land outside the years a `Year` can hold.
+pub fn addChecked(self: DateTime, duration: Duration) error{OutOfRange}!DateTime {
+    return self.addCheckedWith(duration, .xml_schema);
+}
+
+/// `addWith`, answering `error.OutOfRange` rather than panicking when the
+/// result would land outside the years a `Year` can hold.
 ///
 /// Two places can overflow and both are checked: the whole days carried out
 /// of the sub-day part, which for a duration of `i128` nanoseconds need not
 /// fit the `i64` the days are counted in, and the calendar step itself,
 /// which `Duration.addToDateChecked` checks.
-pub fn addChecked(self: DateTime, duration: Duration) error{OutOfRange}!DateTime {
+pub fn addCheckedWith(self: DateTime, duration: Duration, arithmetic: Duration.Arithmetic) error{OutOfRange}!DateTime {
     const time_of_day: i128 = @as(i128, self.hour) * Duration.nanoseconds_per_hour +
         @as(i128, self.minute) * Duration.nanoseconds_per_minute +
         @as(i128, self.second) * Duration.nanoseconds_per_second +
@@ -1984,7 +2008,7 @@ pub fn addChecked(self: DateTime, duration: Duration) error{OutOfRange}!DateTime
     const date = try (Duration{
         .months = duration.months,
         .days = std.math.cast(i64, duration.days + carry) orelse return error.OutOfRange,
-    }).addToDateChecked(self.asDate());
+    }).addToDateCheckedWith(self.asDate(), arithmetic);
 
     var result: DateTime = .{
         .year = date.year,

@@ -14,7 +14,15 @@
 //!
 //! Years fold into `months` and weeks into `days`, because within each pair
 //! the conversion is exact — twelve months to a year, seven days to a week
-//! — while between them it is not.
+//! — while between them it is not. ISO 8601-2:2019/Amd 1:2025, 14.6,
+//! draws the same line: years and months, and weeks and days, are
+//! "unequivocally convertible", and months and days are not.
+//!
+//! The syntax is ISO 8601-1:2019, 5.5.2, and the signs it can carry are
+//! ISO 8601-2:2019's: in front of the `P` (4.4.1.9), or on each component
+//! of a composite duration (14.2). How one is added to a date is 14.4 and
+//! its informative Annex D, which describes more than one method; see
+//! `Arithmetic`.
 
 const Duration = @This();
 
@@ -34,6 +42,15 @@ days: i64 = 0,
 /// Everything below a day. Not reduced to less than a day: a duration of
 /// `PT36H` keeps its thirty-six hours, because ISO 8601 wrote it that way
 /// and rewriting it as a day and a half would change what it says.
+///
+/// Hours, minutes and seconds share it at the fixed rates of 4.2.3, 60
+/// seconds to the minute and 60 minutes to the hour. That is the "nominal
+/// duration rule" ISO 8601-2:2019/Amd 1:2025, 14.6, EXAMPLE 15, gives for
+/// ignoring leap seconds, which a duration measured in nanoseconds has no
+/// way to know about. Keeping days apart from it is what 14.6 would not:
+/// it counts a day and an hour as convertible "in the UTC 24-hour clock
+/// system", and on a local clock a day across a change of offset is 23 or
+/// 25 hours.
 nanoseconds: i128 = 0,
 
 pub const nanoseconds_per_second: i128 = 1_000_000_000;
@@ -215,30 +232,142 @@ test format {
 /// 2nd. Adding a duration is not commutative and not associative, and the
 /// clamp is the reason.
 ///
+/// This is `Arithmetic.xml_schema`; `addToDateWith` takes the other one.
+///
 /// A result outside the years a `Year` can hold is a panic; `addToDateChecked`
 /// is the one to use on a duration somebody else chose.
 pub fn addToDate(self: Duration, date: Date) Date {
-    return self.addToDateChecked(date) catch
+    return self.addToDateWith(date, .xml_schema);
+}
+
+/// `addToDate` by the method `arithmetic` names; see `Arithmetic`.
+pub fn addToDateWith(self: Duration, date: Date, arithmetic: Arithmetic) Date {
+    return self.addToDateCheckedWith(date, arithmetic) catch
         @panic("Duration.addToDate: the result is outside the years a Year can hold");
+}
+
+test addToDateWith {
+    const jan31: Date = .{ .year = 2001, .month = .Jan, .day = 31 };
+    const d: Duration = .{ .months = 1, .days = 1 };
+    // The one case the two methods answer differently: the day the months
+    // leave invalid, which is then moved by days.
+    try std.testing.expectEqual(Date{ .year = 2001, .month = .Mar, .day = 1 }, d.addToDateWith(jan31, .xml_schema));
+    try std.testing.expectEqual(Date{ .year = 2001, .month = .Mar, .day = 4 }, d.addToDateWith(jan31, .composite));
 }
 
 /// `addToDate`, answering `error.OutOfRange` rather than panicking when the
 /// result would land outside the years a `Year` can hold.
+pub fn addToDateChecked(self: Duration, date: Date) error{OutOfRange}!Date {
+    return self.addToDateCheckedWith(date, .xml_schema);
+}
+
+/// `addToDateWith`, answering `error.OutOfRange` rather than panicking when
+/// the result would land outside the years a `Year` can hold.
 ///
 /// The arithmetic is done in an `i128` throughout, which no `i64` month or
 /// day count can overflow, and narrowed only once the answer is known to
 /// fit. Narrowing first is what would make a large duration a crash instead
 /// of an error.
-pub fn addToDateChecked(self: Duration, date: Date) error{OutOfRange}!Date {
+pub fn addToDateCheckedWith(self: Duration, date: Date, arithmetic: Arithmetic) error{OutOfRange}!Date {
     const total_months = @as(i128, date.year) * 12 + (@intFromEnum(date.month) - 1) + self.months;
     const year = std.math.cast(Year, @divFloor(total_months, 12)) orelse return error.OutOfRange;
     const month: Month = @enumFromInt(@as(u8, @intCast(@mod(total_months, 12) + 1)));
 
-    const clamped: Day = @min(date.day, month.lastDay(year));
-    const days = @as(i128, (Date{ .year = year, .month = month, .day = clamped }).toDaysSinceStartOfEra()) + self.days;
+    const days = switch (arithmetic) {
+        .xml_schema => blk: {
+            const clamped: Day = @min(date.day, month.lastDay(year));
+            break :blk @as(i128, (Date{ .year = year, .month = month, .day = clamped }).toDaysSinceStartOfEra()) + self.days;
+        },
+        .composite => blk: {
+            // A day the duration does not move is truncated to its month,
+            // D.3.2; one it does move keeps its full value and carries past
+            // the month's end, D.4.2. Counting from the first of the month
+            // is both at once: a day past the end is so many days into the
+            // next month, which is what the carry does.
+            if (self.days == 0) {
+                const clamped: Day = @min(date.day, month.lastDay(year));
+                break :blk @as(i128, (Date{ .year = year, .month = month, .day = clamped }).toDaysSinceStartOfEra());
+            }
+            const first = (Date{ .year = year, .month = month, .day = 1 }).toDaysSinceStartOfEra();
+            break :blk @as(i128, first) + (date.day - 1) + self.days;
+        },
+    };
     if (days < Date.min_days or days > Date.max_days) return error.OutOfRange;
     return Date.fromDaysSinceStartOfEra(@intCast(days));
 }
+
+test "the examples of ISO 8601-2:2019, Annex D, that begin on a real date" {
+    // D.3.2, EXAMPLE 1: a month on from the 31st of January is truncated
+    // to February's last day, under either method.
+    const jan31: Date = .{ .year = 2018, .month = .Jan, .day = 31 };
+    inline for (.{ Arithmetic.xml_schema, Arithmetic.composite }) |arithmetic| {
+        try std.testing.expectEqual(
+            Date{ .year = 2018, .month = .Feb, .day = 28 },
+            try (Duration{ .months = 1 }).addToDateCheckedWith(jan31, arithmetic),
+        );
+    }
+    // D.4.2, EXAMPLE 2: '2020Y2M29D + P2Y2M2D' is '2022Y5M1D', under either.
+    const leap_day: Date = .{ .year = 2020, .month = .Feb, .day = 29 };
+    inline for (.{ Arithmetic.xml_schema, Arithmetic.composite }) |arithmetic| {
+        try std.testing.expectEqual(
+            Date{ .year = 2022, .month = .May, .day = 1 },
+            try (Duration{ .months = 26, .days = 2 }).addToDateCheckedWith(leap_day, arithmetic),
+        );
+    }
+}
+
+test addToDateCheckedWith {
+    const jan31: Date = .{ .year = 2001, .month = .Jan, .day = 31 };
+    try std.testing.expectEqual(
+        Date{ .year = 2001, .month = .Mar, .day = 4 },
+        try (Duration{ .months = 1, .days = 1 }).addToDateCheckedWith(jan31, .composite),
+    );
+    try std.testing.expectError(
+        error.OutOfRange,
+        (Duration{ .months = std.math.maxInt(i64) }).addToDateCheckedWith(jan31, .composite),
+    );
+}
+
+/// The two ways this library adds a `Duration` to a date, which differ in
+/// one case only: a day the months have left invalid, which the duration
+/// then moves by whole days.
+///
+/// ISO 8601-1 does not say how to add a duration to a date at all. ISO
+/// 8601-2:2019, 14.4, does, and sends the reader to its Annex D for the
+/// method, and that annex is informative. So both of these are ways of
+/// doing it that a standard describes, and the choice between them is a
+/// caller's to make.
+pub const Arithmetic = enum {
+    /// XML Schema 1.1's *Adding durations to dateTimes*, and the default.
+    ///
+    /// The months are added first and the day of the month is clamped to
+    /// the last day of the month it landed in; only then are the days added,
+    /// as a count. So `P1M1D` from the 31st of January 2001 lands on the
+    /// 28th of February and then the 1st of March. This is also what ISO
+    /// 8601-2:2019, D.4.3, gives for a *precedence* duration written in its
+    /// natural order, `P1MP1D`, applying one unit at a time with truncation
+    /// at each step, and it is what Java's `Period`, .NET's `AddMonths`
+    /// and most libraries compute.
+    xml_schema,
+    /// ISO 8601-2:2019, D.4.2, for a *composite* duration.
+    ///
+    /// Every component is applied to the date at once, and only then are
+    /// the components carried over, lowest first, with anything still
+    /// invalid truncated last. A day the duration moved that has run past
+    /// the end of its month is an overflow, and the excess carries into the
+    /// next: `P1M1D` from the 31st of January 2001 is the 32nd of February,
+    /// which is the 4th of March. A day the duration did not move, and that
+    /// only a change of month has made invalid, is truncated instead, D.3.2,
+    /// so `P1M` alone from the 31st of January is still the 28th of
+    /// February under either method.
+    ///
+    /// The annex's second example, the 29th of February 2020 plus
+    /// `P2Y2M2D`, is the 1st of May 2022 under both methods. Its first
+    /// begins from a date that does not exist, the 30th of February, and
+    /// ends on one that does not either, the 31st of June, so it is not
+    /// one to test against.
+    composite,
+};
 
 test addToDateChecked {
     const jan31: Date = .{ .year = 2001, .month = .Jan, .day = 31 };

@@ -852,6 +852,27 @@ associative — `P1M1D` from the 31st of January is the 1st of March, while
 a day and then a month would be the 2nd — and why ISO 8601 writes the
 components in that one order and no other.
 
+ISO 8601-1 does not say how to add a duration to a date. ISO 8601-2 does,
+in clause 14.4, and points to its Annex D for the method, and that annex
+is informative and describes two. Its *precedence* method, one unit at a
+time with truncation at each step (D.4.3), is the one above. Its
+*composite* method (D.4.2) applies every component at once and carries
+the excess afterwards, so a day that the duration moves past the end of
+its month runs into the next: `P1M1D` from the 31st of January 2001 is the
+32nd of February, which is the **4th of March**. The two differ only
+there. `DateTime.addWith` and `Duration.addToDateWith` take the method,
+`.xml_schema` (the default, and what `add` uses) or `.composite`:
+
+```zig
+const jan31: datetime.DateTime = .{ .year = 2001, .month = .Jan, .day = 31 };
+const d: datetime.Duration = .{ .months = 1, .days = 1 };
+_ = jan31.add(d);                    // 2001-03-01
+_ = jan31.addWith(d, .composite);    // 2001-03-04
+```
+
+Neither models leap seconds, which Annex D.2.3 allows "for the accuracy of
+general purposes": a minute is always sixty seconds.
+
 Two things about a duration are worth knowing before relying on it.
 `sign` answers `1`, `-1`, `0`, or **null** when the fields disagree.
 `{ .months = 1, .days = -1 }` is a real length of time, but ISO 8601-1
