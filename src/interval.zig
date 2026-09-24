@@ -31,9 +31,11 @@ const Instant = @import("Instant.zig");
 const iso8601 = @import("iso8601.zig");
 const json = @import("json.zig");
 
-/// A time interval in one of ISO 8601's three forms. The duration-only form
-/// is not one of them: a duration on its own has no place on the timeline
-/// to be an interval of.
+/// A time interval in one of ISO 8601's three forms, those of ISO
+/// 8601-1:2019, 5.5.1 a) to c). The duration-only form is not one of them:
+/// a duration on its own has no place on the timeline to be an interval
+/// of, and 5.5.1 allows it only in a NOTE, for a start or end "supplied out
+/// of band".
 pub const Interval = union(enum) {
     /// Both endpoints written out.
     start_end: StartEnd,
@@ -194,8 +196,11 @@ pub const Interval = union(enum) {
     /// Whether `instant` falls within this interval.
     ///
     /// The interval is taken as **half-open**: it contains its start and not
-    /// its end. ISO 8601 leaves the question to the application, and this is
-    /// the answer that lets intervals tile, since `2024-03-15/2024-03-16` and
+    /// its end. ISO 8601 leaves the question open — Amendment 1:2022 to ISO
+    /// 8601-1, 5.3.2, describes an end used as "an excluded maximum value"
+    /// and one used as "an included maximum value" without making either
+    /// the rule — and this is the answer that lets
+    /// intervals tile, since `2024-03-15/2024-03-16` and
     /// `2024-03-16/2024-03-17` then share no instant and leave none out. An
     /// interval of no length contains nothing.
     pub fn contains(self: Interval, instant: Instant) bool {
@@ -256,6 +261,8 @@ pub const Interval = union(enum) {
 
     /// Writes this interval in ISO 8601's own syntax, which is what `{f}`
     /// gets, in the form it was built in: the two parts joined by a solidus.
+    /// Those are the complete representations of ISO 8601-1:2019, 5.5.3.1
+    /// to 5.5.3.3, in the extended form throughout, as 5.5.3.1 asks.
     ///
     /// Each endpoint is written in full by `iso8601.writeDateTime`. A
     /// `DateTime` cannot say that it was read without a zone, so an endpoint
@@ -537,7 +544,8 @@ pub const RecurringInterval = struct {
 
     /// Writes this series in ISO 8601's own syntax, which is what `{f}`
     /// gets: `R`, the count unless the series is unbounded, a solidus, and
-    /// the interval as `Interval.format` writes it.
+    /// the interval as `Interval.format` writes it. That is the complete
+    /// representation of ISO 8601-1:2019, 5.6.3.
     pub fn format(self: RecurringInterval, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.writeByte('R');
         if (self.count) |count| try writer.print("{d}", .{count});

@@ -214,7 +214,8 @@ pub const DayOfWeek = enum(u3) {
         try std.testing.expectEqual(@as(u3, 6), DayOfWeek.Sat.weekdayNumber());
     }
 
-    /// Returns the ISO 8601 weekday number, Monday = 1 through Sunday = 7.
+    /// Returns the ISO 8601 weekday number, Monday = 1 through Sunday = 7:
+    /// ISO 8601-1:2019, 4.3.6, and Table 2.
     pub fn isoWeekdayNumber(self: DayOfWeek) u3 {
         return if (self == .Sun) 7 else @intFromEnum(self);
     }

@@ -823,6 +823,32 @@ two ends differ. The zone is the one deliberate exception, since `+0530`
 after an extended time is common in real data. Durations and time
 intervals have parsers of their own, below.
 
+#### How closely this follows the standard
+
+The text followed is ISO 8601-1:2019 with its Amendment 1:2022, and
+ISO 8601-2:2019 with its Amendment 1:2025 for the few things Part 2 adds
+that this reads. The doc comments cite the clause behind each rule, and
+`src/iso8601.zig` opens with the full list. In summary:
+
+| | ISO 8601 | here |
+| --- | --- | --- |
+| Dates, times, time shifts, `24:00` (Part 1, 5.2 to 5.4) | | read and written |
+| Durations, intervals, recurring intervals (5.5, 5.6) | | read and written |
+| A space for `T`; lower-case `t`, `z`, `p` | shall not (3.2.1) | read, as RFC 3339 §5.6 allows |
+| `+0530` after `14:30:00` | one form throughout (5.4.3) | read |
+| `-00:00` | `+` for zero (4.3.13) | read, as RFC 3339 §4.3 allows |
+| `2024-03-15T14`, `2024-03-15T14.5` | basic form only (5.3.1.3, 5.3.1.4) | read |
+| `P1W2D` | `W` alone (5.5.2.2) | read |
+| `-P1D`, `P1M-1D` | Part 2, 4.4.1.9 and 14.2 | read and written |
+| Expanded years `+002024` | by agreement (4.4) | written, not read |
+| Decades `198`, centuries `19` (5.2.2.2) | allowed | not read |
+| A time with no date, `T14:30` (5.3.1) | allowed | not read |
+| `P0003-06-04T12:30:05` (5.5.2.4) | by agreement | not read |
+| `P0.5M`, `P0.5Y`, `P0.5W` (5.5.2.3) | allowed | refused: no length without a date |
+| A bare duration as an interval | by agreement (5.5.1, NOTE) | not read |
+| `R0`, `R-1` | not defined | refused |
+| Repeat rules `/F2W` (Part 2, 13) | Part 2 | left as trailing text |
+
 ### Durations
 
 `iso8601.parseDuration` reads the other half of the syntax, and
@@ -1295,16 +1321,21 @@ collection called `zig-datetime`, with the full text of each RFC attached.
   time — Representations for information interchange — Part 1: Basic rules*,
   ISO 8601-1:2019, <https://www.iso.org/standard/70907.html>. The calendar,
   ordinal and week date forms that `iso8601` reads, the duration syntax
-  `Duration` holds, and the time interval forms `Interval` holds. Clause 5.6
+  `Duration` holds, and the time interval forms `Interval` holds, clause
+  by clause as the doc comments cite them. Clause 5.6
   and definition 3.1.1.11 are what `RecurringInterval` follows: a series of
   *consecutive* intervals, the count read as the number of intervals, and
   the duration-and-end form naming the last one rather than the first.
 - **[ISO8601-2]** International Organization for Standardization, *Date and
   time — Representations for information interchange — Part 2:
   Extensions*, ISO 8601-2:2019, <https://www.iso.org/standard/70908.html>.
-  The repeat rules a recurring interval may carry in its clause 13, which
-  `parseRecurringInterval` leaves unread, and, with Part 1, the evidence
-  that the standard gives `R0` and `R-1` no meaning.
+  The signs a duration may carry, in front (4.4.1.9) or on each component
+  (14.2); the four-digit negative year `-0001` (4.4.1.2) that
+  `iso8601.writeDateTime` writes; adding a duration to a date (14.4), and
+  the two methods of its informative Annex D that `Duration.Arithmetic`
+  offers; the repeat rules a recurring interval may carry in its clause 13,
+  which `parseRecurringInterval` leaves unread; and, with Part 1, the
+  evidence that the standard gives `R0` and `R-1` no meaning.
 - **[ISO8601-1-AMD1]** International Organization for Standardization, *Date
   and time — Representations for information interchange — Part 1: Basic
   rules — Amendment 1: Technical corrections*, ISO 8601-1:2019/Amd 1:2022,

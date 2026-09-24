@@ -724,6 +724,11 @@ test weekOfYear {
 /// Returns the ISO 8601 week of this date, and the year that week belongs
 /// to. Weeks run Monday to Sunday and week 1 is the one containing
 /// January 4th, equivalently the one holding the year's first Thursday.
+///
+/// That is the week calendar of ISO 8601-1:2019, 4.2.2, whose weeks begin
+/// on Monday (Table 2) and number `01` to `52` or `53` (4.3.4). As its NOTE
+/// says, a week's year and the calendar year "do not always match": the
+/// first day of 2019's week 1 is 2018-12-31.
 pub fn isoWeek(self: Date) Week {
     return self.weekOfYear(.Mon, 4);
 }

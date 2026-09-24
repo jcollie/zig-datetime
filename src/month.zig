@@ -14,7 +14,8 @@ const Day = @import("day.zig").Day;
 const leap = @import("leap.zig");
 
 /// A month of the year, numbered January = 1 through December = 12 so that
-/// the enum value is the number a date is written with.
+/// the enum value is the number a date is written with: ISO 8601-1:2019,
+/// 4.3.3, `01` to `12`, with the lengths of its Table 1.
 pub const Month = enum(u4) {
     Jan = 1,
     Feb = 2,

@@ -185,7 +185,10 @@ test readDate {
 /// What passes is exactly the shape of RFC 3339's `date-time`, which is
 /// what JSON Schema's `date-time` format means and what JSON producers
 /// write, extended only to the week and ordinal dates and the basic form,
-/// which name a day just as exactly.
+/// which name a day just as exactly. In ISO 8601-1:2019's terms that is a
+/// complete representation of a date and time of day with a time shift or
+/// `Z`: 5.4.2.1 for calendar dates, 5.4.2.2 for ordinal and 5.4.2.3 for
+/// week dates, less any of 5.4.3's reduced times.
 fn isComplete(has_offset: bool, precision: iso8601.Precision) bool {
     return has_offset and precision == .second;
 }
