@@ -259,6 +259,9 @@ pub fn readDuration(text: []const u8) TextError!Duration {
 
 test readDuration {
     try std.testing.expect((try readDuration("P1Y2M")).eql(.{ .months = 14 }));
+    // Fields that disagree in sign, which is what `Duration.format` writes
+    // for them, so the hooks read back what they wrote.
+    try std.testing.expect((try readDuration("P1M-1D")).eql(.{ .months = 1, .days = -1 }));
     try std.testing.expectError(error.InvalidCharacter, readDuration("P1Y2"));
 }
 

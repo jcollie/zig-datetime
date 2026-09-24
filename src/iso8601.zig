@@ -129,7 +129,17 @@ pub const DurationParseResult = struct {
 };
 
 /// Parses an ISO 8601 duration at the start of `value`: `P3Y6M4DT12H30M5S`,
-/// `PT30M`, `P2W`, `-P1D`.
+/// `PT30M`, `P2W`, `-P1D`, `P1M-1D`.
+///
+/// A sign may go in either of two places, and not both. In front of the `P`
+/// it reverses the whole duration, which is ISO 8601-2:2019, 4.4.1.9; that
+/// clause asks every component after it to be positive, so `-P1Y-2M` is
+/// refused. In front of a component's digits it makes that component
+/// alone negative, which is how ISO 8601-2:2019, 14.2, writes the result of
+/// adding two composite durations component by component — `P3Y15M3DT-10M`
+/// is its own example. That is the only way to write a duration whose
+/// fields disagree in sign, which is what `Duration.format` writes for one.
+/// A `+` is accepted in front of the `P`, as before, and nowhere else.
 ///
 /// Years fold into the duration's months and weeks into its days, since
 /// those two conversions are exact. A decimal fraction is allowed on any
@@ -149,6 +159,7 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
 
     var result: DurationParseResult = .{ .str = &.{}, .value = .{} };
     var count: usize = 0;
+    var any_negative = false;
 
     // The date part, whose `M` means months. `W` is an alternative to the
     // whole of it rather than one more component, but accepting it alongside
@@ -158,27 +169,31 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
     if (!in_time) {
         while (try component(&cursor)) |c| {
             count += 1;
+            any_negative = any_negative or c.negative;
             if (c.fraction.len != 0) result.fractional = c.designator;
             switch (c.designator) {
                 // A fraction of a year or a month is a length of time nobody
                 // can name in days, so it is refused rather than guessed at.
                 'Y' => {
                     if (c.fraction.len != 0) return error.BadFraction;
-                    result.value.months = try add(result.value.months, try mul(c.whole, 12));
+                    result.value.months = try add(result.value.months, try c.wholeIn(12));
                 },
                 'M' => {
                     if (c.fraction.len != 0) return error.BadFraction;
-                    result.value.months = try add(result.value.months, try cast(c.whole));
+                    result.value.months = try add(result.value.months, try c.wholeIn(1));
                 },
                 'W' => {
                     if (c.fraction.len != 0) return error.BadFraction;
-                    result.value.days = try add(result.value.days, try mul(c.whole, 7));
+                    result.value.days = try add(result.value.days, try c.wholeIn(7));
                 },
                 'D' => {
-                    result.value.days = try add(result.value.days, try cast(c.whole));
+                    result.value.days = try add(result.value.days, try c.wholeIn(1));
+                    // Only the fraction goes to the sub-day part: the whole
+                    // days are counted above.
+                    const fraction = scaleFraction(c.fraction, Duration.nanoseconds_per_day);
                     result.value.nanoseconds = try addNanoseconds(
                         result.value.nanoseconds,
-                        scaleFraction(c.fraction, Duration.nanoseconds_per_day),
+                        if (c.negative) -fraction else fraction,
                     );
                 },
                 else => return error.ParseError,
@@ -194,6 +209,7 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
         while (try component(&cursor)) |c| {
             count += 1;
             time_count += 1;
+            any_negative = any_negative or c.negative;
             if (c.fraction.len != 0) result.fractional = c.designator;
             const unit: i128 = switch (c.designator) {
                 'H' => Duration.nanoseconds_per_hour,
@@ -203,11 +219,7 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
             };
             result.value.nanoseconds = try addNanoseconds(
                 result.value.nanoseconds,
-                try mulNanoseconds(c.whole, unit),
-            );
-            result.value.nanoseconds = try addNanoseconds(
-                result.value.nanoseconds,
-                scaleFraction(c.fraction, unit),
+                try c.nanosecondsIn(unit),
             );
             if (c.designator == 'S') break;
         }
@@ -217,6 +229,10 @@ pub fn parseDuration(value: []const u8) ParseError!DurationParseResult {
 
     // `P` on its own is not a duration either.
     if (count == 0) return error.ParseError;
+
+    // A sign on the whole and a sign on a component together: ISO 8601-2
+    // asks for the components of a negative duration to be positive.
+    if (negative and any_negative) return error.ParseError;
 
     if (negative) result.value = result.value.negate();
     result.str = value[0..cursor.index];
@@ -243,6 +259,13 @@ test parseDuration {
         .{ "PT1,5S", .{ .nanoseconds = 3 * Duration.nanoseconds_per_second / 2 } },
         .{ "P1.5D", .{ .days = 1, .nanoseconds = Duration.nanoseconds_per_day / 2 } },
         .{ "P0D", .{} },
+        // A sign on a component, which is how ISO 8601-2 writes a duration
+        // whose fields disagree; its own example is the second.
+        .{ "P1M-1D", .{ .months = 1, .days = -1 } },
+        .{ "P3Y15M3DT-10M", .{ .months = 51, .days = 3, .nanoseconds = -10 * Duration.nanoseconds_per_minute } },
+        .{ "P-1Y-2M3D", .{ .months = -14, .days = 3 } },
+        .{ "P1DT-1.5S", .{ .days = 1, .nanoseconds = -3 * Duration.nanoseconds_per_second / 2 } },
+        .{ "P-1.5D", .{ .days = -1, .nanoseconds = -Duration.nanoseconds_per_day / 2 } },
     };
     for (cases) |case| {
         const got = try parseDuration(case[0]);
@@ -266,14 +289,20 @@ test parseDuration {
     // -- `BadFraction` is as much a refusal as `ParseError` -- so the check
     // is only that none of them parses.
     for ([_][]const u8{
-        "",      "1D",    "P",     "-P",   "PT",
+        "",      "1D",    "P",     "-P",      "PT",
         "P1DT",  "P1X",   "PTS",   "P.5D",
         // A year, month or week has no fixed length, so a fraction of one is
         // not a duration this can represent.
-        "P0.5Y",
+           "P0.5Y",
         "P0.5M", "P0.5W",
         // A decimal point with no digits after it.
         "PT1.S",
+        // A sign on the whole and on a component: ISO 8601-2 asks for the
+        // components of a negative duration to be positive.
+        "-P1Y-2M",
+        // A sign that is not a minus, or one with nothing after it.
+        "P+1D",
+        "P-D",
     }) |bad| {
         std.testing.expect(std.meta.isError(parseDuration(bad))) catch |err| {
             std.debug.print("parsed but should not have: \"{s}\"\n", .{bad});
@@ -289,9 +318,35 @@ const Component = struct {
     whole: u64,
     fraction: []const u8,
     designator: u8,
+    /// Whether a minus sign stood in front of the digits.
+    negative: bool = false,
+
+    /// The whole part as a signed count of `unit`.
+    fn wholeIn(self: Component, unit: i64) ParseError!i64 {
+        const value = try mul(self.whole, unit);
+        return if (self.negative) -value else value;
+    }
+
+    /// The whole part and the fraction together, as a signed count of
+    /// nanoseconds of a `unit` of that many nanoseconds.
+    fn nanosecondsIn(self: Component, unit: i128) ParseError!i128 {
+        const value = try addNanoseconds(try mulNanoseconds(self.whole, unit), scaleFraction(self.fraction, unit));
+        return if (self.negative) -value else value;
+    }
 };
 
 fn component(cursor: *Cursor) ParseError!?Component {
+    // A minus sign counts only when digits follow it. Otherwise it is not
+    // part of the duration at all, and is left, like anything else after
+    // the last component, for the caller.
+    var negative = false;
+    if (!cursor.done() and cursor.peek() == '-' and
+        cursor.index + 1 < cursor.text.len and std.ascii.isDigit(cursor.text[cursor.index + 1]))
+    {
+        negative = true;
+        cursor.index += 1;
+    }
+
     const whole_len = cursor.digitsAhead();
     if (whole_len == 0) return null;
 
@@ -314,7 +369,7 @@ fn component(cursor: *Cursor) ParseError!?Component {
     if (cursor.done()) return error.ParseError;
     const designator = cursor.peek();
     cursor.index += 1;
-    return .{ .whole = whole, .fraction = fraction, .designator = designator };
+    return .{ .whole = whole, .fraction = fraction, .designator = designator, .negative = negative };
 }
 
 /// The digits after a decimal point, as a count of nanoseconds of `unit`.
@@ -911,6 +966,7 @@ pub fn parseInterval(value: []const u8) ParseError!IntervalParseResult {
     if (first.len != 0 and (first[0] == 'P' or first[0] == 'p')) {
         const d = try parseDuration(first);
         if (d.str.len != first.len) return error.ParseError;
+        try forwards(d.value);
         const e = try parse(second);
         _ = e.value.addChecked(d.value.negate()) catch return error.OutOfRange;
         return .{
@@ -931,6 +987,7 @@ pub fn parseInterval(value: []const u8) ParseError!IntervalParseResult {
     // Start, then duration.
     if (second.len != 0 and (second[0] == 'P' or second[0] == 'p')) {
         const d = try parseDuration(second);
+        try forwards(d.value);
         _ = s.result.value.addChecked(d.value) catch return error.OutOfRange;
         return .{
             .str = value[0 .. consumed + d.str.len],
@@ -1075,6 +1132,11 @@ test parseInterval {
         "P1D/P2D",
         "2024-03-15/-P1D",
         "-P1D/2024-03-15",
+        "2024-03-15/P-1D",
+        // Mixed, which runs forwards from some dates and backwards from
+        // others; see `forwards`.
+        "2024-01-31/P1M-30D",
+        "P1M-30D/2024-03-15",
         // Backwards.
         "2024-03-16/2024-03-15",
         "2024-03-15T10:00/09:00",
@@ -1219,6 +1281,26 @@ test parseRecurringInterval {
             return err;
         };
     }
+}
+
+/// Refuses a duration in an interval unless every one of its components is
+/// zero or positive.
+///
+/// Checking the result of adding it would not be enough. A duration whose
+/// components disagree in sign runs forwards from some dates and backwards
+/// from others — `P1M-30D` from the 31st of January is the 30th, a day
+/// earlier, and from the 1st of March is the 31st, a day later — so an
+/// interval with one might check out and then run backwards on the next
+/// step of a `RecurringInterval`. ISO 8601-1 writes an interval's duration
+/// with no signs at all, and holding it to that is what makes every interval
+/// this reads, and every series, run forwards however far it goes.
+fn forwards(duration: Duration) ParseError!void {
+    if (duration.months < 0 or duration.days < 0 or duration.nanoseconds < 0) return error.OutOfRange;
+}
+
+test forwards {
+    try forwards(.{ .months = 1, .days = 2 });
+    try std.testing.expectError(error.OutOfRange, forwards(.{ .months = 1, .days = -30 }));
 }
 
 /// Where the two parts of an interval divide: the first solidus or double

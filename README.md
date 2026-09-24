@@ -849,10 +849,16 @@ a day and then a month would be the 2nd — and why ISO 8601 writes the
 components in that one order and no other.
 
 Two things about a duration are worth knowing before relying on it.
-`sign` answers `1`, `-1`, `0`, or **null** when the fields disagree: the
-syntax has a single sign in front of everything, so `{ .months = 1,
-.days = -1 }` is a real length of time that cannot be written down, and
-anything that has to write one out asks first. And
+`sign` answers `1`, `-1`, `0`, or **null** when the fields disagree.
+`{ .months = 1, .days = -1 }` is a real length of time, but ISO 8601-1
+has at most one sign, in front of everything, and cannot write it. ISO
+8601-2's composite durations put a sign on each component instead, and
+that is what `format` writes for such a duration: `P1M-1D`, or
+`P-1Y-2M3D`. `parseDuration` reads both forms back, but not a sign in
+both places at once, `-P1Y-2M`, which Part 2 forbids. An interval refuses
+any negative component, because a mixed duration runs forwards from some
+dates and backwards from others: `P1M-30D` is a day earlier from the 31st
+of January and a day later from the 1st of March. And
 `DurationParseResult.fractional` says which component carried a decimal
 fraction, because a caller may allow fewer of them than ISO 8601 does —
 XML Schema's `duration` allows one only on the seconds, so `P1.5D` is a

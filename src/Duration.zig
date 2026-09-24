@@ -25,6 +25,7 @@ const Day = @import("day.zig").Day;
 const Month = @import("month.zig").Month;
 const Year = @import("year.zig").Year;
 const json = @import("json.zig");
+const iso8601 = @import("iso8601.zig");
 
 /// Whole calendar months, years included at twelve to the year.
 months: i64 = 0,
@@ -69,10 +70,11 @@ test negate {
 /// for no time at all, and **null** when its fields disagree.
 ///
 /// Fields can disagree because nothing stops a caller building
-/// `{ .months = 1, .days = -1 }`, and that is a real length of time — it is
-/// simply not one ISO 8601 can write, since the syntax has a single sign in
-/// front of everything. Anything that has to write a duration out, or that
-/// is defined only for durations of one sign, asks this first.
+/// `{ .months = 1, .days = -1 }`, and that is a real length of time. ISO
+/// 8601-1 cannot write it, since its syntax has at most a single sign in
+/// front of everything; ISO 8601-2 can, with a sign on each component, and
+/// that is what `format` writes for one. Anything defined only for
+/// durations of one sign, an interval among them, asks this first.
 pub fn sign(self: Duration) ?i2 {
     var seen: i2 = 0;
     for ([_]i128{ self.months, self.days, self.nanoseconds }) |field| {
@@ -98,23 +100,40 @@ test sign {
 /// `P2W` is `P14D`. A duration of no time at all is `PT0S`, which is the one
 /// spelling the syntax cannot leave empty.
 ///
-/// A duration whose fields disagree in sign has no ISO 8601 spelling at all
-/// — see `sign` — and is written with the sign of its largest non-zero
-/// field and the magnitude of each. That does not round-trip, and is why
-/// anything storing a duration should keep one `sign` can answer for.
+/// Where the sign goes depends on whether the fields agree about it; see
+/// `sign`. When they do, one sign stands in front of everything, `-P1Y2M`,
+/// and every component after it is positive, which is ISO 8601-2:2019,
+/// 4.4.1.9. When they do not, there is no single sign to write, and each
+/// component carries its own instead: `{ .months = 1, .days = -1 }` is
+/// `P1M-1D`. That is how ISO 8601-2:2019, 14.2, writes a composite
+/// duration, whose example `P1Y10M3D - P2Y5MT10M` it gives as
+/// `P3Y15M3DT-10M`. The years and months come from one field, and so do
+/// the hours, minutes and seconds, so the components within each group
+/// always share a sign: `{ .months = -14, .days = 3 }` is `P-1Y-2M3D`.
+///
+/// Both forms are read back by `iso8601.parseDuration` as the same value,
+/// so every duration now round-trips. ISO 8601-1 has only the first form,
+/// so a reader that knows only Part 1 will refuse the second. That is the
+/// right outcome, since that reader has no way to hold the value anyway.
 pub fn format(self: Duration, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     if (self.isZero()) return writer.writeAll("PT0S");
 
-    if ((self.sign() orelse 1) < 0) try writer.writeByte('-');
+    // Null when the fields disagree, which is when each component is signed
+    // on its own and nothing goes in front.
+    const whole_sign = self.sign();
+    if (whole_sign == -1) try writer.writeByte('-');
     try writer.writeByte('P');
+    const each = whole_sign == null;
 
     const months: u64 = @abs(self.months);
-    if (months / 12 != 0) try writer.print("{d}Y", .{months / 12});
-    if (months % 12 != 0) try writer.print("{d}M", .{months % 12});
-    if (self.days != 0) try writer.print("{d}D", .{@abs(self.days)});
+    const months_sign = if (each and self.months < 0) "-" else "";
+    if (months / 12 != 0) try writer.print("{s}{d}Y", .{ months_sign, months / 12 });
+    if (months % 12 != 0) try writer.print("{s}{d}M", .{ months_sign, months % 12 });
+    if (self.days != 0) try writer.print("{s}{d}D", .{ if (each and self.days < 0) "-" else "", @abs(self.days) });
 
     const total: u128 = @abs(self.nanoseconds);
     if (total == 0) return;
+    const time_sign = if (each and self.nanoseconds < 0) "-" else "";
 
     try writer.writeByte('T');
     const hours = total / @as(u128, @intCast(nanoseconds_per_hour));
@@ -122,12 +141,12 @@ pub fn format(self: Duration, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     const seconds = total % @as(u128, @intCast(nanoseconds_per_minute)) / @as(u128, @intCast(nanoseconds_per_second));
     const fraction = total % @as(u128, @intCast(nanoseconds_per_second));
 
-    if (hours != 0) try writer.print("{d}H", .{hours});
-    if (minutes != 0) try writer.print("{d}M", .{minutes});
+    if (hours != 0) try writer.print("{s}{d}H", .{ time_sign, hours });
+    if (minutes != 0) try writer.print("{s}{d}M", .{ time_sign, minutes });
     // The seconds are written whenever there is a fraction, because a bare
     // `PT0.5S` has to say the zero its fraction belongs to.
     if (seconds != 0 or fraction != 0 or (hours == 0 and minutes == 0)) {
-        try writer.print("{d}", .{seconds});
+        try writer.print("{s}{d}", .{ time_sign, seconds });
         if (fraction != 0) {
             var digits: [9]u8 = undefined;
             _ = std.fmt.printInt(&digits, fraction, 10, .lower, .{ .fill = '0', .width = 9 });
@@ -154,12 +173,25 @@ test format {
         .{ .{ .nanoseconds = 1 }, "PT0.000000001S" },
         .{ .{ .days = 3, .nanoseconds = 4 * nanoseconds_per_hour + 30 * nanoseconds_per_minute }, "P3DT4H30M" },
         .{ .{ .months = 1, .days = 2, .nanoseconds = 3 * nanoseconds_per_second }, "P1M2DT3S" },
+        // Fields that disagree in sign, each component signed on its own.
+        .{ .{ .months = 1, .days = -1 }, "P1M-1D" },
+        .{ .{ .months = -14, .days = 3 }, "P-1Y-2M3D" },
+        .{ .{ .months = 51, .days = 3, .nanoseconds = -10 * nanoseconds_per_minute }, "P4Y3M3DT-10M" },
+        .{ .{ .days = 1, .nanoseconds = -(90 * nanoseconds_per_minute + nanoseconds_per_second / 2) }, "P1DT-1H-30M-0.5S" },
     };
     for (cases) |case| {
         var buf: [64]u8 = undefined;
         var w = std.Io.Writer.fixed(&buf);
         try case[0].format(&w);
         try std.testing.expectEqualStrings(case[1], w.buffered());
+    }
+
+    // Whatever it writes, `iso8601.parseDuration` reads back as the same
+    // value, the mixed signs included.
+    for (cases) |case| {
+        const again = try iso8601.parseDuration(case[1]);
+        try std.testing.expectEqualStrings(case[1], again.str);
+        try std.testing.expect(again.value.eql(case[0]));
     }
 }
 
@@ -268,8 +300,9 @@ test addToDate {
 ///
 /// The text is `format`'s, so it is canonical rather than as parsed —
 /// `P14M` comes back as `P1Y2M`, the same length of time. A duration whose
-/// fields disagree in sign has no spelling that reads back, and is written
-/// as `format` writes it; see `sign`.
+/// fields disagree in sign is written with a sign on each component,
+/// `P1M-1D`, which ISO 8601-2 allows and `jsonParse` reads back; see
+/// `format`.
 pub fn jsonStringify(self: Duration, jw: anytype) !void {
     return json.stringify(jw, self, json.writeDuration);
 }

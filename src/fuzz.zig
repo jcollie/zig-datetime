@@ -209,6 +209,57 @@ test "mutate iso8601.parse" {
     try overMutations(iso8601Property, &iso8601_seeds);
 }
 
+// ISO 8601 durations ---------------------------------------------------
+
+/// Whatever `iso8601.parseDuration` accepts, `Duration.format` writes in a
+/// form that reads back as the same value: canonical, so not always the
+/// same text, but always the same duration, whatever its fields' signs.
+fn iso8601DurationProperty(text: []const u8) !void {
+    const result = iso8601.parseDuration(text) catch return;
+
+    try std.testing.expect(result.str.len <= text.len);
+    try std.testing.expectEqualStrings(result.str, text[0..result.str.len]);
+
+    var buffer: [max_input]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    try result.value.format(&writer);
+    const again = iso8601.parseDuration(writer.buffered()) catch |err| {
+        std.debug.print("wrote \"{s}\", which does not read back\n", .{writer.buffered()});
+        return err;
+    };
+    try std.testing.expectEqualStrings(writer.buffered(), again.str);
+    try std.testing.expect(again.value.eql(result.value));
+}
+
+const iso8601_duration_seeds = [_][]const u8{
+    "",
+    "P3Y6M4DT12H30M5S",
+    "PT0.5S",
+    "-P1D",
+    "P2W",
+    "P1.5D",
+    "P1M-1D",
+    "P3Y15M3DT-10M",
+    "P-1Y-2M3D",
+    "P1DT-1H-30M-0.5S",
+    "-P1Y-2M",
+    "P9223372036854775807D",
+    "PT-9999999999999999999H",
+    "P--1D",
+};
+
+test "iso8601.parseDuration over the seeds" {
+    try overSeeds(iso8601DurationProperty, &iso8601_duration_seeds);
+}
+
+test "fuzz iso8601.parseDuration" {
+    try overFuzzer(iso8601DurationProperty);
+}
+
+test "mutate iso8601.parseDuration" {
+    try overMutations(iso8601DurationProperty, &iso8601_duration_seeds);
+}
+
 // ISO 8601 intervals ---------------------------------------------------
 
 /// Whatever `iso8601.parseInterval` accepts has well formed endpoints that
