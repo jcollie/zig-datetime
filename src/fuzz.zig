@@ -25,6 +25,7 @@ const std = @import("std");
 const build_options = @import("build_options");
 
 const Date = @import("Date.zig");
+const Duration = @import("Duration.zig");
 const DateTime = @import("DateTime.zig");
 const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Instant = @import("Instant.zig");
@@ -33,6 +34,7 @@ const Month = @import("month.zig").Month;
 const TimeZone = @import("TimeZone.zig");
 const Year = @import("year.zig").Year;
 const cldr = @import("cldr.zig");
+const golayout = @import("golayout.zig");
 const iso8601 = @import("iso8601.zig");
 const locale = @import("locale.zig");
 const posixtz = @import("posixtz.zig");
@@ -151,6 +153,82 @@ fn mutate(random: std.Random, seeds: []const []const u8, buffer: []u8) []const u
     return buffer[0..len];
 }
 
+/// Runs `property` over values drawn from a generator seeded by the test
+/// runner, for the targets whose input is a value rather than text.
+///
+/// These are the properties `std.testing.fuzz` would drive through a
+/// `Smith` if `zig build --fuzz` worked. Outside that mode `std.testing.fuzz`
+/// hands a target a single empty input, and a `Smith` reading from nothing
+/// answers every range with its minimum, so a target driven only that way
+/// checks one value and looks like it checked millions. This draws the
+/// values itself. `zig build test --seed=N` replays a failure exactly, and
+/// the property prints the value it failed on.
+fn overRandom(comptime property: fn (std.Random) anyerror!void) !void {
+    var prng: std.Random.DefaultPrng = .init(std.testing.random_seed);
+    const random = prng.random();
+    for (0..build_options.fuzz_iterations) |i| {
+        property(random) catch |err| {
+            std.debug.print("fuzz: seed {d} produced {any} on draw {d}\n", .{ std.testing.random_seed, err, i });
+            return err;
+        };
+    }
+}
+
+/// A year anywhere a `Year` reaches, most often near the present, sometimes
+/// far from it, and sometimes at one of its two ends, which is where the
+/// arithmetic has overflowed before.
+fn randomYear(random: std.Random) Year {
+    return switch (random.uintLessThan(u8, 8)) {
+        0 => std.math.minInt(Year) + random.intRangeAtMost(Year, 0, 400),
+        1 => std.math.maxInt(Year) - random.intRangeAtMost(Year, 0, 400),
+        2, 3 => random.int(Year),
+        else => random.intRangeAtMost(Year, -10000, 10000),
+    };
+}
+
+/// Any date a `Date` can hold, drawn as `randomYear` draws its year.
+fn randomDate(random: std.Random) Date {
+    const year = randomYear(random);
+    const month: Month = @enumFromInt(random.intRangeAtMost(u4, 1, 12));
+    return .{ .year = year, .month = month, .day = random.intRangeAtMost(u6, 1, month.lastDay(year)) };
+}
+
+/// Any well formed `DateTime`, at any offset the parsers can produce.
+fn randomDateTime(random: std.Random) DateTime {
+    const date = randomDate(random);
+    var value: DateTime = .{
+        .year = date.year,
+        .month = date.month,
+        .day = date.day,
+        .hour = random.intRangeAtMost(u5, 0, 23),
+        .minute = random.intRangeAtMost(u6, 0, 59),
+        .second = random.intRangeAtMost(u6, 0, 59),
+        .nanosecond = random.intRangeAtMost(u30, 0, std.time.ns_per_s - 1),
+        .offset = random.intRangeAtMost(i32, -(24 * std.time.s_per_hour - 1), 24 * std.time.s_per_hour - 1),
+    };
+    value.updateDayOfWeek();
+    return value;
+}
+
+/// An integer of type `T` that is zero, small, middling or anywhere at all,
+/// either sign, since each size reaches a different part of the arithmetic.
+fn randomAmount(comptime T: type, random: std.Random, small: T, middling: T) T {
+    return switch (random.uintLessThan(u8, 5)) {
+        0 => 0,
+        1 => random.intRangeAtMost(T, -small, small),
+        2, 3 => random.intRangeAtMost(T, -middling, middling),
+        else => random.int(T),
+    };
+}
+
+fn randomDuration(random: std.Random) Duration {
+    return .{
+        .months = randomAmount(i64, random, 24, 12 * 100_000),
+        .days = randomAmount(i64, random, 60, 366 * 100_000),
+        .nanoseconds = randomAmount(i128, random, 2 * Duration.nanoseconds_per_day, 366 * 100_000 * Duration.nanoseconds_per_day),
+    };
+}
+
 /// Asserts that `datetime` is a date that could exist, which every parser
 /// here promises about anything it returns.
 fn isWellFormed(datetime: DateTime) !void {
@@ -158,7 +236,10 @@ fn isWellFormed(datetime: DateTime) !void {
     try std.testing.expectEqual(datetime.asDate().dayOfWeek(), datetime.weekday);
     try std.testing.expect(datetime.hour < 24);
     try std.testing.expect(datetime.minute < 60);
-    try std.testing.expect(datetime.second <= 60);
+    // Up to 61, not 60: `Second` holds the C89 "double leap second", and
+    // `strftime.parse` reads `%S` up to 61 because glibc's `strptime` does
+    // (checked against glibc 2.42, which refuses 62).
+    try std.testing.expect(datetime.second <= 61);
     try std.testing.expect(datetime.nanosecond < std.time.ns_per_s);
 
     // An offset has to be one the syntaxes admit, which is wider than any
@@ -1238,6 +1319,170 @@ test "mutate tzdb.validateName" {
     try overMutations(zoneNameProperty, &zone_name_seeds);
 }
 
+// Go layouts -----------------------------------------------------------
+
+/// A Go layout is comptime, so the untrusted surface is the text. The
+/// layouts here between them reach every kind of chunk the parser has:
+/// names long and short, padded and unpadded numbers, a two digit year, a
+/// meridiem, the three spellings of an offset, a zone name, and fractions
+/// both fixed and trimmed.
+fn golayoutProperty(text: []const u8) !void {
+    inline for (.{
+        golayout.layout.rfc3339_nano,
+        golayout.layout.rfc1123z,
+        golayout.layout.rfc850,
+        golayout.layout.unix_date,
+        golayout.layout.default,
+        golayout.layout.stamp_micro,
+        golayout.layout.kitchen,
+        "2006-002 15:04:05.000 Z0700",
+    }) |layout_string| {
+        if (golayout.parse(layout_string, text)) |value| {
+            // Go reads an offset of up to `+24:60:60`, past the day that
+            // `isWellFormed` holds the other parsers to, so the offset is
+            // held to Go's limit here and everything else to the usual one.
+            var clock = value;
+            clock.offset = 0;
+            try isWellFormed(clock);
+            const go_limit = 24 * std.time.s_per_hour + 60 * std.time.s_per_min + 60;
+            try std.testing.expect(@abs(value.offset) <= go_limit);
+        } else |_| {}
+    }
+}
+
+const golayout_seeds = [_][]const u8{
+    "",
+    "2024-03-15T14:30:05.123456789-05:00",
+    "2024-03-15T14:30:05Z",
+    "Fri, 15 Mar 2024 14:30:05 -0500",
+    "Friday, 15-Mar-24 14:30:05 CDT",
+    "Fri Mar 15 14:30:05 CDT 2024",
+    "03/15 02:30:05PM '24 -0500",
+    "Mar 15 14:30:05.123456",
+    "2:30PM",
+    "2024-075 14:30:05.123 Z",
+    "2024-366 14:30:05.123 +0530",
+    "9999-12-31T23:59:59.999999999+23:59",
+    "Mar 32 25:61:61.000000",
+    "13/32 13:60:60AM '99 +9999",
+};
+
+test "golayout.parse over the seeds" {
+    try overSeeds(golayoutProperty, &golayout_seeds);
+}
+
+test "fuzz golayout.parse" {
+    try overFuzzer(golayoutProperty);
+}
+
+test "mutate golayout.parse" {
+    try overMutations(golayoutProperty, &golayout_seeds);
+}
+
+// Calendar arithmetic --------------------------------------------------
+
+/// `DateTime.addChecked` either answers with the date and time the
+/// calendar says, or refuses with `OutOfRange` exactly when that answer is
+/// outside the years a `Year` can hold -- never panics, never refuses
+/// something that fits, and never answers something that does not.
+///
+/// The expected answer is worked out here in `i256`, where no duration a
+/// `Duration` can hold overflows anything, following XML Schema's order as
+/// `add` does: the sub-day part and its carry, the months with the day
+/// clamped, then the days. Two further checks do not share that working:
+/// a purely sub-day duration moves the instant by exactly that much, and
+/// a purely whole-day one moves the day number by exactly that many.
+fn arithmeticProperty(random: std.Random) !void {
+    const start = randomDateTime(random);
+    const duration = randomDuration(random);
+    checkArithmetic(start, duration) catch |err| {
+        std.debug.print("addChecked: {any}\n  plus {any}\n", .{ start, duration });
+        return err;
+    };
+}
+
+fn checkArithmetic(start: DateTime, duration: Duration) !void {
+    const got = start.addChecked(duration);
+
+    const ns_per_day: i256 = Duration.nanoseconds_per_day;
+    const time_of_day: i256 = @as(i256, start.hour) * Duration.nanoseconds_per_hour +
+        @as(i256, start.minute) * Duration.nanoseconds_per_minute +
+        @as(i256, start.second) * Duration.nanoseconds_per_second + start.nanosecond;
+    const total = time_of_day + duration.nanoseconds;
+    const carry = @divFloor(total, ns_per_day);
+    const rest = total - carry * ns_per_day;
+
+    const month_index = @as(i256, start.year) * 12 + (@intFromEnum(start.month) - 1) + duration.months;
+    const year_wide = @divFloor(month_index, 12);
+    const year_fits = year_wide >= std.math.minInt(Year) and year_wide <= std.math.maxInt(Year);
+
+    const expected: ?Date = blk: {
+        if (!year_fits) break :blk null;
+        const year: Year = @intCast(year_wide);
+        const month: Month = @enumFromInt(@as(u4, @intCast(@mod(month_index, 12) + 1)));
+        const day = @min(start.day, month.lastDay(year));
+        const days = @as(i256, (Date{ .year = year, .month = month, .day = day }).toDaysSinceStartOfEra()) + duration.days + carry;
+        if (days < Date.min_days or days > Date.max_days) break :blk null;
+        break :blk Date.fromDaysSinceStartOfEra(@intCast(days));
+    };
+
+    const value = got catch |err| {
+        try std.testing.expectEqual(error.OutOfRange, err);
+        // Refused, so the calendar's answer must really be out of range.
+        try std.testing.expectEqual(@as(?Date, null), expected);
+        return;
+    };
+    // Answered, so it must be the calendar's answer.
+    try std.testing.expect(expected != null);
+    try isWellFormed(value);
+    try std.testing.expectEqual(expected.?, value.asDate());
+    try std.testing.expectEqual(@as(i256, value.hour), @divFloor(rest, Duration.nanoseconds_per_hour));
+    try std.testing.expectEqual(@as(i256, value.minute), @mod(@divFloor(rest, Duration.nanoseconds_per_minute), 60));
+    try std.testing.expectEqual(@as(i256, value.second), @mod(@divFloor(rest, Duration.nanoseconds_per_second), 60));
+    try std.testing.expectEqual(@as(i256, value.nanosecond), @mod(rest, Duration.nanoseconds_per_second));
+    try std.testing.expectEqual(start.offset, value.offset);
+
+    if (duration.months == 0 and duration.days == 0) {
+        // Only the clock moved, at a fixed offset: the instant moved by
+        // exactly the duration.
+        try std.testing.expectEqual(
+            @as(i256, start.toInstant().timestamp) + duration.nanoseconds,
+            @as(i256, value.toInstant().timestamp),
+        );
+    }
+    if (duration.months == 0 and duration.nanoseconds == 0) {
+        // Only whole days: the day number moved by exactly that many, and
+        // the time of day did not move at all.
+        try std.testing.expectEqual(
+            @as(i256, start.asDate().toDaysSinceStartOfEra()) + duration.days,
+            @as(i256, value.asDate().toDaysSinceStartOfEra()),
+        );
+        try std.testing.expectEqual(start.hour, value.hour);
+        try std.testing.expectEqual(start.nanosecond, value.nanosecond);
+    }
+}
+
+test "random DateTime.addChecked" {
+    try overRandom(arithmeticProperty);
+}
+
+// The two edges, by name, since a random draw reaches them only by luck:
+// a day before the last one fits and a day after it does not, and the same
+// at the other end.
+test "DateTime.addChecked at the ends of the calendar" {
+    const last: DateTime = .{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31, .hour = 23, .weekday = (Date{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31 }).dayOfWeek() };
+    try checkArithmetic(last, .{ .nanoseconds = Duration.nanoseconds_per_hour - 1 });
+    try checkArithmetic(last, .{ .nanoseconds = Duration.nanoseconds_per_hour });
+    try checkArithmetic(last, .{ .days = -1 });
+    try checkArithmetic(last, .{ .months = 1 });
+    const first: DateTime = .{ .year = std.math.minInt(Year), .month = .Jan, .day = 1, .weekday = (Date{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 }).dayOfWeek() };
+    try checkArithmetic(first, .{ .nanoseconds = -1 });
+    try checkArithmetic(first, .{ .days = 1 });
+    try checkArithmetic(first, .{ .months = -1 });
+    try checkArithmetic(first, .{ .months = std.math.minInt(i64), .days = std.math.minInt(i64), .nanoseconds = std.math.minInt(i128) });
+    try checkArithmetic(first, .{ .months = std.math.maxInt(i64), .days = std.math.maxInt(i64), .nanoseconds = std.math.maxInt(i128) });
+}
+
 // Round trips ----------------------------------------------------------
 
 // Anything with an inverse has to survive it, for any date at all rather
@@ -1271,6 +1516,36 @@ test "fuzz the calendar round trips" {
         }
     };
     try std.testing.fuzz({}, driver.one, .{});
+}
+
+/// The calendar round trips again, over every year a `Year` holds, drawn
+/// by `overRandom` so that they run on more than the one date a `Smith`
+/// with nothing to read produces.
+fn calendarProperty(random: std.Random) !void {
+    const date = randomDate(random);
+    checkCalendar(date) catch |err| {
+        std.debug.print("calendar: {any}\n", .{date});
+        return err;
+    };
+}
+
+fn checkCalendar(date: Date) !void {
+    try std.testing.expectEqual(date, Date.fromDaysSinceStartOfEra(date.toDaysSinceStartOfEra()));
+
+    const day_of_year = @as(i32, date.month.daysBefore(date.year)) + date.day;
+    try std.testing.expectEqual(date, Date.fromDayOfYear(date.year, day_of_year));
+
+    const iso = date.isoWeek();
+    try std.testing.expect(iso.week >= 1 and iso.week <= 53);
+    try std.testing.expectEqual(date, Date.fromWeek(iso.year, iso.week, date.dayOfWeek(), .Mon, 4));
+
+    const english = date.localeWeek();
+    try std.testing.expect(english.week >= 1 and english.week <= 54);
+    try std.testing.expectEqual(date, Date.fromWeek(english.year, english.week, date.dayOfWeek(), .Sun, 1));
+}
+
+test "random calendar round trips" {
+    try overRandom(calendarProperty);
 }
 
 // Formatting and parsing are inverses for any instant, which is the

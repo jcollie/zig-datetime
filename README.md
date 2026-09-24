@@ -1175,13 +1175,31 @@ step is the only oracle that does not join `zig build test` on Windows:
 `src/fuzz.zig` holds a property per parser: nothing crashes on input
 nobody chose, whatever comes back holds together, and anything with an
 inverse survives the round trip. Each runs twice over, against a list of
-seeds and against inputs built by mutating them, so an ordinary test run
+seeds and against inputs built by mutating them. Calendar arithmetic and
+the calendar round trips take values rather than text, so those targets
+draw dates and durations from a seeded generator instead, across every
+year a `Year` holds and most often near its two ends. An ordinary test run
 does a small amount of fuzzing and `-Dfuzz-iterations=N` does as much as
 you like:
 
 ```sh
 zig build test -Dfuzz-iterations=500000 --seed 42
 ```
+
+For a long hunt, build in `ReleaseSafe`, which keeps every bounds and
+overflow check but runs several times faster, and run the one binary under
+many seeds at once. `zig build test` runs what it builds, so the first
+seed is that run; the binary it leaves in `.zig-cache/o/*/test` (the
+library's is the largest recently written in ReleaseSafe) then takes
+`--seed=0x…` for each of the rest:
+
+```sh
+zig build test -Doptimize=ReleaseSafe -Dfuzz-iterations=10000000 --seed 0x1000
+```
+
+Sixteen seeds at ten million inputs a target take about half an hour on
+sixteen cores. A failure prints the seed, and the input or drawn value it
+failed on, and `zig build test --seed=N` replays it.
 
 `-Dbig-test-years=N` sweeps every date from `-N-01-01` to `N-12-31`
 through the day-number conversions and back, checking that the day number
@@ -1204,7 +1222,10 @@ against the seventeen the paper reports for the same sweep in C++ in
 The seed is the test runner's, so a failure replays exactly. There are
 `std.testing.fuzz` targets beside the mutation ones for when
 `zig build --fuzz` works: on Zig 0.16.0 it does not compile, on any
-project, in the compiler's own test runner.
+project, in the compiler's own test runner. Until it does, those targets
+see a single empty input, from which a `std.testing.Smith` answers every
+range with its minimum, so they check one value; the mutation and
+generator targets are the ones doing the work.
 
 `-Dno-system-tzdata` empties the directories the tests look in, which
 makes a machine that has a timezone database behave like one that has
