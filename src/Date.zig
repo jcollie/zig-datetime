@@ -457,11 +457,31 @@ pub fn dayOfWeek(self: Date) DayOfWeek {
     return DayOfWeek.fromDaysSinceStartOfEra(days);
 }
 
+/// A week-numbering year: a `Year` and one more at each end.
+///
+/// The last days of December can belong to week 1 of the year after, and
+/// the first days of January to the last week of the year before. At the
+/// two ends of the calendar that neighbouring year is one a `Year` cannot
+/// hold, so the week of 31 December of the last `Year` would have nowhere
+/// to say which year it is in. This is one bit wider, which is exactly
+/// enough, and means `weekOfYear` never has to answer with a year that is
+/// not the right one.
+pub const WeekYear = std.math.IntFittingRange(
+    @as(i64, std.math.minInt(Year)) - 1,
+    @as(i64, std.math.maxInt(Year)) + 1,
+);
+
+test WeekYear {
+    try std.testing.expect(std.math.maxInt(WeekYear) > std.math.maxInt(Year));
+    try std.testing.expect(std.math.minInt(WeekYear) < std.math.minInt(Year));
+}
+
 /// A week of some year, and the year that week belongs to.
 pub const Week = struct {
     /// The week-numbering year, which is not always the calendar year:
-    /// see `weekOfYear`.
-    year: Year,
+    /// see `weekOfYear`. A `WeekYear` rather than a `Year`, because at the
+    /// ends of the calendar it can be the year just past either end.
+    year: WeekYear,
     /// The week within that year, 1 through 52, 53 or 54.
     week: u8,
 };
@@ -500,8 +520,11 @@ pub fn weekOfYear(
     const day_of_year = @as(i32, self.month.daysBefore(self.year)) + self.day;
     const week = @divFloor(day_of_year - offset - 1, 7) + 1;
 
+    // The neighbouring years are `WeekYear`s, which reach one year past
+    // either end of the calendar, so these never overflow and never have
+    // to answer with a year other than the right one.
     if (week < 1) {
-        const previous = self.year -| 1;
+        const previous = @as(WeekYear, self.year) - 1;
         return .{
             .year = previous,
             .week = @intCast(week + weeksInYear(previous, week_starts_on, january_day_in_first_week)),
@@ -509,24 +532,20 @@ pub fn weekOfYear(
     }
 
     const in_year = weeksInYear(self.year, week_starts_on, january_day_in_first_week);
-    // Saturating for the same reason `fromDayOfYear` saturates: the last
-    // year a `Year` can hold has no year after it to put the week in.
-    if (week > in_year) return .{ .year = self.year +| 1, .week = @intCast(week - in_year) };
+    if (week > in_year) return .{ .year = @as(WeekYear, self.year) + 1, .week = @intCast(week - in_year) };
 
     return .{ .year = self.year, .week = @intCast(week) };
 }
 
 /// How far week 1 of `year` starts from January 1st, as a day-of-year
 /// offset that may be negative when week 1 begins in the previous year.
-fn firstWeekOffset(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: i8) i32 {
+fn firstWeekOffset(year: i64, week_starts_on: DayOfWeek, january_day_in_first_week: i8) i32 {
     // Counted from January 1st rather than built as a date, because the
     // anchoring day may be zero or negative -- a day of the December
     // before, which no `Date` can hold -- and stepping a weekday by a
     // day count works either way.
-    const january_first: Date = .{ .year = year, .month = .Jan, .day = 1 };
     const anchor_weekday = @mod(
-        @as(i32, january_first.dayOfWeek().weekdayNumber()) +
-            @as(i32, january_day_in_first_week) - 1,
+        januaryFirstWeekday(year) + @as(i32, january_day_in_first_week) - 1,
         7,
     );
 
@@ -542,14 +561,90 @@ fn firstWeekOffset(year: Year, week_starts_on: DayOfWeek, january_day_in_first_w
 ///
 /// Public because parsing needs it to bound a week it was given: week 53
 /// is a real week of some years and not of others.
-pub fn weeksInYear(year: Year, week_starts_on: DayOfWeek, january_day_in_first_week: i8) i32 {
+///
+/// It takes a `WeekYear`, since `weekOfYear` asks it about the years either
+/// side of the calendar, and measures a year against the one after it in
+/// an `i64`, so even the last `WeekYear` has a real year after it rather
+/// than being measured against itself.
+pub fn weeksInYear(year: WeekYear, week_starts_on: DayOfWeek, january_day_in_first_week: i8) i32 {
     const offset = firstWeekOffset(year, week_starts_on, january_day_in_first_week);
-    // Saturating, so that the last year a `Year` can hold can still be
-    // asked. It answers about itself twice over, which is a week count
-    // rather than a crash.
-    const next = firstWeekOffset(year +| 1, week_starts_on, january_day_in_first_week);
-    const days: i32 = if (leap.is(year)) 366 else 365;
+    const next = firstWeekOffset(@as(i64, year) + 1, week_starts_on, january_day_in_first_week);
+    const days: i32 = if (isLeapAnyYear(year)) 366 else 365;
     return @divTrunc(days - offset + next, 7);
+}
+
+/// The weekday of 1 January of any year at all, as a `weekdayNumber`,
+/// Sunday = 0.
+///
+/// Gauss's formula for the first of January, which needs no date and so
+/// works for years a `Date` cannot hold. Each of the three terms steps the
+/// weekday by how far a span of years moves it: a common year is 365 days,
+/// one more than 52 weeks, so every year moves it by one and each fourth
+/// year by one more; a century leaves out one of those leap days, and
+/// every fourth century puts it back. Written as residues of the years
+/// already passed, that is `1 + 5·(y−1 mod 4) + 4·(y−1 mod 100) +
+/// 6·(y−1 mod 400)`, taken mod 7, and `@mod` keeps each residue
+/// non-negative so the same expression holds before year zero.
+fn januaryFirstWeekday(year: i64) i32 {
+    const y = year - 1;
+    return @intCast(@mod(1 + 5 * @mod(y, 4) + 4 * @mod(y, 100) + 6 * @mod(y, 400), 7));
+}
+
+test januaryFirstWeekday {
+    // It agrees with the day count wherever a `Date` can be built to ask,
+    // including both ends of the calendar and either side of year zero.
+    for ([_]Year{ 1970, 2024, 2025, 2000, 1900, 1, 0, -1, -400, -401, std.math.minInt(Year), std.math.maxInt(Year) }) |year| {
+        const january_first: Date = .{ .year = year, .month = .Jan, .day = 1 };
+        try std.testing.expectEqual(@as(i32, january_first.dayOfWeek().weekdayNumber()), januaryFirstWeekday(year));
+    }
+    // And a year past the end is a year's length on from the last one.
+    const last: Date = .{ .year = std.math.maxInt(Year), .month = .Jan, .day = 1 };
+    const length: i32 = if (leap.is(std.math.maxInt(Year))) 366 else 365;
+    try std.testing.expectEqual(
+        @mod(@as(i32, last.dayOfWeek().weekdayNumber()) + length, 7),
+        januaryFirstWeekday(@as(i64, std.math.maxInt(Year)) + 1),
+    );
+}
+
+/// `leap.is`, for any year at all rather than only a `Year`.
+fn isLeapAnyYear(year: i64) bool {
+    return @mod(year, 4) == 0 and (@mod(year, 100) != 0 or @mod(year, 400) == 0);
+}
+
+test isLeapAnyYear {
+    for ([_]Year{ 2000, 1900, 2024, 2025, 0, -4, -100, std.math.maxInt(Year), std.math.minInt(Year) }) |year| {
+        try std.testing.expectEqual(leap.is(year), isLeapAnyYear(year));
+    }
+}
+
+test "a week at either end of the calendar names its real year" {
+    // The last days of the last `Year` can be in week 1 of the year after
+    // it, and the first days of the first `Year` in the last week of the
+    // year before. Both are `WeekYear`s, so the answer is exact, and it
+    // comes back to the same date. This used to saturate: 31 December of
+    // the last year was reported as week 1 of that same year, a week in
+    // its January.
+    const last = std.math.maxInt(Year);
+    const first = std.math.minInt(Year);
+    for ([_]struct { DayOfWeek, i8 }{ .{ .Mon, 4 }, .{ .Sun, 1 } }) |rule| {
+        var crossed_forwards = false;
+        var crossed_backwards = false;
+        for (25..32) |day| {
+            const date: Date = .{ .year = last, .month = .Dec, .day = @intCast(day) };
+            const week = date.weekOfYear(rule[0], rule[1]);
+            if (week.year > last) crossed_forwards = true;
+            try std.testing.expectEqual(date, fromWeek(week.year, week.week, date.dayOfWeek(), rule[0], rule[1]));
+        }
+        for (1..8) |day| {
+            const date: Date = .{ .year = first, .month = .Jan, .day = @intCast(day) };
+            const week = date.weekOfYear(rule[0], rule[1]);
+            if (week.year < first) crossed_backwards = true;
+            try std.testing.expectEqual(date, fromWeek(week.year, week.week, date.dayOfWeek(), rule[0], rule[1]));
+        }
+        // With these two rules the calendar's own ends do cross over, so
+        // the test is not passing by never reaching the case it is for.
+        try std.testing.expect(crossed_forwards or crossed_backwards);
+    }
 }
 
 test "the week rules answer at the ends of the calendar" {
@@ -708,7 +803,7 @@ test fromDayOfYear {
 /// the whole point of a week-numbering year, so the result can land in the
 /// year before or after: week 1 of 2027 begins on 2026-12-27.
 pub fn fromWeek(
-    week_year: Year,
+    week_year: WeekYear,
     week: u16,
     weekday: DayOfWeek,
     week_starts_on: DayOfWeek,
@@ -722,7 +817,24 @@ pub fn fromWeek(
     );
 
     const offset = firstWeekOffset(week_year, week_starts_on, january_day_in_first_week);
-    return fromDayOfYear(week_year, 1 + 7 * (@as(i32, week) - 1) + within_week + offset);
+    const day_of_year = 1 + 7 * (@as(i64, week) - 1) + within_week + offset;
+
+    // Counted as a day number from the first of January of `week_year`,
+    // which for the year either side of the calendar is found from the
+    // year inside it, since no `Date` of its own can be built to ask. A
+    // day number outside the calendar is clamped to its first or last day,
+    // as `fromDayOfYear` clamps.
+    const january_first: i64 = if (week_year > std.math.maxInt(Year))
+        @as(i64, (Date{ .year = std.math.maxInt(Year), .month = .Jan, .day = 1 }).toDaysSinceStartOfEra()) +
+            (if (leap.is(std.math.maxInt(Year))) @as(i64, 366) else 365)
+    else if (week_year < std.math.minInt(Year))
+        @as(i64, (Date{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 }).toDaysSinceStartOfEra()) -
+            (if (isLeapAnyYear(week_year)) @as(i64, 366) else 365)
+    else
+        (Date{ .year = @intCast(week_year), .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+
+    const days = std.math.clamp(january_first + day_of_year - 1, min_days, max_days);
+    return fromDaysSinceStartOfEra(@intCast(days));
 }
 
 test fromWeek {

@@ -1505,7 +1505,7 @@ test writeYear {
 }
 
 /// The same rule applied to a year that may be negative.
-fn writeSignedYear(writer: *std.Io.Writer, locale: Locale, year: Year, count: u8) std.Io.Writer.Error!void {
+fn writeSignedYear(writer: *std.Io.Writer, locale: Locale, year: Date.WeekYear, count: u8) std.Io.Writer.Error!void {
     if (year < 0) {
         try writer.writeByte('-');
         try writeYear(writer, locale, @intCast(-@as(i64, year)), count);

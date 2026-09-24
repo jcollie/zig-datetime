@@ -118,7 +118,7 @@ test printLongName {
 /// signed value handed straight to the formatter puts its sign inside the
 /// padding: -44 comes out as `0-44` rather than `-0044`, and a positive
 /// year picks up a `+` it should not have.
-fn printYear(writer: *std.Io.Writer, year: Year) !void {
+fn printYear(writer: *std.Io.Writer, year: Date.WeekYear) !void {
     if (year < 0) try writer.writeAll("-");
     try writer.print("{d:0>4}", .{@abs(year)});
 }
@@ -141,7 +141,7 @@ test printYear {
 
 /// Writes `year` zero padded to `width` digits, with a leading minus for
 /// a year before the common era. `printYear` is this at four digits.
-fn printPaddedYear(writer: *std.Io.Writer, year: Year, comptime width: usize) !void {
+fn printPaddedYear(writer: *std.Io.Writer, year: Date.WeekYear, comptime width: usize) !void {
     if (year < 0) try writer.writeAll("-");
     try writer.print("{d:0>[1]}", .{ @abs(year), width });
 }
@@ -3061,6 +3061,18 @@ test "the sequences that differ only in padding" {
         try datetime.format(case.fmt, &writer);
         try std.testing.expectEqualStrings(case.expected, writer.buffered());
     }
+}
+
+test "the week-numbering year past the end of the calendar is written" {
+    // 31 December of the last `Year` is in ISO week 1 of the year after,
+    // which is one a `Year` cannot hold; `GGGG` writes it as it is.
+    const last: DateTime = .{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31 };
+    const week = last.isoWeek();
+    var buf: [32]u8 = undefined;
+    var w = std.Io.Writer.fixed(&buf);
+    try last.format("GGGG", &w);
+    var expected: [32]u8 = undefined;
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&expected, "{d}", .{week.year}), w.buffered());
 }
 
 test "the ordinal sequences of the narrow components" {
