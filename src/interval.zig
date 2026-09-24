@@ -379,9 +379,8 @@ pub const Interval = union(enum) {
 /// A recurring time interval as ISO 8601 writes one: `R5/` or `R/` in front
 /// of an `Interval`, as in `R12/1985-04-12T23:20:50Z/P1Y2M15DT12H30M`.
 ///
-/// ISO 8601 defines one as "a series of consecutive time intervals of the
-/// same duration or nominal duration" (ISO 8601-1, 2.1.17), and both
-/// halves of that do work here:
+/// ISO 8601-1:2019 defines one as a "series of consecutive time intervals
+/// of identical duration" (3.1.1.11), and both halves of that do work here:
 ///
 ///  * **Consecutive** means each interval begins where the one before it
 ///    ended. So the series is built by adding the duration to each
@@ -393,12 +392,17 @@ pub const Interval = union(enum) {
 ///    what the definition asks for. RFC 5545's `RRULE` multiplies, because
 ///    it describes a pattern of events rather than a run of intervals; this
 ///    is not that.
-///  * **The same duration** is the one the interval was written with, when
-///    it was written with one. An interval written as two endpoints has a
-///    length and no calendar duration (see `Interval.duration`), so its
-///    series repeats that length, measured on the timeline in nanoseconds.
+///  * **Identical duration** is the one the interval was written with, when
+///    it was written with one. That it is identical as written and not as
+///    measured is the standard's own note to the definition: a duration in
+///    calendar units lasts however long the dates it lands on make it, so
+///    `P1M` is 29 days from the 31st of January and 29 again from the 29th
+///    of February. An interval written as two endpoints has a length and no
+///    calendar duration (see `Interval.duration`), so its series repeats
+///    that length, measured on the timeline in nanoseconds.
 ///
-/// Which occurrence the text names depends on the form (ISO 8601-1, 4.5.1).
+/// Which occurrence the text names depends on the form (ISO 8601-1:2019,
+/// 5.6.1).
 /// A start and an end, or a start and a duration, name the **first**
 /// interval, and the series runs forwards from it. A duration and an end
 /// name the **last**, and the series runs backwards from it: `R/P1Y/1985-

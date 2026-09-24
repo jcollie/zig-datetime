@@ -940,8 +940,8 @@ while (try occurrences.next()) |occurrence| {
 }
 ```
 
-ISO 8601 defines one as "a series of consecutive time intervals of the same
-duration or nominal duration", and the word *consecutive* decides the
+ISO 8601-1:2019 defines one as a "series of consecutive time intervals of
+identical duration", and the word *consecutive* decides the
 arithmetic: each interval starts where the one before it ended, so the
 series is built by adding the duration to each occurrence in turn, not by
 multiplying it from the first. Once a month has been clamped the two
@@ -961,13 +961,14 @@ series runs forwards. A duration and an end name the **last**:
 April 1985. `iterator` walks outward from the one named, and `isForwards`
 says which way.
 
-`R0` and `R-1` are refused. The text this was written against, the 2016
-working draft of ISO 8601-1, defines neither. Later accounts of the
-published standard say `R-1` means unbounded, and disagree about whether
-`R0` is no intervals or one interval not repeated. A count read the wrong
-way gives a series of the wrong length and nothing to say so, so neither
-is guessed at. Neither is the repeat rule ISO 8601-2 adds after the
-interval, `/FREQ=…`: it is left as trailing text.
+`R0` and `R-1` are refused. Neither ISO 8601-1:2019 nor ISO 8601-2:2019
+defines them; an absent count is the only spelling of an unbounded series
+either part gives. Accounts elsewhere say `R-1` means unbounded, and
+disagree about whether `R0` is no intervals or one interval not repeated.
+A count read the wrong way gives a series of the wrong length and nothing
+to say so, so neither is guessed at. The repeat rule ISO 8601-2 adds after
+the interval, as in `R12/20150929T140000/P1H30M0S/F2W`, is not read either:
+it is left as trailing text.
 
 Only the named occurrence is range-checked when the series is parsed,
 because an unbounded series has no last occurrence to check. Walking one
@@ -1238,23 +1239,29 @@ collection called `zig-datetime`, with the full text of each RFC attached.
   time — Representations for information interchange — Part 1: Basic rules*,
   ISO 8601-1:2019, <https://www.iso.org/standard/70907.html>. The calendar,
   ordinal and week date forms that `iso8601` reads, the duration syntax
-  `Duration` holds, and the time interval forms `Interval` holds.
+  `Duration` holds, and the time interval forms `Interval` holds. Clause 5.6
+  and definition 3.1.1.11 are what `RecurringInterval` follows: a series of
+  *consecutive* intervals, the count read as the number of intervals, and
+  the duration-and-end form naming the last one rather than the first.
+- **[ISO8601-2]** International Organization for Standardization, *Date and
+  time — Representations for information interchange — Part 2:
+  Extensions*, ISO 8601-2:2019, <https://www.iso.org/standard/70908.html>.
+  The repeat rules a recurring interval may carry in its clause 13, which
+  `parseRecurringInterval` leaves unread, and, with Part 1, the evidence
+  that the standard gives `R0` and `R-1` no meaning.
 - **[ISO8601-1-WD]** ISO/TC 154/WG 5, *Data elements and interchange formats
   — Information interchange — Representation of dates and times — Part 1:
   Basic rules*, ISO/WD 8601-1, working draft N0038, 16 February 2016,
   <https://www.loc.gov/standards/datetime/iso-tc154-wg5_n0038_iso_wd_8601-1_2016-02-16.pdf>.
-  A draft of ISO 8601-1 that the Library of Congress made public, and the
-  only text of the standard read for this library. Its clause 4.5 and
-  definition 2.1.17 are what `RecurringInterval` follows: a series of
-  *consecutive* intervals, the count read as the number of intervals, and
-  the duration-and-end form naming the last one rather than the first.
+  A draft of ISO 8601-1 that the Library of Congress made public, which is
+  what `RecurringInterval` was first written from; the published text
+  agrees with it on everything that type does.
 - **[ISO8601-2-WD]** ISO/TC 154/WG 5, *Data elements and interchange formats
   — Information interchange — Representation of dates and times — Part 2:
   Extensions*, ISO/WD 8601-2, working draft N0039, 16 February 2016,
   <https://www.loc.gov/standards/datetime/iso-tc154-wg5_n0039_iso_wd_8601-2_2016-02-16.pdf>.
-  The repeat rules a recurring interval may carry, which
-  `parseRecurringInterval` leaves unread, and confirmation that neither draft
-  defines `R0` or `R-1`.
+  The draft of Part 2, public in the same place. Its repeat rules are
+  spelled differently from the published ones, `FREQ=` where 2019 has `F`.
 - **[UTS35]** Unicode Consortium, *Unicode Locale Data Markup Language (LDML)
   Part 4: Dates*, UTS #35,
   <https://unicode.org/reports/tr35/tr35-dates.html>. The pattern vocabulary

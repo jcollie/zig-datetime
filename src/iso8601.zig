@@ -1092,18 +1092,22 @@ pub const RecurringIntervalParseResult = struct {
 ///
 /// The count is the number of intervals, the first included, which is how
 /// ISO 8601 reads its own example `R15/…`: fifteen recurrences. It has to
-/// be at least one. `R0` and `R-1` are refused, because the text this was
-/// written against, the 2016 working draft of ISO 8601-1, defines neither.
-/// Later accounts of the published standard say `R-1` means unbounded, like
-/// `R/`, and disagree about whether `R0` means no intervals or one that is
-/// not repeated; a reading picked from those would be a guess, and a count
-/// read wrongly produces a series of the wrong length without complaint.
+/// be at least one. `R0` and `R-1` are refused because neither ISO 8601-1:2019
+/// nor ISO 8601-2:2019 defines them: an absent count is the only spelling of
+/// an unbounded series either part gives. Accounts elsewhere say `R-1` means
+/// unbounded and disagree about whether `R0` is no intervals or one that is
+/// not repeated. The standard settles neither, so a reading picked from
+/// those would be a guess, and a count read wrongly produces a series of the
+/// wrong length without complaint.
 ///
 /// A bare duration after the `R`, as in `R8/PT72H`, is refused for the
 /// reason `parseInterval` refuses one: ISO 8601 places it on the timeline
-/// by context, and there is none here. So is the repeat rule that ISO 8601-2
-/// appends to the end, `/FREQ=…`; it is left as trailing text, like anything
-/// else after the interval.
+/// by context, and there is none here. ISO 8601-1:2019 has since moved that
+/// form out of its list of recurring intervals and into a note, as one whose
+/// start or end is "supplied out-of-band". The repeat rule ISO 8601-2:2019
+/// appends to the end, as in `R12/20150929T140000/P1H30M0S/F2W`, is not
+/// read either; it is left as trailing text, like anything else after the
+/// interval.
 ///
 /// The interval itself is range-checked as `parseInterval` checks it. The
 /// later occurrences are not, since an unbounded series has no last one to
@@ -1161,10 +1165,11 @@ test parseRecurringInterval {
     const pair = try parseRecurringInterval("R2/2024-03-15T09:00Z/17:00");
     try std.testing.expectEqual(@as(Hour, 17), pair.value.interval.end().hour);
 
-    // Trailing text is left, the repeat rule of ISO 8601-2 included.
+    // Trailing text is left, the repeat rule of ISO 8601-2 included, in
+    // the spelling of that part's own example.
     try std.testing.expectEqualStrings(
-        "R/2024-03-15T09:00:00Z/P1W",
-        (try parseRecurringInterval("R/2024-03-15T09:00:00Z/P1W/FREQ=WK")).str,
+        "R12/2015-09-29T14:00:00Z/PT1H30M",
+        (try parseRecurringInterval("R12/2015-09-29T14:00:00Z/PT1H30M/F2W")).str,
     );
 
     for ([_][]const u8{
