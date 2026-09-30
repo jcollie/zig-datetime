@@ -34,10 +34,12 @@ const Month = @import("month.zig").Month;
 const TimeZone = @import("TimeZone.zig");
 const Year = @import("year.zig").Year;
 const cldr = @import("cldr.zig");
+const dotnet = @import("dotnet.zig");
 const golayout = @import("golayout.zig");
 const iso8601 = @import("iso8601.zig");
 const locale = @import("locale.zig");
 const posixtz = @import("posixtz.zig");
+const powershell = @import("powershell.zig");
 const rfc822 = @import("rfc822.zig");
 const rfc5322 = @import("rfc5322.zig");
 const strftime = @import("strftime.zig");
@@ -665,6 +667,153 @@ test "fuzz strftime.parse" {
 
 test "mutate strftime.parse" {
     try overMutations(strftimeProperty, &strftime_seeds);
+}
+
+// .NET and PowerShell --------------------------------------------------
+
+/// A .NET format string is comptime, so the untrusted surface is the text.
+/// The formats here reach every reader the parser has between them: both
+/// of .NET's own fast paths, names long and short, one and two digit
+/// numbers, a two digit year, a meridiem both whole and by its first
+/// letter, the era, all three offsets, `Z` and `GMT`, and an optional
+/// fraction behind an optional dot -- and `State.finish`, where a value
+/// that had already parsed can still be refused.
+fn dotnetProperty(text: []const u8) !void {
+    inline for (.{
+        "o",
+        "r",
+        "u",
+        "dddd, MMMM d, yyyy h:mm:ss.FFFFFFF tt K",
+        "ddd dd MMM yy H:m:s.fff t zz gg",
+        "yyyyyy-M-dTHH:mm:ss.FFz Z",
+        "yyyyMMddTHHmmssffff GMT",
+    }) |format_string| {
+        if (dotnet.parse(format_string, text)) |result| {
+            try isWellFormed(result.value);
+        } else |_| {}
+    }
+}
+
+const dotnet_seeds = [_][]const u8{
+    "",
+    "2024-03-15T14:30:05.1234567-05:00",
+    "2024-03-15T14:30:05.1234567+5:45",
+    "Fri, 15 Mar 2024 19:30:05 GMT",
+    "2024-03-15 19:30:05Z",
+    "Friday, March 15, 2024 2:30:05.12 PM -05:00",
+    "Fri 15 Mar 24 14:30:5.123 P -05 A.D.",
+    "002024-3-15T14:30:05.1-5 Z",
+    "20240315T1430051234 GMT",
+    "9999-12-31T23:59:59.9999999+14:00",
+    "0000-00-00T99:99:99.9999999+99:99",
+    "Sunday, February 30, 2024 13:61:61 PM Z",
+    "999999-99-99T99:99:99.99+99 gmt",
+};
+
+test "dotnet.parse over the seeds" {
+    try overSeeds(dotnetProperty, &dotnet_seeds);
+}
+
+test "fuzz dotnet.parse" {
+    try overFuzzer(dotnetProperty);
+}
+
+test "mutate dotnet.parse" {
+    try overMutations(dotnetProperty, &dotnet_seeds);
+}
+
+/// The same for a `-UFormat` string, where the parser's own work is in
+/// `UState.finish`: a date settled from `%s`, from a year and a month,
+/// from `%j`, or from an ISO week, and every other field checked against
+/// it.
+fn uformatProperty(text: []const u8) !void {
+    inline for (.{
+        "%c %Z",
+        "%F %T %Z (%j, %U, %u, %w, %V, %G, %g, %C)",
+        "%G-W%V-%u %r",
+        "%Y %j %l:%M:%S %p",
+        "%s %Z",
+        "%D %e %k",
+    }) |format_string| {
+        if (powershell.parseUFormat(format_string, text)) |result| {
+            try isWellFormed(result.value);
+        } else |_| {}
+    }
+}
+
+const uformat_seeds = [_][]const u8{
+    "",
+    "Fri 15 Mar 2024 14:30:05 -05",
+    "2024-03-15 14:30:05 -05 (075, 10, 5, 5, 11, 2024, 24, 20)",
+    "2020-W53-5 09:00:00 PM",
+    "2024 075  2:30:05 PM",
+    "1710513005 -05",
+    "-62135596800 +14",
+    "999999999999999 +00",
+    "03/15/24 15 14",
+    "0000-W99-9 13:99:99 XM",
+    "9999 366 12:59:59 AM",
+};
+
+test "powershell.parseUFormat over the seeds" {
+    try overSeeds(uformatProperty, &uformat_seeds);
+}
+
+test "fuzz powershell.parseUFormat" {
+    try overFuzzer(uformatProperty);
+}
+
+test "mutate powershell.parseUFormat" {
+    try overMutations(uformatProperty, &uformat_seeds);
+}
+
+/// Writing has no untrusted text, but it has the whole range of `Year`,
+/// which .NET never had to think about: an ISO week year past either end,
+/// a count of seconds since the epoch in the tens of quadrillions for
+/// `%s`, and `g` before year 1. None of it may crash. Where a value is one
+/// .NET could hold, what is written has to read back as it was.
+fn dotnetFormatProperty(random: std.Random) !void {
+    var value = randomDateTime(random);
+
+    var buffer: [512]u8 = undefined;
+    inline for (.{ "o", "r", "U", "F", "dddd, MMMM d, yyyy h:mm:ss.FFFFFFF tt K", "yyyyy yy gg z" }) |format_string| {
+        var writer = std.Io.Writer.fixed(&buffer);
+        dotnet.format(value, format_string, &writer) catch |err| switch (err) {
+            error.YearOutsideEra => try std.testing.expect(value.year < 1),
+            else => return err,
+        };
+    }
+    inline for (.{ "%c %Z %s", "%G %g %V %u %C %j %U %e %k %l" }) |format_string| {
+        var writer = std.Io.Writer.fixed(&buffer);
+        try powershell.uformat(value, format_string, &writer);
+    }
+
+    // Brought within what .NET holds -- years 1 to 9999, a tick of a
+    // hundred nanoseconds, whole minutes of offset within fourteen hours --
+    // and then written and read back.
+    if (value.year < 1 or value.year > 9999) return;
+    value.nanosecond -= value.nanosecond % 100;
+    value.offset = @divTrunc(std.math.clamp(value.offset, -14 * std.time.s_per_hour, 14 * std.time.s_per_hour), 60) * 60;
+
+    const round_trip = "yyyy-MM-ddTHH:mm:ss.fffffffzzz";
+    var writer = std.Io.Writer.fixed(&buffer);
+    try dotnet.format(value, round_trip, &writer);
+    const back = try dotnet.parse(round_trip, writer.buffered());
+    try std.testing.expect(back.has_offset);
+    try std.testing.expectEqual(value, back.value);
+
+    // `%Z` says only the hour, so the offset is brought to a whole one.
+    value.offset = @divTrunc(value.offset, std.time.s_per_hour) * std.time.s_per_hour;
+    value.nanosecond = 0;
+    const uformat = "%F %T %Z";
+    var uwriter = std.Io.Writer.fixed(&buffer);
+    try powershell.uformat(value, uformat, &uwriter);
+    const uback = try powershell.parseUFormat(uformat, uwriter.buffered());
+    try std.testing.expectEqual(value, uback.value);
+}
+
+test "random values through dotnet.format and powershell.uformat" {
+    try overRandom(dotnetFormatProperty);
 }
 
 // Locales --------------------------------------------------------------

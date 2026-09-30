@@ -21,9 +21,10 @@
 //! until the input is read and so cannot go through a format string.
 //! `rfc5322` is the strict reading of that second syntax, for a caller
 //! that wants the current grammar and not the obsolete forms.
-//! `golayout`, `cldr` and `strftime` are the other three vocabularies a
-//! format string can be written in, taken from Go, from UTS #35 and from
-//! the C library.
+//! `golayout`, `cldr`, `strftime` and `dotnet` are four more vocabularies
+//! a format string can be written in, taken from Go, from UTS #35, from
+//! the C library and from .NET, and `powershell` is the two that
+//! PowerShell's `Get-Date` speaks.
 //!
 //! `Date`, `DateTime`, `Instant`, `Duration` and `Interval` carry the
 //! hooks `std.json` looks for, and go to and from JSON as ISO 8601 strings.
@@ -95,6 +96,13 @@ pub const cldr = @import("cldr.zig");
 /// the `%Y-%m-%d` vocabulary that configuration files and shell scripts
 /// are written in.
 pub const strftime = @import("strftime.zig");
+/// Formatting and parsing with .NET's standard and custom date and time
+/// format strings, the vocabulary of `DateTime.ToString` and of
+/// PowerShell's `Get-Date -Format`.
+pub const dotnet = @import("dotnet.zig");
+/// Formatting and parsing the way PowerShell's `Get-Date` does: `-Format`,
+/// which is .NET's vocabulary plus four names of its own, and `-UFormat`.
+pub const powershell = @import("powershell.zig");
 /// A timezone, and the lookups that apply it to an instant.
 pub const TimeZone = @import("TimeZone.zig");
 /// Where timezone data comes from: the system's copy or an embedded one.

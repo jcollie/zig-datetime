@@ -108,6 +108,11 @@
               pkgs.icu.dev
               pkgs.icu
               pkgs.pkg-config
+              # And again for the .NET format strings and PowerShell's
+              # Get-Date: `pwsh` runs the cmdlet itself, and the .NET under
+              # it is the reference for src/dotnet.zig. See
+              # upstream/src/oracle_powershell.ps1.
+              pkgs.powershell
             ];
           };
         in

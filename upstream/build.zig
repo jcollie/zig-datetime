@@ -19,8 +19,8 @@
 //!     zig build test          every oracle
 //!
 //! An oracle checks this library's answers against the implementation they
-//! were modelled on -- moment.js, Go's `time`, ICU, the C library -- rather
-//! than against what somebody remembered of it.
+//! were modelled on -- moment.js, Go's `time`, ICU, the C library, .NET and
+//! PowerShell -- rather than against what somebody remembered of it.
 
 const std = @import("std");
 
@@ -315,4 +315,46 @@ pub fn build(b: *std.Build) void {
     );
     strftime_step.dependOn(&run_strftime.step);
     if (host.result.os.tag != .windows) test_step.dependOn(&run_strftime.step);
+
+    // -- .NET and PowerShell -------------------------------------------------
+    //
+    // No pinned dependency, the way Go and ICU have none: the format strings
+    // are part of .NET and `Get-Date` is part of PowerShell, so the version is
+    // whichever `pwsh` the dev shell carries, and the oracle prints it and the
+    // .NET under it.
+    //
+    // The checker is a PowerShell script because half of what it checks is a
+    // cmdlet, which has no other way in; the comparisons that need no cmdlet
+    // are compiled from C# inside it, so that tens of thousands of them take
+    // seconds rather than minutes.
+    const powershell_dump = b.addExecutable(.{
+        .name = "oracle-powershell-dump",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/oracle_powershell_dump.zig"),
+            .target = host,
+            .imports = &.{.{ .name = "datetime", .module = plain }},
+        }),
+    });
+    const run_powershell_dump = b.addRunArtifact(powershell_dump);
+    // It reads the clock, for the date .NET would fill a text with none in,
+    // so its output is never the same two days running and cannot be cached.
+    run_powershell_dump.has_side_effects = true;
+
+    const run_powershell = b.addSystemCommand(&.{ "pwsh", "-NoProfile", "-NonInteractive", "-File" });
+    run_powershell.addFileArg(b.path("src/oracle_powershell.ps1"));
+    run_powershell.addFileArg(run_powershell_dump.captureStdOut(.{ .basename = "powershell.tsv" }));
+    run_powershell.stdio = .inherit;
+    run_powershell.setEnvironmentVariable("TZ", "UTC");
+    // PowerShell would otherwise write its telemetry and first-run state
+    // into $HOME, which a sandboxed build may not have.
+    run_powershell.setEnvironmentVariable("POWERSHELL_TELEMETRY_OPTOUT", "1");
+    run_powershell.setEnvironmentVariable("POWERSHELL_UPDATECHECK", "Off");
+    run_powershell.setEnvironmentVariable("DOTNET_CLI_TELEMETRY_OPTOUT", "1");
+
+    const powershell_step = b.step(
+        "oracle-powershell",
+        "Check the .NET and PowerShell format strings against .NET and Get-Date",
+    );
+    powershell_step.dependOn(&run_powershell.step);
+    test_step.dependOn(&run_powershell.step);
 }

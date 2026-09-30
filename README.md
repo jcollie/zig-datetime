@@ -309,10 +309,12 @@ care which.
 
 ## Formatting and parsing
 
-There are four vocabularies a format string can be written in. The
-moment.js sequences below are the general case; `golayout`, `cldr` and
-`strftime` are the same job said the way Go, the Unicode Consortium and
-the C library say it, and each has a section of its own further down.
+There are six vocabularies a format string can be written in. The
+moment.js sequences below are the general case; `golayout`, `cldr`,
+`strftime` and `dotnet` are the same job said the way Go, the Unicode
+Consortium, the C library and .NET say it, and `powershell` is the two
+that PowerShell's `Get-Date` speaks. Each has a section of its own
+further down.
 
 Format strings are sequences of tags taken from moment.js, tokenized at
 compile time:
@@ -728,6 +730,140 @@ read as well as written, and a flag, a width or an `E`/`O` modifier is
 ignored rather than refused — so that a format string which writes a date
 can read one back, which in glibc it cannot. `%s` reads a negative count
 too, which glibc writes and will not read.
+
+### .NET format strings
+
+`dotnet` is the vocabulary of C#'s `DateTime.ToString` and `ParseExact`,
+and of PowerShell's `Get-Date -Format`. A string of one character is a
+*standard* format, naming a pattern the culture supplies; anything longer
+is a *custom* one, where letters repeat to ask for a width or a name:
+
+```zig
+try datetime.dotnet.format(value, "yyyy-MM-ddTHH:mm:ss.fffzzz", writer);  // 2024-03-15T14:30:05.123-05:00
+try datetime.dotnet.format(value, "dddd, MMMM d", writer);                // Friday, March 15
+try datetime.dotnet.format(value, "o", writer);                           // 2024-03-15T14:30:05.1230000-05:00
+try datetime.dotnet.format(value, "R", writer);                           // Fri, 15 Mar 2024 19:30:05 GMT
+```
+
+Every standard format is here — `d D f F g G m M o O r R s t T u U y Y`
+— and every custom specifier: `d` to `dddd`, `M` to `MMMM`, `y` to as
+many `y`s as you like, `h`, `H`, `m`, `s`, `f` and `F` to seven digits,
+`t`, `tt`, `g`, `z` to `zzz`, `K`, and the separators `:` and `/`. Quotes,
+`\` and `%` do what .NET makes them do, `%d` included, which is how a
+custom specifier on its own is told from a standard format.
+
+A `Culture` supplies the patterns the standard formats expand to and the
+names, separators and meridiem a custom one writes. Two are built in:
+`Culture.invariant`, the default, which is .NET's
+`CultureInfo.InvariantCulture`; and `Culture.en_us`, which is what most
+PowerShell sessions format in, with the patterns .NET 10 reads from ICU:
+
+```zig
+try datetime.dotnet.formatIn(value, "g", datetime.dotnet.Culture.en_us, writer);  // 3/15/2024 2:30 PM
+```
+
+— where the space before `PM` is U+202F, as it has been in CLDR since
+release 42. A culture is a comptime struct, so one of your own is a
+literal.
+
+Where .NET would throw a `FormatException` the library fails to compile:
+an unterminated quote, a `%` at the end, eight `f`s, a single character
+that names no standard format.
+
+Parsing is `ParseExact`, exactly as strict. Every character of the format
+has to be matched, spaces included, and all of the text used; a one letter
+numeric field reads one or two digits and a longer one exactly as many as
+it has letters; names and the meridiem ignore case. A field written twice
+has to say the same thing both times, and a weekday has to be the date's
+own:
+
+```zig
+const result = try datetime.dotnet.parse("ddd, dd MMM yyyy HH:mm:ss zzz", text);
+if (!result.has_offset) {
+    // The text named no zone, which .NET records as DateTimeKind.Unspecified.
+}
+```
+
+`Result.has_offset` says whether the text said where it was. When it did
+not, the value's offset is the reference's — zero unless
+`Options.relative_to` says otherwise — and a caller that needs to know
+has to find out elsewhere. A date the text does not give comes from the
+same place: .NET reads the clock there, and a library that took the clock
+without being handed an `Io` would be reaching for globals behind your
+back.
+
+### PowerShell's Get-Date
+
+`Get-Date` has two parameters that take a format, and `powershell` has a
+function for each. `-Format` is a .NET format string plus four names of
+PowerShell's own, matched in any case:
+
+```zig
+try datetime.powershell.format(value, "FileDate", writer);               // 20240315
+try datetime.powershell.format(value, "FileDateTimeUniversal", writer);  // 20240315T1930051234Z
+try datetime.powershell.format(value, "dddd MM/dd/yyyy HH:mm K", writer);
+```
+
+`-UFormat` looks like `strftime` and is not quite it, because PowerShell
+implements it by translating each conversion into a .NET format item of
+its own choosing:
+
+```zig
+try datetime.powershell.uformat(value, "%A %m/%d/%Y %R %Z", writer);  // Friday 03/15/2024 14:30 -05
+```
+
+The differences from the C library are PowerShell's, and so they are this
+library's too. `%Z` is the offset in hours, not a zone name. `%U` and `%W`
+are both the day of the year divided by seven, so the 1st of January is in
+week 0 whichever day it falls on. `%c` puts the day before the month,
+`Fri 15 Mar 2024 14:30:05`. `%s` is `TotalSeconds` rounded to fifteen
+significant digits and then to a whole number, so half a second rounds up
+and anything within half a second before the epoch is `-0`. A leading `+`
+is dropped, and a brace has to be doubled, because PowerShell hands the
+whole string to `String.Format`. `strftime` is the module for the C
+library's meanings.
+
+PowerShell reads neither vocabulary back, so the library supplies both
+directions. `powershell.parse` reads a `-Format` string the way
+`ParseExact` would. `powershell.parseUFormat` reads a `-UFormat` string
+under rules of its own: every zero-padded number reads exactly its width,
+the value is settled from the strongest thing the text gave — `%s`, then a
+year with a month or day, then `%j`, then an ISO week — and **everything
+else the text said is checked against it**. A `%U` that is another week or
+a `%p` that is another half of the day is text that contradicts itself,
+and is refused.
+
+#### Compatibility, checked
+
+.NET and PowerShell are the specification, and `zig build
+oracle-powershell` diffs against both: .NET formats the corpus and reads
+back what this library wrote, in both cultures, and `Get-Date` itself is
+run on every `-Format` name and `-UFormat` conversion, in four timezones.
+`pwsh` comes from the dev shell, and the comparisons that need no cmdlet
+are compiled from C# inside the script so that they take seconds.
+
+```
+50032 comparisons against PowerShell 7.6.5 on .NET 10.0.11, no divergence beyond 95 known and documented
+```
+
+.NET has two types a format string is applied to, and the library follows
+`DateTimeOffset`, the one that carries an offset as a `DateTime` here does.
+The deliberate differences are these, and the oracle carries the same list
+so that anything else fails:
+
+- **`u` and `R` convert to UTC.** `Get-Date` hands .NET a local
+  `DateTime`, and .NET writes `u` and `R` of one without converting it, so
+  their `Z` and `GMT` are false for anybody not in UTC.
+  `DateTimeOffset` converts, and so does this.
+- **A year .NET cannot hold is read** when a field has the digits for it,
+  `yyyy` of `0000` or `yyyyy` of `12345`, because a `DateTime` here can
+  hold it. Written, such a year is .NET's arithmetic in a wider integer:
+  `-0005`, `12345`.
+- **`o` checks its offset's minutes.** .NET's own reader of `o` does not,
+  so it takes `+05:99` as 6:39.
+- **A `-UFormat` conversion PowerShell does not know is a compile error**,
+  where PowerShell writes the letter: `%z` comes out as `z`. The same
+  choice `strftime` makes, for the same reason.
 
 The interchange formats have their own parsers, because the shape of
 their input is not known ahead of reading it and a format string cannot
@@ -1199,11 +1335,12 @@ zig build oracle-go                # Go's time layouts against Go itself
 zig build oracle-locale            # the embedded locales against moment.js
 zig build oracle-cldr              # the CLDR patterns against ICU
 zig build oracle-strftime          # the strftime conversions against the C library
+zig build oracle-powershell        # the .NET format strings and Get-Date against .NET and PowerShell
 zig build bench                    # always ReleaseFast, whatever -Doptimize says
 ```
 
 Every oracle is part of `zig build test`, so an ordinary run needs `node`,
-`go` and ICU, and fetches moment and CLDR the first time.
+`go`, ICU and `pwsh`, and fetches moment and CLDR the first time.
 
 CI runs them without fetching anything. `build.zig.zon.nix`, generated by
 `zon2nix` from both manifests, is a Nix expression for every package either
@@ -1239,7 +1376,8 @@ from inside that directory, which is the same thing without the hop.
 moment and CLDR are pinned there, because each is the specification being
 tested against and a floating version would move the target; Go and ICU are
 not, because their behaviour is part of a toolchain rather than something to
-fetch, and each oracle prints the version it ran against. `-Dcldr-locales`
+fetch, and each oracle prints the version it ran against. PowerShell is
+the same, and prints the .NET under it too. `-Dcldr-locales`
 narrows the embedded table, which is the quick way to iterate on one locale.
 
 The C++ in `upstream/src/oracle_cldr.cpp` is compiled by Zig rather than by
@@ -1407,6 +1545,31 @@ collection called `zig-datetime`, with the full text of each RFC attached.
 - **[GO]** *time package*, Go Packages, <https://pkg.go.dev/time>. The
   reference-time layouts `golayout` implements, and what `zig build
   oracle-go` diffs against.
+- **[GET-DATE]** Microsoft, "Get-Date (Microsoft.PowerShell.Utility)",
+  *PowerShell 7.6 documentation*,
+  <https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/get-date?view=powershell-7.6>.
+  The `-Format` and `-UFormat` parameters `powershell` implements, the four
+  `FileDate` names, and the table of `-UFormat` specifiers.
+- **[GETDATECOMMAND]** *GetDateCommand.cs*, PowerShell v7.6.0,
+  <https://github.com/PowerShell/PowerShell/blob/v7.6.0/src/Microsoft.PowerShell.Commands.Utility/commands/utility/GetDateCommand.cs>.
+  The translation of each `-UFormat` conversion into a .NET format item,
+  which is the specification where the documentation's table and the
+  cmdlet disagree — `%c`, `%U` and `%W` among them.
+- **[DOTNET-CUSTOM]** Microsoft, "Custom date and time format strings",
+  *.NET documentation*,
+  <https://learn.microsoft.com/en-us/dotnet/standard/base-types/custom-date-and-time-format-strings>.
+  The custom specifiers `dotnet` implements.
+- **[DOTNET-STANDARD]** Microsoft, "Standard date and time format strings",
+  *.NET documentation*,
+  <https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-date-and-time-format-strings>.
+  The one-character standard formats and what each expands to.
+- **[DOTNET-RUNTIME]** *DateTimeFormat.cs* and *DateTimeParse.cs*,
+  dotnet/runtime v10.0.0,
+  <https://github.com/dotnet/runtime/tree/v10.0.0/src/libraries/System.Private.CoreLib/src/System/Globalization>.
+  `FormatCustomized`, `ParseByFormat`, `DoStrictParse` and the two fast
+  paths for `o` and `r`, which `dotnet` follows where the documentation is
+  silent, and through `zig build oracle-powershell` the behaviour it is
+  checked against.
 - **[TZDB]** Internet Assigned Numbers Authority, *Time Zone Database*,
   <https://www.iana.org/time-zones>. The zone data itself, and `zic`, the
   reference compiler `-Dembed-tzdata` builds and runs.
