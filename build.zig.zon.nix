@@ -59,13 +59,13 @@ let
       url = "https://registry.npmjs.org/moment/-/moment-2.30.1.tgz";
       hash = "sha256-CNEFi+IlQ10llFjRfaZWcuv+LZEJzpjz6b0xBfKYxg4=";
     };
-    "N-V-__8AABybDwDd46ZHFqBjb0twea7p9vwNzdSzUHFwA55f" = fetchurl {
-      url = "https://data.iana.org/time-zones/releases/tzcode2026d.tar.gz";
-      hash = "sha256-L1yff+Kea4y4Y1g2Z4hLjOF7CkhTVaBUtZHGvfzYF5E=";
+    "N-V-__8AAOahDwAlEd7gK5lS2fdbYfiJJecSd_RwR_omR_3I" = fetchurl {
+      url = "https://data.iana.org/time-zones/releases/tzcode2026e.tar.gz";
+      hash = "sha256-zD0nyioNg5lQRVG5IJcNgK+Dv7nCFugIKhVJGSGTXVQ=";
     };
-    "N-V-__8AAFiAFQDNovBNmFwF3hznlSfpY7KwAN3Jy7rhie29" = fetchurl {
-      url = "https://data.iana.org/time-zones/releases/tzdata2026d.tar.gz";
-      hash = "sha256-DLKqjjM8PcBJutxCoMYfIZh7jNROEH+pALrXZKrMd2c=";
+    "N-V-__8AAPyeFQAGki29JMlDTaQoGWTK7OjwSQa3HbVU5wAq" = fetchurl {
+      url = "https://data.iana.org/time-zones/releases/tzdata2026e.tar.gz";
+      hash = "sha256-smiCgF8mqsWdWyIpeOZYBIS4NMzcmL6J3y8FptxTplI=";
     };
     "win32-42.0.39-preview-mX5pFS564gPTezZn4v3TMxRnfJUrZNx1B_F2p2HKXOeG" = fetchZigGit {
       name = "zigwin32";
