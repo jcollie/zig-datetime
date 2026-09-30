@@ -8,9 +8,15 @@
 # The documentation is only published from main, so that a branch build
 # cannot replace the site with a work in progress. Everything goes
 # through `nix develop`, so the toolchain is the one in flake.nix rather
-# than whatever the runner happens to carry, and the two Zig cache
-# directories point at persistent storage on the runner so that a rebuild
-# does not start from nothing every time.
+# than whatever the runner happens to carry.
+#
+# Every job runs on one of the ephemeral DigitalOcean tiers, which
+# substitute from the niks3 cache before cache.nixos.org. Each job ends by
+# pushing what it built back there -- only from main, which is the only
+# ref niks3 accepts a write from -- so the next droplet starts with the
+# dev shell already built rather than from nothing. `!cancelled()` rather
+# than `success()` because Nix records only builds that succeeded, so what
+# a failed run pushes is whole, and is what the next run wants.
 
 name: test
 
@@ -18,13 +24,12 @@ on:
   push:
   workflow_dispatch:
 
-env:
-  ZIG_LOCAL_CACHE_DIR: /zig/local-cache
-  ZIG_GLOBAL_CACHE_DIR: /zig/global-cache
-
 jobs:
   test:
-    runs-on: nixos
+    # The medium tier: four whole passes of the suite, each compiling the
+    # ICU, Go and node oracles, and one of them zic and every locale.
+    runs-on: nixos-do-m
+    enable-openid-connect: true
     steps:
       - name: Check out
         # Pinned to a commit rather than a tag, in the format pinact
@@ -64,8 +69,16 @@ jobs:
         # loader and the agreement between it and the system's copy.
         run: nix develop .#default -c zig build test -Dembed-tzdata
 
+      - name: Push to the cache
+        if: ${{ !cancelled() && forge.ref == 'refs/heads/main' }}
+        uses: https://git.jcollie.dev/jeff/niks3-push@3f85f501658e379783381291241c6f8315a92716
+        with:
+          server-url: https://niks3.jcollie.dev
+
   windows:
-    runs-on: nixos
+    # Wine and a whole embedded database for a second target.
+    runs-on: nixos-do-m
+    enable-openid-connect: true
     steps:
       - name: Check out
         uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,10 +99,17 @@ jobs:
           export WINEPREFIX="$PWD/.wine"
           nix develop .#windows -c zig build test -Dtarget=x86_64-windows -Dembed-tzdata -fwine
 
+      - name: Push to the cache
+        if: ${{ !cancelled() && forge.ref == 'refs/heads/main' }}
+        uses: https://git.jcollie.dev/jeff/niks3-push@3f85f501658e379783381291241c6f8315a92716
+        with:
+          server-url: https://niks3.jcollie.dev
+
   docs:
     needs: test
     if: ${{ forge.ref == 'refs/heads/main' }}
-    runs-on: nixos
+    runs-on: nixos-do-s
+    enable-openid-connect: true
     steps:
       - name: Check out
         uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,3 +123,9 @@ jobs:
           --server jcollie.page
           --token ${{ forge.token }}
           --upload-dir zig-out/docs
+
+      - name: Push to the cache
+        if: ${{ !cancelled() && forge.ref == 'refs/heads/main' }}
+        uses: https://git.jcollie.dev/jeff/niks3-push@3f85f501658e379783381291241c6f8315a92716
+        with:
+          server-url: https://niks3.jcollie.dev

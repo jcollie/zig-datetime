@@ -27,8 +27,8 @@
 #
 # Requirements:
 #
-#   * A runner offering the `nixos` label, with nix and flakes available.
-#     Every step that needs a tool goes through `nix develop`, so the
+#   * A runner offering the `nixos-do-s` label, one of the ephemeral
+#     DigitalOcean tiers, with nix and flakes available. Every step that needs a tool goes through `nix develop`, so the
 #     toolchain is the one in flake.nix rather than whatever the runner
 #     happens to have. Nothing is installed into the runner itself.
 #   * Node on the runner, for `actions/checkout`. A runner in host mode
@@ -59,7 +59,8 @@ env:
 
 jobs:
   update:
-    runs-on: nixos
+    runs-on: nixos-do-s
+    enable-openid-connect: true
 
     steps:
       - name: Check out the repository
@@ -217,3 +218,9 @@ jobs:
                 >> "$TZ_SUMMARY"
             done
           '
+
+      - name: Push to the cache
+        if: ${{ !cancelled() && forge.ref == 'refs/heads/main' }}
+        uses: https://git.jcollie.dev/jeff/niks3-push@3f85f501658e379783381291241c6f8315a92716
+        with:
+          server-url: https://niks3.jcollie.dev
