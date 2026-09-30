@@ -396,10 +396,26 @@ pub fn build(b: *std.Build) void {
     //
     // These three steps run it from here, so that the commands are the same
     // ones they always were.
+    //
+    // It is a second `zig build`, so a `--system` given to this one does not
+    // reach it: the build runner is told only that the flag was given, and
+    // the directory stays with the parent process. The directory has to be
+    // named twice, once to each, which is what this option is for:
+    //
+    //     zig build test --system DIR -Dupstream-system=DIR
+    //
+    // Given `--system` alone, the nested build would quietly fetch what the
+    // outer one had been forbidden to, so `shellOut` refuses that instead.
+    const upstream_system = b.option(
+        []const u8,
+        "upstream-system",
+        "Package directory to hand the build in upstream/ as --system; needed alongside --system",
+    );
+
     // Part of `zig build test`, as they were when they lived here: a
     // divergence from any of the four is a regression rather than a known
     // gap.
-    const run_oracles = shellOut(b, "test", null);
+    const run_oracles = shellOut(b, "test", upstream_system);
     const oracles_step = b.step("oracles", "Check this library against moment, Go, ICU and libc, in upstream/");
     oracles_step.dependOn(&run_oracles.step);
     test_step.dependOn(&run_oracles.step);
@@ -414,26 +430,38 @@ pub fn build(b: *std.Build) void {
         .{ .name = "oracle-cldr", .help = "Check the CLDR patterns against ICU, in upstream/" },
         .{ .name = "oracle-strftime", .help = "Check the strftime conversions against the C library, in upstream/" },
     }) |each| {
-        b.step(each.name, each.help).dependOn(&shellOut(b, each.name, null).step);
+        b.step(each.name, each.help).dependOn(&shellOut(b, each.name, upstream_system).step);
     }
 
     const gen_locales_step = b.step("gen-locales", "Regenerate src/locales/all.zig, in upstream/");
-    gen_locales_step.dependOn(&shellOut(b, "gen-locales", null).step);
+    gen_locales_step.dependOn(&shellOut(b, "gen-locales", upstream_system).step);
 
     const gen_cldr_step = b.step("gen-cldr", "Regenerate src/cldrlocales/all.zig, in upstream/");
-    gen_cldr_step.dependOn(&shellOut(b, "gen-cldr", null).step);
+    gen_cldr_step.dependOn(&shellOut(b, "gen-cldr", upstream_system).step);
 }
 
 /// Runs one of `upstream/`'s steps, forwarding whatever followed `--`.
-fn shellOut(b: *std.Build, step: []const u8, extra: ?[]const []const u8) *std.Build.Step.Run {
+///
+/// `system` is the package directory to hand it as `--system`, resolved
+/// against this project's root rather than `upstream/`, which is where the
+/// command runs and so where a relative path would otherwise be read from.
+fn shellOut(b: *std.Build, step: []const u8, system: ?[]const u8) *std.Build.Step.Run {
     const run = b.addSystemCommand(&.{ b.graph.zig_exe, "build", step });
     run.setCwd(b.path("upstream"));
+    if (system) |dir| {
+        run.addArgs(&.{ "--system", b.pathFromRoot(dir) });
+    } else if (b.graph.system_package_mode) {
+        // Given `--system` alone, it would fetch what this build has been
+        // forbidden to.
+        run.step.dependOn(&b.addFail(
+            "--system was given without -Dupstream-system, so the build in upstream/ would fetch its packages from the network; name the same directory to both",
+        ).step);
+    }
     run.stdio = .inherit;
     // Its inputs are packages in a cache and tools in another directory
     // rather than anything this build declares, so there is nothing here for
     // the build runner to decide it is up to date against.
     run.has_side_effects = true;
-    if (extra) |args| run.addArgs(args);
     if (b.args) |args| run.addArgs(args);
     return run;
 }

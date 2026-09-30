@@ -45,8 +45,17 @@ jobs:
       - name: Check REUSE compliance
         run: nix develop .#default -c reuse lint
 
+      - name: Realise the Zig packages
+        # Every package either manifest names, fetched by Nix -- and so from
+        # the niks3 cache once any run on main has pushed them -- rather than
+        # by Zig from the network. `--system` then forbids Zig to fetch at
+        # all, so a package missing from build.zig.zon.nix is an error naming
+        # it. It is given twice because `zig build test` runs a second build
+        # in upstream/, which the first `--system` does not reach.
+        run: echo "ZIG_SYSTEM=$(nix build --no-link --print-out-paths .#zig-deps)" >> "$GITHUB_ENV"
+
       - name: Run tests
-        run: nix develop .#default -c zig build test
+        run: nix develop .#default -c zig build test --system "$ZIG_SYSTEM" -Dupstream-system="$ZIG_SYSTEM"
 
       - name: Run tests as though there were no system timezone database
         # The runner has no zoneinfo tree, so the tests that read one skip
@@ -54,20 +63,20 @@ jobs:
         # round: the skips are where a mistake hides. This option empties
         # the directories the tests look in, so both halves are reachable
         # from either kind of machine and each is checked on both.
-        run: nix develop .#default -c zig build test -Dno-system-tzdata
+        run: nix develop .#default -c zig build test -Dno-system-tzdata --system "$ZIG_SYSTEM" -Dupstream-system="$ZIG_SYSTEM"
 
       - name: Run tests with the locales compiled in
         # `zig build test` already runs the locale oracle, which builds
         # its own copy of the data. This is the other half: that the
         # hundred and thirty-seven of them compile into the library and
         # that every one reads back what it wrote.
-        run: nix develop .#default -c zig build test -Dembed-locales
+        run: nix develop .#default -c zig build test -Dembed-locales --system "$ZIG_SYSTEM" -Dupstream-system="$ZIG_SYSTEM"
 
       - name: Run tests against the embedded timezone database
         # Builds zic from the IANA sources and regenerates the whole
         # database, which is the only thing that exercises the embedded
         # loader and the agreement between it and the system's copy.
-        run: nix develop .#default -c zig build test -Dembed-tzdata
+        run: nix develop .#default -c zig build test -Dembed-tzdata --system "$ZIG_SYSTEM" -Dupstream-system="$ZIG_SYSTEM"
 
       - name: Push to the cache
         if: ${{ !cancelled() && forge.ref == 'refs/heads/main' }}
@@ -83,6 +92,10 @@ jobs:
       - name: Check out
         uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Realise the Zig packages
+        # zigwin32 among them; see the step of the same name above.
+        run: echo "ZIG_SYSTEM=$(nix build --no-link --print-out-paths .#zig-deps)" >> "$GITHUB_ENV"
+
       - name: Run the tests as a Windows binary, under Wine
         # `tzdb.windows` calls into Win32 and so cannot run anywhere else,
         # which would leave the whole Windows path never executed. Wine is
@@ -97,7 +110,7 @@ jobs:
         # this job's to guess about.
         run: |
           export WINEPREFIX="$PWD/.wine"
-          nix develop .#windows -c zig build test -Dtarget=x86_64-windows -Dembed-tzdata -fwine
+          nix develop .#windows -c zig build test -Dtarget=x86_64-windows -Dembed-tzdata -fwine --system "$ZIG_SYSTEM" -Dupstream-system="$ZIG_SYSTEM"
 
       - name: Push to the cache
         if: ${{ !cancelled() && forge.ref == 'refs/heads/main' }}
@@ -115,7 +128,12 @@ jobs:
         uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build API docs
-        run: nix develop .#default -c zig build docs
+        # Through the farm like everything else, although the docs build
+        # asks for no package: `--system` makes that a fact rather than an
+        # assumption, since asking for one would now fail instead of fetching.
+        run: >
+          nix develop .#default -c zig build docs
+          --system "$(nix build --no-link --print-out-paths .#zig-deps)"
 
       - name: Publish docs
         run: >

@@ -115,8 +115,13 @@ jobs:
           # Compiles zic from the new sources, regenerates the embedded
           # database from it, and runs everything against the result. This
           # is the check that makes the pull request worth trusting.
-          nix develop --command zig build test -Dembed-tzdata
-          nix develop --command zig build test
+          #
+          # The packages come from the farm the update script has just
+          # regenerated, so this is also what proves that file right: a
+          # hash it got wrong fails here rather than on main after merging.
+          packages="$(nix build --no-link --print-out-paths .#zig-deps)"
+          nix develop --command zig build test -Dembed-tzdata --system "$packages" -Dupstream-system="$packages"
+          nix develop --command zig build test --system "$packages" -Dupstream-system="$packages"
 
       - name: Push the branch
         if: steps.check.outputs.version != ''
@@ -127,12 +132,13 @@ jobs:
           git config user.name 'Forgejo Actions'
           git config user.email 'actions@noreply.localhost'
           git checkout -b "$branch"
-          git add build.zig build.zig.zon
+          git add build.zig build.zig.zon build.zig.zon.nix
           git commit --message "update to tzdata ${version}
 
           Pins the ${version} release of the IANA timezone database: both
           dependency hashes in build.zig.zon and the tz_release constant in
-          build.zig, which the generated data records as its own version.
+          build.zig, which the generated data records as its own version,
+          with build.zig.zon.nix regenerated to match.
 
           Opened automatically after zic was rebuilt from the ${version}
           sources, the embedded database regenerated from it, and the test
@@ -162,7 +168,8 @@ jobs:
             "This updates both dependency hashes in \`build.zig.zon\` and the" \
             "\`tz_release\` constant in \`build.zig\`, which the generated data" \
             "records as its own version. The three have to agree, so they are" \
-            "rewritten together." \
+            "rewritten together, and \`build.zig.zon.nix\` is regenerated from" \
+            "the result." \
             "" \
             "\`zic\` was rebuilt from the \`${version}\` sources, the embedded" \
             "database regenerated from it, and the full suite run against the" \

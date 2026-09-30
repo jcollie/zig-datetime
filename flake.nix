@@ -8,12 +8,21 @@
     nixpkgs = {
       url = "https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz";
     };
+    # Reads `build.zig.zon`, follows every transitive dependency, and writes a
+    # Nix expression for the lot. A Nix build has no network and the Zig
+    # package manager wants one; this is the bridge. Not the `zon2nix` in
+    # nixpkgs, which is a different program taking different options.
+    zon2nix = {
+      url = "github:jcollie/zon2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     {
       self,
       nixpkgs,
+      zon2nix,
       ...
     }:
 
@@ -27,6 +36,24 @@
       forAllSystems = lib.genAttrs lib.systems.flakeExposed;
     in
     {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = makePackages system;
+        in
+        {
+          # Every package either manifest names, this one's and upstream/'s,
+          # as a farm laid out the way `zig build --system` reads one. The
+          # workflows realise it and hand it to Zig, so that the dependencies
+          # come through Nix and the niks3 cache rather than from the network.
+          # Regenerate it with
+          #
+          #     nix develop -c zon2nix --16 --nix=build.zig.zon.nix \
+          #         build.zig.zon upstream/build.zig.zon
+          zig-deps = pkgs.callPackage ./build.zig.zon.nix { };
+        }
+      );
+
       devShells = forAllSystems (
         system:
         let
@@ -36,6 +63,19 @@
             nativeBuildInputs = [
               pkgs.zig_0_16
               pkgs.pinact
+              # Writes build.zig.zon.nix; see `zig-deps` above. Wrapped so
+              # that the Zig it shells out to for `zig env` is this one, and
+              # never missing: without a Zig on PATH it stops having written
+              # nothing, which leaves the old file looking untouched.
+              (pkgs.symlinkJoin {
+                name = "zon2nix";
+                paths = [ zon2nix.packages.${pkgs.stdenv.hostPlatform.system}.zon2nix ];
+                nativeBuildInputs = [ pkgs.makeWrapper ];
+                postBuild = ''
+                  wrapProgram $out/bin/zon2nix \
+                    --prefix PATH : ${lib.makeBinPath [ pkgs.zig_0_16 ]}
+                '';
+              })
               # Used by tools/update-tzdata.sh and by the Forgejo workflow
               # that runs it. Named here rather than relied on from the
               # ambient environment, so a CI runner gets the same set.

@@ -15,3 +15,11 @@ path = "flake.lock"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "NONE"
 SPDX-License-Identifier = "CC0-1.0"
+
+# build.zig.zon.nix is written by zon2nix, and a header added by hand would be
+# lost the next time it is regenerated.
+[[annotations]]
+path = "build.zig.zon.nix"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "© 2026 Jeffrey C. Ollie <jeff@ocjtech.us>"
+SPDX-License-Identifier = "MIT"

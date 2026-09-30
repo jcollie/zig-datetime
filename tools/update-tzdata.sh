@@ -7,7 +7,10 @@
 # The version lives in three places that have to agree: the two dependency
 # URLs and hashes in build.zig.zon, and the tz_release constant in
 # build.zig that the generated data records as its own version. This
-# rewrites all of them together, so they cannot drift apart.
+# rewrites all of them together, so they cannot drift apart, and then
+# regenerates build.zig.zon.nix from the result, which is where the
+# workflows get their packages from and which would otherwise go on
+# offering the old release.
 #
 # Prints the new version to stdout on success and leaves the working tree
 # modified. Exits 0 with no output and no changes when already current.
@@ -31,6 +34,7 @@ note() { echo "update-tzdata: $*" >&2; }
 
 command -v zig >/dev/null || die "zig is not on PATH; it is needed to compute package hashes"
 command -v curl >/dev/null || die "curl is not on PATH"
+command -v zon2nix >/dev/null || die "zon2nix is not on PATH; run this from \`nix develop\`"
 
 # --- which release do we want -------------------------------------------
 
@@ -134,5 +138,16 @@ grep -qF "const tz_release = \"$wanted\";" build.zig || die "build.zig still nam
 if grep -qF "$current" build.zig.zon build.zig; then
     die "a reference to $current survived the rewrite"
 fi
+
+# --- regenerate the Nix expression for the packages ----------------------
+
+# Both manifests, because the one file serves both builds; see `zig-deps`
+# in flake.nix. Its log goes to stderr with the rest of this script's, so
+# that stdout stays the bare version the workflow reads.
+note "regenerating build.zig.zon.nix"
+zon2nix --16 --quiet --nix=build.zig.zon.nix build.zig.zon upstream/build.zig.zon >&2
+for expected in "tzcode$wanted.tar.gz" "tzdata$wanted.tar.gz"; do
+    grep -qF -- "$expected" build.zig.zon.nix || die "build.zig.zon.nix is missing '$expected' after regenerating"
+done
 
 echo "$wanted"
