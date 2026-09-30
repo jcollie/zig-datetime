@@ -21,13 +21,13 @@
         // hold exactly what tzdb-2026c.tar.lz holds, which Zig's package
         // manager cannot read because it does not support lzip.
         .tzcode = .{
-            .url = "https://data.iana.org/time-zones/releases/tzcode2026d.tar.gz",
-            .hash = "N-V-__8AABybDwDd46ZHFqBjb0twea7p9vwNzdSzUHFwA55f",
+            .url = "https://data.iana.org/time-zones/releases/tzcode2026e.tar.gz",
+            .hash = "N-V-__8AAOahDwAlEd7gK5lS2fdbYfiJJecSd_RwR_omR_3I",
             .lazy = true,
         },
         .tzdata = .{
-            .url = "https://data.iana.org/time-zones/releases/tzdata2026d.tar.gz",
-            .hash = "N-V-__8AAFiAFQDNovBNmFwF3hznlSfpY7KwAN3Jy7rhie29",
+            .url = "https://data.iana.org/time-zones/releases/tzdata2026e.tar.gz",
+            .hash = "N-V-__8AAPyeFQAGki29JMlDTaQoGWTK7OjwSQa3HbVU5wAq",
             .lazy = true,
         },
         // Win32 bindings, used only on Windows, where `GetDynamicTimeZoneInformation`
