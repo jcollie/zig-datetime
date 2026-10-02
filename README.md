@@ -1398,7 +1398,7 @@ does a small amount of fuzzing and `-Dfuzz-iterations=N` does as much as
 you like:
 
 ```sh
-zig build test -Dfuzz-iterations=500000 --seed 42
+zig build test -Dfuzz-iterations=500000 --seed=42
 ```
 
 For a long hunt, build in `ReleaseSafe`, which keeps every bounds and
@@ -1409,7 +1409,7 @@ library's is the largest recently written in ReleaseSafe) then takes
 `--seed=0x…` for each of the rest:
 
 ```sh
-zig build test -Doptimize=ReleaseSafe -Dfuzz-iterations=10000000 --seed 0x1000
+zig build test -Doptimize=ReleaseSafe -Dfuzz-iterations=10000000 --seed=0x1000
 ```
 
 Sixteen seeds at ten million inputs a target take about half an hour on
