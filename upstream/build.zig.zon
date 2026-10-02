@@ -5,7 +5,7 @@
     .name = .datetime_upstream,
     .version = "0.0.0",
     .fingerprint = 0x5d5549a60e2b5b3b, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         // The library these check and generate for, taken from the checkout
         // this sits in rather than fetched, so the two are always the same

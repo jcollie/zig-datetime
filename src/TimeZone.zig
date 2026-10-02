@@ -108,7 +108,7 @@ test init {
     try testing.expect(!zone.owned);
 
     // Bad bytes fail here rather than at some later lookup.
-    try testing.expectError(error.BadMagic, init("x", "XZif" ++ ("\x00" ** 40), false));
+    try testing.expectError(error.BadMagic, init("x", "XZif" ++ @as([40]u8, @splat(0x00)), false));
 }
 
 /// Frees the bytes of a zone built by `fromOwnedBytes`, and the copy of

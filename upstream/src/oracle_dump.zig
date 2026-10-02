@@ -151,8 +151,8 @@ pub fn main(init: std.process.Init) !void {
                 // The record separator would otherwise be ambiguous.
                 // Nothing in the corpus produces either, so this is a
                 // guard against the corpus growing something that does.
-                std.debug.assert(std.mem.indexOfAny(u8, fmt, "\t\n") == null);
-                std.debug.assert(std.mem.indexOfAny(u8, formatted, "\t\n") == null);
+                std.debug.assert(std.mem.findAny(u8, fmt, "\t\n") == null);
+                std.debug.assert(std.mem.findAny(u8, formatted, "\t\n") == null);
 
                 try out.print("{d}\t{d}\t{s}\t{s}\n", .{ at, minutes, fmt, formatted });
             }

@@ -1199,7 +1199,7 @@ fn readConversion(
         },
 
         .month => {
-            state.value.month = @enumFromInt(try readNumber(rest, 1, 12, 2));
+            state.value.month = @fromBackingInt(@intCast(try readNumber(rest, 1, 12, 2)));
             state.month_given = true;
         },
 
@@ -1231,8 +1231,8 @@ fn readConversion(
 
         // The ISO numbering runs Monday to Sunday as 1 to 7 while
         // `DayOfWeek` counts Sunday as 0, so seven wraps to zero.
-        .iso_weekday => state.weekday = @enumFromInt(@mod(try readNumber(rest, 1, 7, 1), 7)),
-        .weekday_number => state.weekday = @enumFromInt(try readNumber(rest, 0, 6, 1)),
+        .iso_weekday => state.weekday = @fromBackingInt(@intCast(@mod(try readNumber(rest, 1, 7, 1), 7))),
+        .weekday_number => state.weekday = @fromBackingInt(@intCast(try readNumber(rest, 0, 6, 1))),
 
         .nanosecond => state.value.nanosecond = try readFraction(rest, if (field.width == 0) 9 else field.width),
 

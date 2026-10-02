@@ -70,9 +70,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var pairs: std.ArrayList(Pair) = .empty;
 
     var rest = xml;
-    while (std.mem.indexOf(u8, rest, "<mapZone")) |at| {
+    while (std.mem.find(u8, rest, "<mapZone")) |at| {
         rest = rest[at..];
-        const end = std.mem.indexOfScalar(u8, rest, '>') orelse return error.UnterminatedElement;
+        const end = std.mem.findScalar(u8, rest, '>') orelse return error.UnterminatedElement;
         const element = rest[0 .. end + 1];
         rest = rest[end + 1 ..];
 
@@ -87,7 +87,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
         // A territory row may list several zones separated by spaces, but
         // the `001` row names exactly one. Anything else means the file
         // has changed shape and the table below would be a guess.
-        if (std.mem.indexOfScalar(u8, iana, ' ') != null) return error.AmbiguousDefault;
+        if (std.mem.findScalar(u8, iana, ' ') != null) return error.AmbiguousDefault;
 
         try pairs.append(arena, .{ .windows = windows, .iana = iana });
     }
@@ -166,16 +166,16 @@ pub fn main(init: std.process.Init.Minimal) !void {
 /// table it produces. Anything unexpected shows up as a missing attribute,
 /// which the caller turns into a failed build rather than a quiet gap.
 fn attribute(xml: []const u8, element: []const u8, name: []const u8) ?[]const u8 {
-    const at = std.mem.indexOf(u8, xml, element) orelse return null;
+    const at = std.mem.find(u8, xml, element) orelse return null;
     const body = xml[at..];
-    const close = std.mem.indexOfScalar(u8, body, '>') orelse return null;
+    const close = std.mem.findScalar(u8, body, '>') orelse return null;
 
     var buffer: [64]u8 = undefined;
     const needle = std.fmt.bufPrint(&buffer, " {s}=\"", .{name}) catch return null;
 
-    const found = std.mem.indexOf(u8, body[0..close], needle) orelse return null;
+    const found = std.mem.find(u8, body[0..close], needle) orelse return null;
     const value = body[found + needle.len ..];
-    const end = std.mem.indexOfScalar(u8, value, '"') orelse return null;
+    const end = std.mem.findScalar(u8, value, '"') orelse return null;
     return value[0..end];
 }
 

@@ -234,6 +234,11 @@ pub fn build(b: *std.Build) void {
     const tests = b.addTest(.{
         .root_module = module,
         .filters = &.{test_filter},
+        // The self-hosted backend, which Debug otherwise uses, emits no
+        // coverage instrumentation, so `zig build test --fuzz` would have no
+        // feedback to steer by and kcov nothing to report. It costs a few
+        // seconds of compile.
+        .use_llvm = true,
     });
 
     const run_tests = b.addRunArtifact(tests);
@@ -278,7 +283,11 @@ pub fn build(b: *std.Build) void {
 
     const run_docs_server = b.addRunArtifact(docs_server);
     run_docs_server.step.dependOn(&install_docs.step);
-    run_docs_server.addArg(b.getInstallPath(.prefix, "docs"));
+    // Served straight from the emitted directory rather than from
+    // `zig-out/docs`, because the build no longer knows the install prefix
+    // while it is being configured. Depending on the install step keeps
+    // `docs-serve` leaving the same `zig-out/docs` behind that `docs` does.
+    run_docs_server.addDirectoryArg(docs_library.getEmittedDocs());
     run_docs_server.addArg(b.fmt("{d}", .{docs_port}));
     // The server runs until interrupted, so its output has to reach the
     // terminal rather than being captured by the build runner.
@@ -455,7 +464,11 @@ fn shellOut(b: *std.Build, step: []const u8, system: ?[]const u8) *std.Build.Ste
     const run = b.addSystemCommand(&.{ b.graph.zig_exe, "build", step });
     run.setCwd(b.path("upstream"));
     if (system) |dir| {
-        run.addArgs(&.{ "--system", b.pathFromRoot(dir) });
+        run.addArg("--system");
+        run.addDirectoryArg(if (std.fs.path.isAbsolute(dir))
+            b.graph.cwdRelativePath(dir)
+        else
+            b.path(dir));
     } else if (b.graph.system_package_mode) {
         // Given `--system` alone, it would fetch what this build has been
         // forbidden to.
@@ -468,7 +481,7 @@ fn shellOut(b: *std.Build, step: []const u8, system: ?[]const u8) *std.Build.Ste
     // rather than anything this build declares, so there is nothing here for
     // the build runner to decide it is up to date against.
     run.has_side_effects = true;
-    if (b.args) |args| run.addArgs(args);
+    run.addPassthruArgs();
     return run;
 }
 

@@ -622,7 +622,7 @@ fn writeEpochSeconds(writer: *std.Io.Writer, value: DateTime) std.Io.Writer.Erro
     // among them.
     var scratch: [64]u8 = undefined;
     const scientific = std.fmt.bufPrint(&scratch, "{e:.14}", .{@abs(seconds)}) catch unreachable;
-    const e_at = std.mem.indexOfScalar(u8, scientific, 'e').?;
+    const e_at = std.mem.findScalar(u8, scientific, 'e').?;
     var digits: [15]u8 = undefined;
     digits[0] = scientific[0];
     @memcpy(digits[1..], scientific[2..e_at]);
@@ -822,7 +822,7 @@ const UState = struct {
                 const in_year = year orelse options.relative_to.year;
                 const month = self.month orelse 1;
                 if (month < 1 or month > 12) return error.ParseError;
-                const month_value: Month = @enumFromInt(month);
+                const month_value: Month = @fromBackingInt(@intCast(month));
                 const day = self.day orelse 1;
                 if (day < 1 or day > month_value.lastDay(in_year)) return error.ParseError;
                 break :date .{ .year = in_year, .month = month_value, .day = @intCast(day) };
@@ -974,12 +974,12 @@ fn readConversion(
         .iso_weekday => {
             const number = try readDigits(rest, 1, 1);
             if (number < 1 or number > 7) return error.ParseError;
-            try settle(DayOfWeek, &state.weekday, @enumFromInt(number % 7));
+            try settle(DayOfWeek, &state.weekday, @fromBackingInt(@intCast(number % 7)));
         },
         .weekday_number => {
             const number = try readDigits(rest, 1, 1);
             if (number > 6) return error.ParseError;
-            try settle(DayOfWeek, &state.weekday, @enumFromInt(number));
+            try settle(DayOfWeek, &state.weekday, @fromBackingInt(@intCast(number)));
         },
 
         .meridiem => {

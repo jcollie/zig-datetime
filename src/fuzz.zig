@@ -5,8 +5,8 @@
 //!
 //! Each target is a property written once and driven twice. `zig build
 //! test` runs it over a list of seeds, which is what keeps a case that
-//! once failed from coming back. `zig build --fuzz` hands the same
-//! property to the fuzzer, which goes looking for new ones.
+//! once failed from coming back. `zig build test --fuzz` hands the
+//! same property to the fuzzer, which goes looking for new ones.
 //!
 //! The properties are deliberately weak about what a parser should
 //! *accept*, because that is what the moment.js oracles are for and a
@@ -57,12 +57,13 @@ fn overSeeds(comptime property: fn ([]const u8) anyerror!void, seeds: []const []
     for (seeds) |seed| try property(seed);
 }
 
-/// Hands `property` to the fuzzer, which is what `zig build --fuzz` does.
+/// Hands `property` to the fuzzer, which is what `zig build test --fuzz`
+/// does.
 ///
-/// Note that `zig build --fuzz` does not work on Zig 0.16.0: its own test
-/// runner fails to compile in fuzz mode, on any project, at
-/// `compiler/test_runner.zig:566`. These targets are here for when that
-/// is fixed; `overMutations` is what actually explores today.
+/// Under an ordinary test run `std.testing.fuzz` calls the target once
+/// with an empty input, so `overMutations` is what explores then. Under
+/// `--fuzz` the fuzzer feeds it, steered by coverage, which needs the test
+/// binary compiled by LLVM; build.zig sets `use_llvm` for that reason.
 fn overFuzzer(comptime property: fn ([]const u8) anyerror!void) !void {
     const driver = struct {
         fn one(_: void, smith: *std.testing.Smith) anyerror!void {
@@ -158,8 +159,8 @@ fn mutate(random: std.Random, seeds: []const []const u8, buffer: []u8) []const u
 /// Runs `property` over values drawn from a generator seeded by the test
 /// runner, for the targets whose input is a value rather than text.
 ///
-/// These are the properties `std.testing.fuzz` would drive through a
-/// `Smith` if `zig build --fuzz` worked. Outside that mode `std.testing.fuzz`
+/// These are the properties `std.testing.fuzz` drives through a `Smith`
+/// under `zig build test --fuzz`. Outside that mode `std.testing.fuzz`
 /// hands a target a single empty input, and a `Smith` reading from nothing
 /// answers every range with its minimum, so a target driven only that way
 /// checks one value and looks like it checked millions. This draws the
@@ -191,7 +192,7 @@ fn randomYear(random: std.Random) Year {
 /// Any date a `Date` can hold, drawn as `randomYear` draws its year.
 fn randomDate(random: std.Random) Date {
     const year = randomYear(random);
-    const month: Month = @enumFromInt(random.intRangeAtMost(u4, 1, 12));
+    const month: Month = @fromBackingInt(@intCast(random.intRangeAtMost(u4, 1, 12)));
     return .{ .year = year, .month = month, .day = random.intRangeAtMost(u6, 1, month.lastDay(year)) };
 }
 
@@ -915,7 +916,7 @@ const FuzzLocale = struct {
             .week = .{
                 // Any rule at all, including the ones whose first week
                 // opens in the December before.
-                .starts_on = @enumFromInt(if (text.len > 2) text[2] % 7 else 0),
+                .starts_on = @fromBackingInt(@intCast(if (text.len > 2) text[2] % 7 else 0)),
                 .january_day_in_first_week = if (text.len > 3) @as(i8, @bitCast(text[3])) else 1,
             },
             .months_decline = .{
@@ -1250,7 +1251,7 @@ fn weekRuleProperty(text: []const u8) !void {
     if (text.len < 6) return;
 
     const year: Year = @bitCast(std.mem.readInt(u32, text[0..4], .little));
-    const starts_on: DayOfWeek = @enumFromInt(text[4] % 7);
+    const starts_on: DayOfWeek = @fromBackingInt(@intCast(text[4] % 7));
     const anchor: i8 = @bitCast(text[5]);
 
     const weeks = Date.weeksInYear(year, starts_on, anchor);
@@ -1420,8 +1421,8 @@ fn tzifProperty(bytes: []const u8) !void {
 }
 
 const tzif_seeds = [_][]const u8{
-    "",                        "TZif",                   "TZif2",                                    "TZif" ++ ("\x00" ** 40), "TZif" ++ ("\xff" ** 40),
-    "TZif2" ++ ("\x00" ** 39), "XZif" ++ ("\x00" ** 40), "TZif" ++ ("\x00" ** 15) ++ ("\xff" ** 25),
+    "",                                   "TZif",                              "TZif2",                                                          "TZif" ++ @as([40]u8, @splat(0x00)), "TZif" ++ @as([40]u8, @splat(0xff)),
+    "TZif2" ++ @as([39]u8, @splat(0x00)), "XZif" ++ @as([40]u8, @splat(0x00)), "TZif" ++ @as([15]u8, @splat(0x00)) ++ @as([25]u8, @splat(0xff)),
 };
 
 test "tzif.parse over the seeds" {
@@ -1446,14 +1447,14 @@ fn zoneNameProperty(text: []const u8) !void {
     try std.testing.expect(text.len > 0);
     try std.testing.expect(text[0] != '/');
     try std.testing.expect(text[0] != '.');
-    try std.testing.expect(std.mem.indexOf(u8, text, "..") == null);
+    try std.testing.expect(std.mem.find(u8, text, "..") == null);
     for (text) |char| try std.testing.expect(std.ascii.isPrint(char));
 }
 
 const zone_name_seeds = [_][]const u8{
     "",                    "UTC",         "America/Chicago", "Etc/GMT+5", "US/Central",
     "../../etc/passwd",    "/etc/passwd", ".hidden",         "a/../b",    "a//b",
-    "America/Chicago\x00", "\x00",        "..",              ".",         "a" ** 257,
+    "America/Chicago\x00", "\x00",        "..",              ".",         &@as([257]u8, @splat('a')),
 };
 
 test "tzdb.validateName over the seeds" {
@@ -1562,14 +1563,14 @@ fn checkArithmetic(start: DateTime, duration: Duration, arithmetic: Duration.Ari
     const carry = @divFloor(total, ns_per_day);
     const rest = total - carry * ns_per_day;
 
-    const month_index = @as(i256, start.year) * 12 + (@intFromEnum(start.month) - 1) + duration.months;
+    const month_index = @as(i256, start.year) * 12 + (@backingInt(start.month) - 1) + duration.months;
     const year_wide = @divFloor(month_index, 12);
     const year_fits = year_wide >= std.math.minInt(Year) and year_wide <= std.math.maxInt(Year);
 
     const expected: ?Date = blk: {
         if (!year_fits) break :blk null;
         const year: Year = @intCast(year_wide);
-        const month: Month = @enumFromInt(@as(u4, @intCast(@mod(month_index, 12) + 1)));
+        const month: Month = @fromBackingInt(@intCast(@as(u4, @intCast(@mod(month_index, 12) + 1))));
         const moved = @as(i256, duration.days) + carry;
         // XML Schema clamps the day to its month and then counts; ISO
         // 8601-2's composite method does the same unless the day itself was
@@ -1648,7 +1649,7 @@ test "fuzz the calendar round trips" {
     const driver = struct {
         fn one(_: void, smith: *std.testing.Smith) anyerror!void {
             const year = smith.valueRangeAtMost(Year, -10000, 10000);
-            const month: Month = @enumFromInt(smith.valueRangeAtMost(u4, 1, 12));
+            const month: Month = @fromBackingInt(@intCast(smith.valueRangeAtMost(u4, 1, 12)));
             const date: Date = .{
                 .year = year,
                 .month = month,

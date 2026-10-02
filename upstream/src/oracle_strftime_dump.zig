@@ -148,8 +148,8 @@ pub fn main(init: std.process.Init) !void {
 
                 // The record separator would otherwise be ambiguous, and
                 // `%n` and `%t` write both characters on purpose.
-                if (std.mem.indexOfAny(u8, current, "\t\n") == null and
-                    std.mem.indexOfAny(u8, formatted, "\t\n") == null)
+                if (std.mem.findAny(u8, current, "\t\n") == null and
+                    std.mem.findAny(u8, formatted, "\t\n") == null)
                 {
                     try out.print("F\t{d}\t{d}\t{s}\t{s}\t{s}\n", .{
                         at,

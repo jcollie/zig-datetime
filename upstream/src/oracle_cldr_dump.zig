@@ -242,14 +242,14 @@ pub fn main(init: std.process.Init) !void {
                         pair[1],
                     });
                     if (pair[0] < 0) {
-                        try cldr.formatTime(value, @enumFromInt(pair[1]), locale, out);
+                        try cldr.formatTime(value, @fromBackingInt(@intCast(pair[1])), locale, out);
                     } else if (pair[1] < 0) {
-                        try cldr.formatDate(value, @enumFromInt(pair[0]), locale, out);
+                        try cldr.formatDate(value, @fromBackingInt(@intCast(pair[0])), locale, out);
                     } else {
                         try cldr.formatDateTime(
                             value,
-                            @enumFromInt(pair[0]),
-                            @enumFromInt(pair[1]),
+                            @fromBackingInt(@intCast(pair[0])),
+                            @fromBackingInt(@intCast(pair[1])),
                             locale,
                             out,
                         );

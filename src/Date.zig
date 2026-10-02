@@ -208,11 +208,11 @@ pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
     std.debug.assert(year >= std.math.minInt(Year) and year <= std.math.maxInt(Year));
 
     const day = day_of_year - @divTrunc(153 * month_0 + 2, 5) + 1;
-    std.debug.assert(day >= 1 and day <= @as(Month, @enumFromInt(month)).lastDay(@intCast(year)));
+    std.debug.assert(day >= 1 and day <= @as(Month, @fromBackingInt(@intCast(month))).lastDay(@intCast(year)));
 
     return Date{
         .year = @intCast(year),
-        .month = @enumFromInt(month),
+        .month = @fromBackingInt(@intCast(month)),
         .day = @intCast(day),
     };
 }

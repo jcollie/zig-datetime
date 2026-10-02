@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT
 
 # zig-datetime
 
-Dates, times, and timezones for Zig 0.16.
+Dates, times, and timezones for Zig 0.17.
 
 API documentation: <https://jeff.jcollie.page/zig-datetime/>, published from
 main by `.forgejo/workflows/test.yaml`.
@@ -91,7 +91,7 @@ Two environment variables decide where the data is and which zone the user
 wants: **`TZDIR`** names the directory holding the TZif tree, and **`TZ`**
 names the zone.
 
-**This library does not read either of them for you.** In Zig 0.16 a
+**This library does not read either of them for you.** Since Zig 0.16 a
 program receives its environment through the `std.process.Init` passed to
 `main`, so a library that went looking for it would have to reach for
 globals behind your back. Instead you read the environment and pass the
@@ -1360,7 +1360,7 @@ zig build test --system "$packages" -Dupstream-system="$packages"
 Regenerate the file whenever either manifest's dependencies change:
 
 ```sh
-nix develop -c zon2nix --16 --nix=build.zig.zon.nix build.zig.zon upstream/build.zig.zon
+nix develop -c zon2nix --17 --nix=build.zig.zon.nix build.zig.zon upstream/build.zig.zon
 ```
 
 They live in `upstream/`, which is a Zig project of its own with a manifest
@@ -1434,13 +1434,25 @@ million years hold is itself a failure. It takes about fifteen seconds,
 against the seventeen the paper reports for the same sweep in C++ in
 2013. In `Debug` it takes long enough to be worth not doing.
 
-The seed is the test runner's, so a failure replays exactly. There are
-`std.testing.fuzz` targets beside the mutation ones for when
-`zig build --fuzz` works: on Zig 0.16.0 it does not compile, on any
-project, in the compiler's own test runner. Until it does, those targets
-see a single empty input, from which a `std.testing.Smith` answers every
-range with its minimum, so they check one value; the mutation and
-generator targets are the ones doing the work.
+The seed is the test runner's, so a failure replays exactly.
+
+Beside the mutation and generator targets are `std.testing.fuzz` ones,
+which Zig's own coverage-guided fuzzer drives:
+
+```sh
+zig build test --fuzz          # until interrupted, with a web interface
+zig build test --fuzz=1M       # a bounded run, then a report
+```
+
+The report names only the first fuzz test in the binary, but every one
+of them ran and shares the coverage figure it gives. A finding prints
+`input saved to '.zig-cache/f/crash'` above the report. The coverage comes
+from LLVM's instrumentation, which is why `build.zig` compiles the test
+binary with LLVM even in Debug; the self-hosted backend emits none, and the
+fuzzer then has nothing to steer by. Outside `--fuzz` these targets see a
+single empty input, from which a `std.testing.Smith` answers every range
+with its minimum, so in an ordinary run the mutation and generator targets
+are the ones doing the work.
 
 `-Dno-system-tzdata` empties the directories the tests look in, which
 makes a machine that has a timezone database behave like one that has

@@ -201,6 +201,6 @@ test {
 
     // The fuzz targets, which nothing else refers to. Under an ordinary
     // run each one checks its property over a list of seeds; under
-    // `zig build --fuzz` the fuzzer drives the same properties.
+    // `zig build test --fuzz` the fuzzer drives the same properties.
     _ = @import("fuzz.zig");
 }

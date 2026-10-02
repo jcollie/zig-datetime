@@ -418,13 +418,14 @@ pub const FormatTag = enum {
         fn tagAt(self: Tokenizer, index: usize) ?FormatTag {
             var found: ?FormatTag = null;
             var length: usize = 0;
-            inline for (@typeInfo(FormatTag).@"enum".fields) |field| {
-                if (field.name.len > length and
-                    index + field.name.len <= self.format_string.len and
-                    std.mem.eql(u8, field.name, self.format_string[index..][0..field.name.len]))
+            const info = @typeInfo(FormatTag).@"enum";
+            inline for (info.field_names, info.field_values) |name, value| {
+                if (name.len > length and
+                    index + name.len <= self.format_string.len and
+                    std.mem.eql(u8, name, self.format_string[index..][0..name.len]))
                 {
-                    found = @enumFromInt(field.value);
-                    length = field.name.len;
+                    found = @fromBackingInt(value);
+                    length = name.len;
                 }
             }
             return found;
@@ -456,7 +457,7 @@ pub const FormatTag = enum {
                 // The closing bracket has to come before any second
                 // opening one, which is what makes `[a[b]` a literal
                 // bracket followed by `a` and then the literal `b`.
-                if (std.mem.indexOfAny(u8, rest[1..], "[]")) |offset| {
+                if (std.mem.findAny(u8, rest[1..], "[]")) |offset| {
                     if (rest[1 + offset] == ']') {
                         defer self.index += offset + 2;
                         return .{ .literal = rest[1..][0..offset] };

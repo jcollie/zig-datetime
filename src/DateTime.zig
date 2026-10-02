@@ -442,9 +442,9 @@ fn writeTag(
             {
                 const format_tag = tag;
                 switch (format_tag) {
-                    .M => try writer.print("{}", .{@intFromEnum(self.month)}),
-                    .Mo => try in.writeOrdinal(writer, @intFromEnum(self.month), .Mo),
-                    .MM => try writer.print("{:0>2}", .{@intFromEnum(self.month)}),
+                    .M => try writer.print("{}", .{@backingInt(self.month)}),
+                    .Mo => try in.writeOrdinal(writer, @backingInt(self.month), .Mo),
+                    .MM => try writer.print("{:0>2}", .{@backingInt(self.month)}),
                     .MMM, .MMMM => try writer.writeAll(in.monthName(self.month, format_tag, in_format)),
 
                     .Q => try writer.print("{}", .{self.month.quarter()}),
@@ -907,7 +907,7 @@ fn matchTag(
                 if (str.len == 0) return error.NoMatch;
                 const month = try Month.parseInt(str);
                 rest = rest[str.len..];
-                try skipOrdinal(&rest, @intFromEnum(month), .Mo, options);
+                try skipOrdinal(&rest, @backingInt(month), .Mo, options);
                 break :month month;
             };
         },
@@ -1499,7 +1499,7 @@ test "every locale reads back what it wrote" {
                     each.tag,
                     written,
                     parsed.value.year,
-                    @intFromEnum(parsed.value.month),
+                    @backingInt(parsed.value.month),
                     parsed.value.day,
                 });
                 return error.RoundTripChangedTheDate;
@@ -1742,7 +1742,7 @@ const ParseWalk = struct {
             if (self.left.len < text.len) return error.ParseError;
             if (!std.mem.eql(u8, self.left[0..text.len], text)) return error.ParseError;
             self.left = self.left[text.len..];
-        } else if (std.mem.indexOf(u8, self.left, text)) |at| {
+        } else if (std.mem.find(u8, self.left, text)) |at| {
             self.skipped += at;
             self.left = self.left[at + text.len ..];
         }
@@ -3042,9 +3042,9 @@ test "every format sequence is reachable from format" {
     datetime.updateDayOfWeek();
 
     var buf: [64]u8 = undefined;
-    inline for (@typeInfo(FormatTag).@"enum".fields) |field| {
+    inline for (@typeInfo(FormatTag).@"enum".field_names) |name| {
         var writer = std.Io.Writer.fixed(&buf);
-        try datetime.format(field.name, &writer);
+        try datetime.format(name, &writer);
         try std.testing.expect(writer.buffered().len > 0);
     }
 }

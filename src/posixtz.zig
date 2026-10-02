@@ -66,8 +66,8 @@ pub const Rule = union(enum) {
         switch (self) {
             .month_week_day => |spec| {
                 const first_of_month = january_first + spec.month.daysBefore(year);
-                const first_weekday = @intFromEnum(DayOfWeek.fromDaysSinceStartOfEra(first_of_month));
-                const wanted = @intFromEnum(spec.weekday);
+                const first_weekday = @backingInt(DayOfWeek.fromDaysSinceStartOfEra(first_of_month));
+                const wanted = @backingInt(spec.weekday);
 
                 // The first `wanted` weekday of the month, then forward by
                 // whole weeks. Week 5 means "last", which is the same as

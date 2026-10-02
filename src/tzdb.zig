@@ -31,7 +31,7 @@ pub const InvalidNameError = error{InvalidZoneName};
 pub fn validateName(name: []const u8) InvalidNameError!void {
     if (name.len == 0 or name.len > 256) return error.InvalidZoneName;
     if (name[0] == '/' or name[0] == '.') return error.InvalidZoneName;
-    if (std.mem.indexOf(u8, name, "..") != null) return error.InvalidZoneName;
+    if (std.mem.find(u8, name, "..") != null) return error.InvalidZoneName;
 
     for (name) |char| switch (char) {
         'A'...'Z', 'a'...'z', '0'...'9', '/', '_', '-', '+' => {},
@@ -60,7 +60,7 @@ test validateName {
 ///
 /// Which directory holds that copy, and which zone the user wants, are
 /// both answered by environment variables. This library does not read
-/// them: in Zig 0.16 a program receives its environment through the
+/// them: since Zig 0.16 a program receives its environment through the
 /// `std.process.Init` passed to `main`, and a library that went looking
 /// for it behind the caller's back would have to reach for globals. So
 /// the caller reads the environment and passes the answer in.
@@ -220,7 +220,7 @@ pub const system = struct {
 
         // The only two marks a POSIX rule carries that no zone name does.
         if (body[0] == '<') return .{ .rule = body };
-        if (std.mem.indexOfScalar(u8, body, ',') != null) return .{ .rule = body };
+        if (std.mem.findScalar(u8, body, ',') != null) return .{ .rule = body };
 
         return .{ .name = body };
     }
@@ -275,7 +275,7 @@ pub const system = struct {
         const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 24)) catch return null;
         defer gpa.free(bytes);
 
-        const line = bytes[0 .. std.mem.indexOfScalar(u8, bytes, '\n') orelse bytes.len];
+        const line = bytes[0 .. std.mem.findScalar(u8, bytes, '\n') orelse bytes.len];
         const prefix = "# version ";
         if (!std.mem.startsWith(u8, line, prefix)) return null;
 

@@ -249,7 +249,7 @@ pub const Locale = struct {
             .format => self.months,
             .stand_alone => self.months_stand_alone orelse self.months,
         };
-        return table[@intFromEnum(width)][@intFromEnum(month) - 1];
+        return table[@backingInt(width)][@backingInt(month) - 1];
     }
 
     test monthName {
@@ -273,7 +273,7 @@ pub const Locale = struct {
             .format => self.weekdays,
             .stand_alone => self.weekdays_stand_alone orelse self.weekdays,
         };
-        return table[@intFromEnum(width)][weekday.weekdayNumber()];
+        return table[@backingInt(width)][weekday.weekdayNumber()];
     }
 
     test weekdayName {
@@ -295,7 +295,7 @@ pub const Locale = struct {
             .format => self.quarters,
             .stand_alone => self.quarters_stand_alone orelse self.quarters,
         };
-        return table[@intFromEnum(width)][quarter - 1];
+        return table[@backingInt(width)][quarter - 1];
     }
 
     test quarterName {
@@ -310,7 +310,7 @@ pub const Locale = struct {
     /// `cldr` writes the era year against, and the two have to agree or a
     /// date would be given the wrong era's name.
     pub fn eraName(self: Locale, year: Year, width: Width) []const u8 {
-        return self.eras[@intFromEnum(width)][if (year > 0) 1 else 0];
+        return self.eras[@backingInt(width)][if (year > 0) 1 else 0];
     }
 
     test eraName {
@@ -328,7 +328,7 @@ pub const Locale = struct {
             .format => self.day_periods,
             .stand_alone => self.day_periods_stand_alone orelse self.day_periods,
         };
-        return table[@intFromEnum(width)][@intFromEnum(period)];
+        return table[@backingInt(width)][@backingInt(period)];
     }
 
     test dayPeriodName {
@@ -411,12 +411,12 @@ pub const Locale = struct {
 
     /// Returns the locale's own date pattern of the given length.
     pub fn dateFormat(self: Locale, length: Length) []const u8 {
-        return self.date_formats[@intFromEnum(length)];
+        return self.date_formats[@backingInt(length)];
     }
 
     /// Returns the locale's own time pattern of the given length.
     pub fn timeFormat(self: Locale, length: Length) []const u8 {
-        return self.time_formats[@intFromEnum(length)];
+        return self.time_formats[@backingInt(length)];
     }
 
     /// Which hour the locale writes the time on: the twelve-hour clock, or
@@ -433,7 +433,7 @@ pub const Locale = struct {
     /// This is what the skeleton letter `j` asks for; see
     /// `cldr.formatSkeleton`.
     pub fn prefersTwelveHour(self: Locale) bool {
-        const pattern = self.time_formats[@intFromEnum(Length.short)];
+        const pattern = self.time_formats[@backingInt(Length.short)];
         var index: usize = 0;
         while (index < pattern.len) : (index += 1) {
             if (pattern[index] == '\'') {
@@ -454,7 +454,7 @@ pub const Locale = struct {
     /// Returns the pattern that joins a date to a time in general, with
     /// `{1}` for the date and `{0}` for the time.
     pub fn dateTimeFormat(self: Locale, length: Length) []const u8 {
-        return self.date_time_formats[@intFromEnum(length)];
+        return self.date_time_formats[@backingInt(length)];
     }
 
     /// Returns the pattern that joins a date to a particular time of day,
@@ -466,7 +466,7 @@ pub const Locale = struct {
     /// style to a time style with, so they are what `cldr.formatDateTime`
     /// uses.
     pub fn dateTimeAtTimeFormat(self: Locale, length: Length) []const u8 {
-        return self.date_time_at_time_formats[@intFromEnum(length)];
+        return self.date_time_at_time_formats[@backingInt(length)];
     }
 
     test dateFormat {
@@ -632,7 +632,7 @@ fn fromEntry(comptime raw: anytype) Locale {
             var out: [raw.day_period_rules.len]DayPeriodRule = undefined;
             for (&out, raw.day_period_rules) |*slot, rule| {
                 slot.* = .{
-                    .period = @enumFromInt(rule[0]),
+                    .period = @fromBackingInt(@intCast(rule[0])),
                     .from = rule[1],
                     .before = rule[2],
                     .at = rule[3] != 0,
@@ -662,7 +662,7 @@ fn fromEntry(comptime raw: anytype) Locale {
         .gmt_zero_format = raw.gmt_zero_format,
         .hour_format_positive = raw.hour_format_positive,
         .hour_format_negative = raw.hour_format_negative,
-        .first_day = @enumFromInt(raw.first_day),
+        .first_day = @fromBackingInt(@intCast(raw.first_day)),
         .min_days_in_first_week = raw.min_days_in_first_week,
         .day_period_rules = &tables.rules,
         .digits = if (tables.digits) |*ten| ten else null,
@@ -681,7 +681,7 @@ fn wanted(comptime tag: []const u8) bool {
 
     var rest: []const u8 = requested;
     while (rest.len > 0) {
-        const comma = std.mem.indexOfScalar(u8, rest, ',') orelse rest.len;
+        const comma = std.mem.findScalar(u8, rest, ',') orelse rest.len;
         if (std.ascii.eqlIgnoreCase(rest[0..comma], tag)) return true;
         rest = if (comma == rest.len) rest[comma..] else rest[comma + 1 ..];
     }
@@ -869,7 +869,7 @@ test "every embedded locale is fully populated" {
             }
             for ([_]WeekdayWidth{ .wide, .abbreviated, .short, .narrow }) |width| {
                 for (0..7) |day| {
-                    const weekday: DayOfWeek = @enumFromInt(day);
+                    const weekday: DayOfWeek = @fromBackingInt(@intCast(day));
                     try std.testing.expect(each.weekdayName(weekday, context, width).len > 0);
                 }
             }

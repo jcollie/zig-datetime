@@ -1646,7 +1646,7 @@ pub fn writeDate(writer: *std.Io.Writer, date: Date) std.Io.Writer.Error!void {
     } else {
         try writer.print("{c}{d:0>4}", .{ @as(u8, if (date.year < 0) '-' else '+'), @abs(date.year) });
     }
-    try writer.print("-{d:0>2}-{d:0>2}", .{ @intFromEnum(date.month), date.day });
+    try writer.print("-{d:0>2}-{d:0>2}", .{ @backingInt(date.month), date.day });
 }
 
 test writeDate {
@@ -1725,7 +1725,7 @@ const Cursor = struct {
     /// whether it was.
     fn eatAny(self: *Cursor, chars: []const u8) bool {
         if (self.done()) return false;
-        if (std.mem.indexOfScalar(u8, chars, self.peek()) == null) return false;
+        if (std.mem.findScalar(u8, chars, self.peek()) == null) return false;
         self.index += 1;
         return true;
     }

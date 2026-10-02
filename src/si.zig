@@ -45,7 +45,7 @@ pub const Prefix = enum(i8) {
 
     /// Returns the power of ten this prefix represents.
     pub fn exponent(self: Prefix) i8 {
-        return @intFromEnum(self);
+        return @backingInt(self);
     }
 
     test exponent {

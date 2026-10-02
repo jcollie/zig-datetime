@@ -116,13 +116,13 @@ fn serve(
     docs_dir: Io.Dir,
 ) !void {
     const target = request.head.target;
-    const path_end = std.mem.indexOfAny(u8, target, "?#") orelse target.len;
+    const path_end = std.mem.findAny(u8, target, "?#") orelse target.len;
     var path = target[0..path_end];
     if (std.mem.startsWith(u8, path, "/")) path = path[1..];
     if (path.len == 0) path = "index.html";
 
     // The documentation directory is the whole world this server knows about.
-    if (std.mem.indexOf(u8, path, "..") != null or std.fs.path.isAbsolute(path)) {
+    if (std.mem.find(u8, path, "..") != null or std.fs.path.isAbsolute(path)) {
         return request.respond("bad request\n", .{ .status = .bad_request });
     }
 
@@ -155,6 +155,92 @@ fn mimeType(path: []const u8) []const u8 {
 }
 
 const testing = std.testing;
+
+test serve {
+    const io = testing.io;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "index.html", .data = "<h1>z46</h1>" });
+
+    // One request in and one response out, with no socket in sight: all this
+    // sees is a reader, a writer and the directory it is allowed to read.
+    const cases = [_]struct { target: []const u8, status: []const u8 }{
+        // An empty path is the index, and a query or fragment is not part of
+        // the file name.
+        .{ .target = "/", .status = "HTTP/1.1 200 OK\r\n" },
+        .{ .target = "/index.html", .status = "HTTP/1.1 200 OK\r\n" },
+        .{ .target = "/index.html?v=1", .status = "HTTP/1.1 200 OK\r\n" },
+        .{ .target = "/missing.css", .status = "HTTP/1.1 404 Not Found\r\n" },
+        // The documentation directory is the whole world this server knows
+        // about, so nothing may climb out of it.
+        .{ .target = "/../flake.nix", .status = "HTTP/1.1 400 Bad Request\r\n" },
+    };
+
+    for (cases) |case| {
+        var head_buffer: [256]u8 = undefined;
+        const head = try std.fmt.bufPrint(
+            &head_buffer,
+            "GET {s} HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            .{case.target},
+        );
+        var in: Io.Reader = .fixed(head);
+        var out_buffer: [4096]u8 = undefined;
+        var out: Io.Writer = .fixed(&out_buffer);
+        var http_server: std.http.Server = .init(&in, &out);
+        var request = try http_server.receiveHead();
+
+        try serve(&request, io, testing.allocator, tmp.dir);
+        try testing.expect(std.mem.startsWith(u8, out.buffered(), case.status));
+        if (std.mem.startsWith(u8, case.status, "HTTP/1.1 200")) {
+            try testing.expect(std.mem.find(
+                u8,
+                out.buffered(),
+                "content-type: text/html; charset=utf-8",
+            ) != null);
+            try testing.expect(std.mem.endsWith(u8, out.buffered(), "<h1>z46</h1>"));
+        }
+    }
+}
+
+test handleConnection {
+    const io = testing.io;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "index.html", .data = "<h1>z46</h1>" });
+
+    // Port 0 lets the kernel choose, and a listener reports back which it got.
+    const listen_address: Io.net.IpAddress = .{ .ip4 = .{ .bytes = .{ 127, 0, 0, 1 }, .port = 0 } };
+    var server = try listen_address.listen(io, .{ .reuse_address = true });
+    defer server.deinit(io);
+
+    const connect_address = server.socket.address;
+    const client = try connect_address.connect(io, .{ .mode = .stream });
+    defer client.close(io);
+
+    // On its own thread, as `main` runs it, because it keeps answering until
+    // the client goes away.
+    const thread = try std.Thread.spawn(
+        .{},
+        handleConnection,
+        .{ io, testing.allocator, tmp.dir, try server.accept(io) },
+    );
+    defer thread.join();
+
+    var send_buffer: [256]u8 = undefined;
+    var client_writer = client.writer(io, &send_buffer);
+    // Asking to close is what ends the loop; without it the connection would
+    // stay open waiting for a second request.
+    try client_writer.interface.writeAll("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    try client_writer.interface.flush();
+
+    var recv_buffer: [4096]u8 = undefined;
+    var client_reader = client.reader(io, &recv_buffer);
+    const response = try client_reader.interface.allocRemaining(testing.allocator, .limited(64 * 1024));
+    defer testing.allocator.free(response);
+
+    try testing.expect(std.mem.startsWith(u8, response, "HTTP/1.1 200 OK\r\n"));
+    try testing.expect(std.mem.endsWith(u8, response, "<h1>z46</h1>"));
+}
 
 test mimeType {
     try testing.expectEqualStrings("text/html; charset=utf-8", mimeType("index.html"));

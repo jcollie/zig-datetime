@@ -213,8 +213,8 @@ fn reportOne(
 ) !void {
     // A tab or a newline would make the record ambiguous. Nothing in the
     // corpus holds either, so this guards against one growing them.
-    std.debug.assert(std.mem.indexOfAny(u8, fmt, "\t\n") == null);
-    std.debug.assert(std.mem.indexOfAny(u8, input, "\t\n") == null);
+    std.debug.assert(std.mem.findAny(u8, fmt, "\t\n") == null);
+    std.debug.assert(std.mem.findAny(u8, input, "\t\n") == null);
 
     const result = DateTime.parseWith(fmt, input, .{
         .relative_to = base,

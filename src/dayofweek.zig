@@ -206,7 +206,7 @@ pub const DayOfWeek = enum(u3) {
 
     /// Returns the weekday number, Sunday = 0 through Saturday = 6.
     pub fn weekdayNumber(self: DayOfWeek) u3 {
-        return @intFromEnum(self);
+        return @backingInt(self);
     }
 
     test weekdayNumber {
@@ -217,7 +217,7 @@ pub const DayOfWeek = enum(u3) {
     /// Returns the ISO 8601 weekday number, Monday = 1 through Sunday = 7:
     /// ISO 8601-1:2019, 4.3.6, and Table 2.
     pub fn isoWeekdayNumber(self: DayOfWeek) u3 {
-        return if (self == .Sun) 7 else @intFromEnum(self);
+        return if (self == .Sun) 7 else @backingInt(self);
     }
 
     test isoWeekdayNumber {
@@ -248,7 +248,7 @@ pub const DayOfWeek = enum(u3) {
         else
             @rem(days + 5, 7) + 6;
         std.debug.assert(result >= 0 and result <= 6);
-        return @enumFromInt(result);
+        return @fromBackingInt(@intCast(result));
     }
 
     test fromDaysSinceStartOfEra {
@@ -398,8 +398,8 @@ test "weekdayDifference" {
     for (0..6) |start| {
         for (0..6) |end| {
             const result = weekdayDifference(
-                @as(DayOfWeek, @enumFromInt(start)),
-                @as(DayOfWeek, @enumFromInt(end)),
+                @as(DayOfWeek, @fromBackingInt(@intCast(start))),
+                @as(DayOfWeek, @fromBackingInt(@intCast(end))),
             );
             try std.testing.expectEqual(difference[start][end], result);
         }

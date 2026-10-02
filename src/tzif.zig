@@ -169,7 +169,7 @@ pub const Tzif = struct {
         const record = self.type_records[index * type_record_len ..][0..type_record_len];
         const designation_index = record[5];
         const rest = self.designations[designation_index..];
-        const end = std.mem.indexOfScalar(u8, rest, 0) orelse rest.len;
+        const end = std.mem.findScalar(u8, rest, 0) orelse rest.len;
         return .{
             .offset = std.mem.readInt(i32, record[0..4], .big),
             .is_dst = record[4] != 0,
@@ -354,7 +354,7 @@ pub fn parse(bytes: []const u8) ParseError!Tzif {
     const block_len = std.math.cast(usize, second.blockLength(8)) orelse return error.Truncated;
     const footer_area = rest[header_len + block_len ..];
     if (footer_area.len < 2 or footer_area[0] != '\n') return error.BadFooter;
-    const end = std.mem.indexOfScalar(u8, footer_area[1..], '\n') orelse return error.BadFooter;
+    const end = std.mem.findScalar(u8, footer_area[1..], '\n') orelse return error.BadFooter;
     tzif.footer = footer_area[1..][0..end];
 
     return tzif;
@@ -400,7 +400,7 @@ test parseHeader {
     try testing.expectEqual(@as(u32, 2), counts.typecnt);
 
     // The magic is checked before anything is read out of the header.
-    try testing.expectError(error.BadMagic, parseHeader("XZif" ++ ("\x00" ** 40)));
+    try testing.expectError(error.BadMagic, parseHeader("XZif" ++ @as([40]u8, @splat(0x00))));
     try testing.expectError(error.Truncated, parseHeader("TZif"));
 
     // RFC 8536 requires at least one local time type and one designation.
@@ -583,7 +583,7 @@ test parse {
     // outlive them, and no allocator was needed to build it.
     try testing.expectEqualStrings("CDT", file.typeAtTimestamp(1720000000).?.designation);
 
-    try testing.expectError(error.BadMagic, parse("XZif" ++ ("\x00" ** 40)));
+    try testing.expectError(error.BadMagic, parse("XZif" ++ @as([40]u8, @splat(0x00))));
 }
 
 test parseBlock {

@@ -28,6 +28,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 
 const [momentPath, dumpPath] = process.argv.slice(2);
 if (!momentPath || !dumpPath) {
@@ -35,7 +36,9 @@ if (!momentPath || !dumpPath) {
     process.exit(2);
 }
 
-const moment = require(momentPath);
+// Resolved first: the build hands over a path relative to the directory it
+// runs in, and `require` reads a relative path against this script's own.
+const moment = require(path.resolve(momentPath));
 
 // 2001-09-09T01:46:40Z, the same instant `reference` names in the dumper.
 const REFERENCE = 1000000000000;

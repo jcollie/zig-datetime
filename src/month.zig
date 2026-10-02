@@ -39,7 +39,7 @@ pub const Month = enum(u4) {
             .signed => if (info.int.bits < 5) @compileError("must have at least 5 bits"),
             .unsigned => if (info.int.bits < 4) @compileError("must have at least 4 bits"),
         }
-        return @intCast(@intFromEnum(self));
+        return @intCast(@backingInt(self));
     }
 
     test as {

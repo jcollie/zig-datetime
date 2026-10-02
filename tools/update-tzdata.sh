@@ -145,7 +145,7 @@ fi
 # in flake.nix. Its log goes to stderr with the rest of this script's, so
 # that stdout stays the bare version the workflow reads.
 note "regenerating build.zig.zon.nix"
-zon2nix --16 --quiet --nix=build.zig.zon.nix build.zig.zon upstream/build.zig.zon >&2
+zon2nix --17 --quiet --nix=build.zig.zon.nix build.zig.zon upstream/build.zig.zon >&2
 for expected in "tzcode$wanted.tar.gz" "tzdata$wanted.tar.gz"; do
     grep -qF -- "$expected" build.zig.zon.nix || die "build.zig.zon.nix is missing '$expected' after regenerating"
 done

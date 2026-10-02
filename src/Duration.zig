@@ -269,9 +269,9 @@ pub fn addToDateChecked(self: Duration, date: Date) error{OutOfRange}!Date {
 /// fit. Narrowing first is what would make a large duration a crash instead
 /// of an error.
 pub fn addToDateCheckedWith(self: Duration, date: Date, arithmetic: Arithmetic) error{OutOfRange}!Date {
-    const total_months = @as(i128, date.year) * 12 + (@intFromEnum(date.month) - 1) + self.months;
+    const total_months = @as(i128, date.year) * 12 + (@backingInt(date.month) - 1) + self.months;
     const year = std.math.cast(Year, @divFloor(total_months, 12)) orelse return error.OutOfRange;
-    const month: Month = @enumFromInt(@as(u8, @intCast(@mod(total_months, 12) + 1)));
+    const month: Month = @fromBackingInt(@intCast(@as(u8, @intCast(@mod(total_months, 12) + 1))));
 
     const days = switch (arithmetic) {
         .xml_schema => blk: {

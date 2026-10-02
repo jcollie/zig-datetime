@@ -149,8 +149,8 @@ pub fn main(init: std.process.Init) !void {
                 const formatted = writer.buffered();
 
                 // The record separator would otherwise be ambiguous.
-                std.debug.assert(std.mem.indexOfAny(u8, current, "\t\n") == null);
-                std.debug.assert(std.mem.indexOfAny(u8, formatted, "\t\n") == null);
+                std.debug.assert(std.mem.findAny(u8, current, "\t\n") == null);
+                std.debug.assert(std.mem.findAny(u8, formatted, "\t\n") == null);
 
                 try out.print("F\t{d}\t{d}\t{s}\t{s}\t{s}\n", .{
                     at,

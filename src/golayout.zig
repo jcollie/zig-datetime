@@ -583,7 +583,7 @@ pub fn parse(comptime layout_string: []const u8, text: []const u8) ParseError!Da
                 .num_month, .zero_month => {
                     const number = try getnum(&rest, token.which == .zero_month);
                     if (number < 1 or number > 12) return error.ParseError;
-                    value.month = @enumFromInt(number);
+                    value.month = @fromBackingInt(@intCast(number));
                     month_set = true;
                 },
 

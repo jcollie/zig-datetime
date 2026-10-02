@@ -1184,7 +1184,7 @@ pub const State = struct {
             value.year = year orelse options.relative_to.year;
             const month = self.month orelse 1;
             if (month < 1 or month > 12) return error.ParseError;
-            value.month = @enumFromInt(month);
+            value.month = @fromBackingInt(@intCast(month));
             const day = self.day orelse 1;
             if (day < 1 or day > value.month.lastDay(value.year)) return error.ParseError;
             value.day = @intCast(day);

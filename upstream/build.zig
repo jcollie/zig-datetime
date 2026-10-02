@@ -201,14 +201,22 @@ pub fn build(b: *std.Build) void {
     });
     const run_go_dump = b.addRunArtifact(go_dump);
 
-    const run_go = b.addSystemCommand(&.{ "go", "run" });
+    // `go run` writes its build cache somewhere, and refuses to run at all
+    // without a writable one. The Zig cache directory is already the build's
+    // scratch space, so it goes there rather than in $HOME. A Run step's
+    // environment takes only strings, and the build no longer knows where its
+    // cache is while it is being configured, so the variable is set through
+    // `env` with the directory as an argument the runner resolves.
+    const run_go = b.addSystemCommand(&.{"env"});
+    run_go.addDirectoryArg2(b.graph.path(.local_cache, "go"), .{
+        .prefix = "GOCACHE=",
+        // Go refuses a relative GOCACHE.
+        .make_absolute = true,
+    });
+    run_go.addArgs(&.{ "go", "run" });
     run_go.addFileArg(b.path("src/oracle_go.go"));
     run_go.addFileArg(run_go_dump.captureStdOut(.{ .basename = "go.tsv" }));
     run_go.stdio = .inherit;
-    // `go run` writes its build cache somewhere, and refuses to run at all
-    // without a writable one. The Zig cache directory is already the build's
-    // scratch space, so it goes there rather than in $HOME.
-    run_go.setEnvironmentVariable("GOCACHE", b.pathFromRoot(".zig-cache/go"));
     run_go.setEnvironmentVariable("GOFLAGS", "-mod=mod");
     run_go.setEnvironmentVariable("TZ", "UTC");
 

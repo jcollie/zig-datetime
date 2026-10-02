@@ -369,7 +369,7 @@ pub const Locale = struct {
     /// and is what `DateTime.format` passes when a day number came
     /// before the month in the format string.
     pub fn monthName(self: Locale, month: Month, tag: FormatTag, in_format: bool) []const u8 {
-        const index = @intFromEnum(month) - 1;
+        const index = @backingInt(month) - 1;
         return switch (tag) {
             .MMMM => if (in_format) (self.months_in_format orelse self.months)[index] else self.months[index],
             .MMM => if (in_format) (self.months_short_in_format orelse self.months_short)[index] else self.months_short[index],
@@ -421,7 +421,7 @@ pub const Locale = struct {
                 if (name.len > text.len) continue;
                 if (!self.eql(text[0..name.len], name)) continue;
                 if (best == null or name.len > best.?.len) {
-                    best = .{ .month = @enumFromInt(number), .len = name.len };
+                    best = .{ .month = @fromBackingInt(@intCast(number)), .len = name.len };
                 }
             }
         }
@@ -456,7 +456,7 @@ pub const Locale = struct {
             if (name.len > text.len) continue;
             if (!self.eql(text[0..name.len], name)) continue;
             if (best == null or name.len > best.?.len) {
-                best = .{ .weekday = @enumFromInt(number), .len = name.len };
+                best = .{ .weekday = @fromBackingInt(@intCast(number)), .len = name.len };
             }
         }
         return best;
@@ -641,7 +641,7 @@ test en {
     }
 
     for (0..7) |number| {
-        const day: DayOfWeek = @enumFromInt(number);
+        const day: DayOfWeek = @fromBackingInt(@intCast(number));
         try std.testing.expectEqualStrings(day.longName(), en.weekdayName(day, .dddd));
         try std.testing.expectEqualStrings(day.shortName(), en.weekdayName(day, .ddd));
         try std.testing.expectEqualStrings(day.veryShortName(), en.weekdayName(day, .dd));
@@ -824,7 +824,7 @@ fn fromEntry(comptime entry: Entry) Locale {
         const weekdays_min = entry.weekdays_min;
 
         fn writeMeridiem(writer: *std.Io.Writer, hour: Hour, minute: Minute, case: Case) std.Io.Writer.Error!void {
-            try writer.writeAll(entry.meridiem[hour][meridiemSlot(minute)][@intFromEnum(case)]);
+            try writer.writeAll(entry.meridiem[hour][meridiemSlot(minute)][@backingInt(case)]);
         }
 
         fn matchMeridiem(text: []const u8) ?MeridiemMatch {
@@ -893,7 +893,7 @@ fn fromEntry(comptime entry: Entry) Locale {
             .months_declined = entry.months_declined,
         },
         .week = .{
-            .starts_on = @enumFromInt(entry.week_starts_on),
+            .starts_on = @fromBackingInt(@intCast(entry.week_starts_on)),
             .january_day_in_first_week = entry.january_day_in_first_week,
         },
         .months_decline = entry.months_decline,

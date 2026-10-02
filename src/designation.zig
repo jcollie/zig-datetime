@@ -44,7 +44,7 @@ pub const Designation = struct {
     /// POSIX rule such as `<AVERYLONGNAME>5` rather than about real data.
     pub fn from(text: []const u8) Designation {
         if (text.len > max_len) return .{};
-        if (std.mem.indexOfScalar(u8, text, 0) != null) return .{};
+        if (std.mem.findScalar(u8, text, 0) != null) return .{};
 
         var result: Designation = .{};
         @memcpy(result.bytes[0..text.len], text);
@@ -71,7 +71,7 @@ pub const Designation = struct {
     /// has to outlive it: read it from a `DateTime` held in a variable
     /// rather than from one returned and dropped in the same expression.
     pub fn slice(self: *const Designation) []const u8 {
-        const end = std.mem.indexOfScalar(u8, &self.bytes, 0) orelse max_len;
+        const end = std.mem.findScalar(u8, &self.bytes, 0) orelse max_len;
         return self.bytes[0..end];
     }
 
