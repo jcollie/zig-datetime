@@ -161,6 +161,9 @@
             name = "zig-datetime-windows";
             inputsFrom = [ default ];
             nativeBuildInputs = [ pkgs.wine64 ];
+            # `inputsFrom` carries the packages over and not the variables,
+            # and the oracles run here too.
+            inherit (default) TZDIR;
           };
         }
       );
