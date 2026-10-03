@@ -114,6 +114,14 @@
               # upstream/src/oracle_powershell.ps1.
               pkgs.powershell
             ];
+            # .NET on Linux finds a zone named by TZ under TZDIR, and when
+            # there is no zone database there or in /usr/share/zoneinfo it
+            # answers UTC for every zone without complaint. A CI runner's
+            # container has neither, so the PowerShell oracle saw every zone
+            # as UTC. This library never reads TZDIR, so its own tests are
+            # unaffected; the oracles that shell out to .NET, glibc and Go
+            # get the same database wherever they run.
+            TZDIR = "${pkgs.tzdata}/share/zoneinfo";
           };
         in
         {
@@ -136,6 +144,9 @@
             name = "zig-datetime-windows";
             inputsFrom = [ default ];
             nativeBuildInputs = [ pkgs.wine64 ];
+            # `inputsFrom` carries the packages over and not the variables,
+            # and the oracles run here too.
+            inherit (default) TZDIR;
           };
         }
       );
