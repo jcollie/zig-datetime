@@ -2,11 +2,11 @@
   "nodes": {
     "nixpkgs": {
       "locked": {
-        "lastModified": 1789006805,
-        "narHash": "sha256-q+GdZ3yq4Y2LXHRK0vKTM32Hwy7RCgUgy+hjwZLI5pY=",
-        "rev": "8ce4ef6cb6f871616146b9fe26d2a5ae594e94fe",
+        "lastModified": 1791179034,
+        "narHash": "sha256-C9upu7DiyqMGzdnVbapqVYx2QvBXubxyrhSKV3C+Ngo=",
+        "rev": "494ce7fd23ff6a5dff39e1fb11e9b6f2ac74bf25",
         "type": "tarball",
-        "url": "https://releases.nixos.org/nixos/unstable/nixos-26.11pre1070770.8ce4ef6cb6f8/nixexprs.tar.xz"
+        "url": "https://releases.nixos.org/nixos/unstable/nixos-26.11pre1085777.494ce7fd23ff/nixexprs.tar.xz"
       },
       "original": {
         "type": "tarball",
@@ -16,25 +16,23 @@
     "root": {
       "inputs": {
         "nixpkgs": "nixpkgs",
-        "zig": "zig",
         "zon2nix": "zon2nix"
       }
     },
     "zig": {
       "inputs": {
         "nixpkgs": [
+          "zon2nix",
           "nixpkgs"
         ],
-        "zon2nix": [
-          "zon2nix"
-        ]
+        "zon2nix": "zon2nix_2"
       },
       "locked": {
-        "lastModified": 1790977620,
-        "narHash": "sha256-KIjNPrmY4M68v9N86VDsNY6UFiM+Mon4S+Cf1RHYiEg=",
+        "lastModified": 1791202554,
+        "narHash": "sha256-vMmoVN5V/JrHA7oLYbWIxMgbUGU6cmM5IGmL34ItXxI=",
         "ref": "refs/heads/main",
-        "rev": "464e4de22498681ae374949df04c7a6f5f001519",
-        "revCount": 1733,
+        "rev": "daca71b61d521d2f6dbc2936541130717c98f4f7",
+        "revCount": 1737,
         "type": "git",
         "url": "https://git.jcollie.dev/jeff/zig-overlay.git"
       },
@@ -48,9 +46,7 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "zig": [
-          "zig"
-        ]
+        "zig": "zig"
       },
       "locked": {
         "lastModified": 1790979289,
@@ -62,6 +58,29 @@
       },
       "original": {
         "owner": "jcollie",
+        "repo": "zon2nix",
+        "type": "github"
+      }
+    },
+    "zon2nix_2": {
+      "inputs": {
+        "nixpkgs": [
+          "zon2nix",
+          "zig",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790583033,
+        "narHash": "sha256-Eo3hR521Yc2Gsqw7m/aqd5sn3/qi0XoSpJBIPPIYKkg=",
+        "owner": "jcollie",
+        "repo": "zon2nix",
+        "rev": "8e91c0d44aa49d0ac415f7e3046662e9aa754335",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jcollie",
+        "ref": "v0.9.0",
         "repo": "zon2nix",
         "type": "github"
       }
