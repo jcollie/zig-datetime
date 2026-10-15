@@ -70,11 +70,10 @@ let
       url = "https://data.iana.org/time-zones/releases/tzdata2026e.tar.gz";
       hash = "sha256-smiCgF8mqsWdWyIpeOZYBIS4NMzcmL6J3y8FptxTplI=";
     };
-    "win32-42.0.39-preview-mX5pFS564gPTezZn4v3TMxRnfJUrZNx1B_F2p2HKXOeG" = fetchZigGit {
+    "win32-42.0.39-preview-mX5pFc794wMcrMyFgsO1c4csBdowhpiqqwIyN_xjqI5z" = fetchzip {
       name = "zigwin32";
-      url = "https://github.com/marlersoft/zigwin32";
-      rev = "9f15c276b4e9d05afd34a10d8662a7dfc34647ea";
-      hash = "sha256-JCmUrieEnOKQViUGjPNrlGwJMMM4X/BjC3iur5fRbqA=";
+      url = "https://github.com/marlersoft/zigwin32/archive/fb2645891520f3e99931db17a7eba04057e87e89.tar.gz";
+      hash = "sha256-AHrMKAYCceE1V5PQHzdPnYljIzEQbDyyLvRVzRKGTn0=";
     };
   };
 
