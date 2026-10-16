@@ -1285,6 +1285,12 @@ Its author established its range by testing rather than proof, so
 compare the two on every ordinary run. Hinnant's version is kept in
 `src/hinnant.zig` for that purpose and is not part of the API.
 
+The time of day is split the way Joffe describes in [*A faster way to
+convert a timestamp ➜ Hour, Min, Sec*](https://www.benjoffe.com/fast-time-of-day):
+the whole minutes and the whole hours are both divided straight from the
+second of the day, so the two divisions run at once, and the minute and
+second follow by subtraction. That is in `src/secondofday.zig`.
+
 Hinnant dedicates his algorithms to the public domain. Joffe's is written
 here from the description in his article rather than translated from his
 reference implementation. Both are here under the same MIT licence as the
@@ -1625,6 +1631,10 @@ The documents this library is written against.
   week*, 17 August 2026, <https://www.benjoffe.com/fast-day-of-week>. The
   64-bit multiply-add-shift weekday that was measured against
   `DayOfWeek.fromDaysSinceStartOfEra` and not adopted.
+- **[JOFFE-TIME]** Joffe, B., *A faster way to convert a timestamp ➜ Hour,
+  Min, Sec*, 7 September 2026, <https://www.benjoffe.com/fast-time-of-day>.
+  The split of a second of the day into hour, minute and second that
+  `Instant.asDateTime` and `DateTime.toUtc` use.
 - **[NERI-LEAP]** Neri, C., *libstdc++: Simplify year::is_leap()*, GCC
   commit 86a0df1a6c7f, 11 November 2023,
   <https://github.com/gcc-mirror/gcc/commit/86a0df1a6c7fe4a835620b868e76ea78d42d6620>.

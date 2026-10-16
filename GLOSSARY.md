@@ -25,3 +25,10 @@ _Avoid_: days since start of era, Rata Die (which counts from a different day)
 One 400-year cycle of the proleptic Gregorian calendar, always 146097 days
 long, after which the calendar repeats exactly.
 _Avoid_: epoch
+
+### Clock
+
+**Second of day**:
+The number of seconds elapsed since midnight, 0 through 86399. A leap
+second, the 61st second of its minute, is not a second of day.
+_Avoid_: remainder, time (on its own)

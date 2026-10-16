@@ -23,6 +23,7 @@ const Year = @import("year.zig").Year;
 const Month = @import("month.zig").Month;
 const Day = @import("day.zig").Day;
 const json = @import("json.zig");
+const secondofday = @import("secondofday.zig");
 
 timestamp: i128,
 
@@ -134,7 +135,7 @@ pub fn asDateTime(self: Instant) DateTime {
     const seconds = @divFloor(self.timestamp, std.time.ns_per_s);
 
     const days: Date.DaysType = Date.daysFromSecondsSaturating(@intCast(std.math.clamp(seconds, std.math.minInt(i64), std.math.maxInt(i64))));
-    const second_of_day: i64 = @intCast(@mod(seconds, std.time.s_per_day));
+    const clock = secondofday.split(@intCast(@mod(seconds, std.time.s_per_day)));
 
     const date = Date.fromDaysSinceStartOfEra(days);
 
@@ -142,9 +143,9 @@ pub fn asDateTime(self: Instant) DateTime {
         .year = date.year,
         .month = date.month,
         .day = date.day,
-        .hour = @intCast(@divTrunc(second_of_day, std.time.s_per_hour)),
-        .minute = @intCast(@divTrunc(@mod(second_of_day, std.time.s_per_hour), std.time.s_per_min)),
-        .second = @intCast(@mod(second_of_day, std.time.s_per_min)),
+        .hour = clock.hour,
+        .minute = clock.minute,
+        .second = clock.second,
         .nanosecond = nanosecond,
         .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
         .offset = 0,

@@ -43,6 +43,7 @@ const print = @import("print.zig");
 const read = @import("read.zig");
 const iso8601 = @import("iso8601.zig");
 const json = @import("json.zig");
+const secondofday = @import("secondofday.zig");
 
 nanosecond: Nanosecond = 0, // [0..999999999]
 second: Second = 0, // [0..61]
@@ -2242,23 +2243,26 @@ pub fn toUtc(self: DateTime) DateTime {
         .month = self.month,
         .day = self.day,
     };
-    const second_of_day = @as(i32, self.hour) * std.time.s_per_hour +
+    // Seconds from this date's midnight to the moment, in UTC. The offset
+    // can take it past either end of the day, so it is not yet a second of
+    // the day; the floor division carries the days out and leaves one.
+    const seconds = @as(i32, self.hour) * std.time.s_per_hour +
         @as(i32, self.minute) * std.time.s_per_min +
         @as(i32, if (leap_second) 59 else self.second) -
         self.offset;
 
     const days = date.toDaysSinceStartOfEra() +
-        @as(Date.DaysType, @divFloor(second_of_day, std.time.s_per_day));
-    const remainder = @mod(second_of_day, std.time.s_per_day);
+        @as(Date.DaysType, @divFloor(seconds, std.time.s_per_day));
+    const clock = secondofday.split(@intCast(@mod(seconds, std.time.s_per_day)));
 
     const utc_date = Date.fromDaysSinceStartOfEra(days);
     return .{
         .year = utc_date.year,
         .month = utc_date.month,
         .day = utc_date.day,
-        .hour = @intCast(@divTrunc(remainder, std.time.s_per_hour)),
-        .minute = @intCast(@divTrunc(@mod(remainder, std.time.s_per_hour), std.time.s_per_min)),
-        .second = if (leap_second) 60 else @intCast(@mod(remainder, std.time.s_per_min)),
+        .hour = clock.hour,
+        .minute = clock.minute,
+        .second = if (leap_second) 60 else clock.second,
         .nanosecond = self.nanosecond,
         .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
         .offset = 0,
