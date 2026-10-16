@@ -143,7 +143,7 @@ pub const AvailableFormat = struct {
 /// Every table has a `format` half that is always there and a
 /// `stand_alone` half that is null when the language writes the same
 /// names in both contexts, which is most of them. Reading through
-/// `monthName` and its neighbours rather than indexing the tables is what
+/// `monthName` and its neighbors rather than indexing the tables is what
 /// makes that fallback invisible to a caller.
 pub const Locale = struct {
     /// The CLDR locale identifier, in CLDR's own spelling: "en", "fr",

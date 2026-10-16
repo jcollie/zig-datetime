@@ -24,7 +24,7 @@
 //! left off, so the three of them cover `formatDate`, `formatTime` and
 //! `formatDateTime`. Nothing on the ICU side is given a pattern for
 //! these; it is asked the same question through `createDateInstance` and
-//! its neighbours, so what is being compared is two libraries' reading of
+//! its neighbors, so what is being compared is two libraries' reading of
 //! the same locale data rather than one library's reading of the other's
 //! answer.
 
@@ -79,7 +79,7 @@ const offsets = [_]i32{
     0, // where the ISO 8601 fields write `Z` and the localized ones do not
     -5 * 3600, // a whole number of hours
     5 * 3600 + 45 * 60, // Kathmandu, a quarter hour past the half
-    -(9 * 3600 + 30 * 60), // Adelaide's neighbour on the other side
+    -(9 * 3600 + 30 * 60), // Adelaide's neighbor on the other side
     14 * 3600, // Kiritimati, the far end of the range
     -21036, // America/Chicago's local mean time, which has seconds in it
 };

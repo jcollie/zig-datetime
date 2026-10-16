@@ -567,7 +567,7 @@ test writeEnglishOrdinal {
 ///
 /// Which one it is does not matter: the number in front of it has already
 /// been read, so this only has to say how much to step over. That is
-/// moment's behaviour too -- its `dayOfMonthOrdinalParse` accepts any of
+/// moment's behavior too -- its `dayOfMonthOrdinalParse` accepts any of
 /// the four after any number.
 fn matchEnglishOrdinal(text: []const u8, n: u32, tag: FormatTag) ?usize {
     _ = n;

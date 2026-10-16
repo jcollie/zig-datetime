@@ -413,7 +413,7 @@ const Cursor = struct {
         try std.testing.expect(!none.fws());
     }
 
-    /// Consumes one `comment` -- a parenthesised aside -- and reports
+    /// Consumes one `comment` -- a parenthesized aside -- and reports
     /// whether there was one. An unterminated comment is
     /// `error.ParseError`.
     ///
@@ -1022,7 +1022,7 @@ test "round trip through DateTime.format" {
 }
 
 test "the obsolete forms this refuses are the ones rfc822 reads" {
-    // The division of labour between the two modules, asserted from both
+    // The division of labor between the two modules, asserted from both
     // sides so that it cannot quietly stop being true. Each of these is
     // well formed RFC 822 and obsolete RFC 5322, and the lenient parser
     // is what a caller falls back to.

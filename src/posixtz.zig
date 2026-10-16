@@ -203,15 +203,15 @@ pub const Posix = struct {
     /// total either way.
     ///
     /// The bounds are the nearest switch either side, and a switch either
-    /// side may belong to a neighbouring year, since a switch time can be
+    /// side may belong to a neighboring year, since a switch time can be
     /// up to 167 hours off its day and so spill out of the year that
     /// names it. So the work is: convert `timestamp` to a local date once
     /// to name its year, evaluate that year's two switches, and take the
-    /// neighbouring years' as well unless it can be shown they cannot
+    /// neighboring years' as well unless it can be shown they cannot
     /// help. `spanAtScanning` is the same thing with nothing shown and
     /// every year evaluated, and a test holds the two against each other.
     ///
-    /// Naming the year is the expensive part, so the neighbours are
+    /// Naming the year is the expensive part, so the neighbors are
     /// reached by stepping the first of January by a year's length rather
     /// than converting again, and every switch is worked out as an offset
     /// from that one day number.
@@ -243,7 +243,7 @@ pub const Posix = struct {
 
         // When the instant sits between this year's own two switches, and
         // both of them are far enough inside the year, no switch of the
-        // neighbouring years can be between them and there is nothing to
+        // neighboring years can be between them and there is nothing to
         // gain by working those out.
         //
         // Far enough is provable rather than assumed. A switch for year Y
@@ -282,7 +282,7 @@ pub const Posix = struct {
         const previous = year -| 1;
         const next = year +| 1;
 
-        // Which neighbouring years can hold the bound this year is
+        // Which neighboring years can hold the bound this year is
         // missing. When the switches are clear of both ends of the year,
         // every switch of the year before lies below this year's pair and
         // every switch of the year after lies above it, so only the side
@@ -291,7 +291,7 @@ pub const Posix = struct {
         const want_previous = !clear_of_the_year or timestamp < lower;
         const want_next = !clear_of_the_year or timestamp >= upper;
 
-        // A year equal to its own neighbour is one the arithmetic above
+        // A year equal to its own neighbor is one the arithmetic above
         // saturated at, and would only repeat switches already in hand.
         if (want_previous and previous != year) {
             const first = january_first - yearLength(previous);
@@ -372,7 +372,7 @@ pub const Posix = struct {
 
         // Saturating, because `year` may already be the first or last a
         // `Year` can hold. A repeated year only puts a duplicate in the
-        // list below, which the walk does not mind. The neighbouring
+        // list below, which the walk does not mind. The neighboring
         // years' first of January is this one's stepped by the length of a
         // year, which saves converting them.
         const previous = year -| 1;
@@ -469,7 +469,7 @@ pub const Posix = struct {
         try testing.expectEqual(@as(i64, 1730617200), summer.end);
 
         // Midwinter is standard time, and its span is bounded by switches in
-        // the years either side, which is why the neighbouring years matter.
+        // the years either side, which is why the neighboring years matter.
         const winter = rule.spanAt(1704067200);
         try testing.expect(!winter.local_type.is_dst);
         try testing.expectEqualStrings("CST", winter.local_type.designation);
@@ -487,7 +487,7 @@ pub const Posix = struct {
     /// This used to have a search of its own, over one year rather than
     /// three, and it was wrong for rules whose two switches do not sit
     /// tidily inside the year that names them: a switch time may be up to
-    /// 167 hours either side of its day and so spill into a neighbouring
+    /// 167 hours either side of its day and so spill into a neighboring
     /// year, and two switches landing in the same week can swap order
     /// from year to year. Fuzzing found both, which is two more than
     /// reading it found, so it defers to `spanAt` and there is one search
@@ -559,7 +559,7 @@ pub fn parse(text: []const u8) ParseError!Posix {
 }
 
 /// How many days `year` has, which is how the rule evaluation steps from
-/// one year's first of January to its neighbour's without converting one.
+/// one year's first of January to its neighbor's without converting one.
 fn yearLength(year: Year) Date.DayNumber {
     return if (Month.Feb.lastDay(year) == 29) 366 else 365;
 }
@@ -813,7 +813,7 @@ const Cursor = struct {
 
     /// Reads the `/time` of a rule, which unlike a zone offset may run to
     /// 167 hours either side of midnight so that a rule can name a moment
-    /// in a neighbouring week.
+    /// in a neighboring week.
     fn ruleTime(self: *Cursor) ParseError!i32 {
         // `peek` requires the caller to have checked, and this is the
         // caller: a rule ending in its separator, `M3.2.0/`, left nothing

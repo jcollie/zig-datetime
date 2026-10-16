@@ -449,7 +449,7 @@ test "parse" {
                 .offset = -6 * std.time.s_per_hour,
             },
         },
-        // The HTTP flavour: four digit year, GMT.
+        // The HTTP flavor: four digit year, GMT.
         .{
             .value = "Sun, 06 Nov 1994 08:49:37 GMT",
             .expected = .{
@@ -463,7 +463,7 @@ test "parse" {
                 .offset = 0,
             },
         },
-        // The original RFC 822 flavour: no day of the week, one digit day
+        // The original RFC 822 flavor: no day of the week, one digit day
         // of the month, two digit year, no seconds, named zone.
         .{
             .value = "2 Jun 82 12:34 EST",

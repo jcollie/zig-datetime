@@ -576,7 +576,7 @@ test specifierOf {
 /// run of `d`s it belongs to; one or two is a day of the month, and says
 /// yes. Failing that it looks forwards past the month the same way. A run
 /// of three or more is a weekday name and says nothing. Quotes are not
-/// taken into account, which is .NET's behaviour rather than an oversight
+/// taken into account, which is .NET's behavior rather than an oversight
 /// here: a `d` inside quoted text counts.
 fn usesGenitive(comptime format_string: []const u8, comptime at: usize, comptime count: usize) bool {
     comptime {

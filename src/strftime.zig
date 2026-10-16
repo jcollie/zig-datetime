@@ -36,7 +36,7 @@
 //! the oracle carries the same list so that anything else is a failure.
 //! Writing, there are three:
 //!
-//! - **`%s` honours the offset.** A `struct tm` reaches a count of
+//! - **`%s` honors the offset.** A `struct tm` reaches a count of
 //!   seconds through `mktime`, so glibc reads the fields against the
 //!   process's own timezone and ignores `tm_gmtoff`. A `DateTime` carries
 //!   the offset that says which instant it names, and uses it.
@@ -390,7 +390,7 @@ const Shape = struct {
 ///
 /// The year-ish fields -- `%Y`, `%G`, `%C` and `%s` -- are the ones with
 /// no default width, so year 5 is `5` rather than `0005`. That is glibc's
-/// behaviour rather than an oversight here: a width given explicitly
+/// behavior rather than an oversight here: a width given explicitly
 /// still applies, so `%4Y` is `0005`.
 fn shapeOf(comptime which: Conversion) Shape {
     return switch (which) {
@@ -423,7 +423,7 @@ fn oppositeOf(comptime which: Conversion) Transform {
 /// `%P` is always lower case, whatever flag is written with it, because
 /// lower case is the whole of what distinguishes it from `%p`. The
 /// composite conversions take no case from a flag either, with `%c` the
-/// single exception; both of those are glibc's behaviour, checked by the
+/// single exception; both of those are glibc's behavior, checked by the
 /// oracle.
 fn transformOf(comptime field: Field) Transform {
     if (field.which == .meridiem_lower) return .none;
@@ -599,7 +599,7 @@ fn writeConversion(
         .meridiem_upper => try in.writeMeridiem(into, value.hour, value.minute, .upper),
         .meridiem_lower => try in.writeMeridiem(into, value.hour, value.minute, .lower),
 
-        // The instant this reading names, which honours the offset. glibc
+        // The instant this reading names, which honors the offset. glibc
         // cannot: a `struct tm` reaches it through `mktime`, so its `%s`
         // reads the fields against the process's own timezone and ignores
         // `tm_gmtoff` entirely. The oracle compares this one only at a
@@ -812,7 +812,7 @@ test writeOffset {
 ///
 /// Truncating rather than rounding, and the leading zeros kept, so that
 /// `%3N` of 1,500,000 nanoseconds is `001` -- a millisecond and a half
-/// read as one millisecond. That is `date(1)`'s behaviour, and it is the
+/// read as one millisecond. That is `date(1)`'s behavior, and it is the
 /// only reading that makes `%S.%3N` a time rather than an approximation.
 fn writeFraction(writer: *std.Io.Writer, nanosecond: Nanosecond, digits: u8) !void {
     var buffer: [9]u8 = undefined;
@@ -1085,7 +1085,7 @@ const State = struct {
         }
 
         // A meridiem without a twelve hour clock beside it changes
-        // nothing, which is glibc's behaviour: `%H %p` of "13 AM" is one
+        // nothing, which is glibc's behavior: `%H %p` of "13 AM" is one
         // o'clock in the afternoon and a contradiction nobody asked about.
 
         if (!self.value.asDate().isRegular()) return error.ParseError;

@@ -16,7 +16,7 @@
 //! instead, which has the same shape and no data.
 //!
 //! `zig build oracle` checks the format strings against moment.js, which
-//! they are modelled on, by running both over the same corpus and diffing.
+//! they are modeled on, by running both over the same corpus and diffing.
 //! moment is pinned in `build.zig.zon` and fetched lazily, and the runner
 //! is the `node` named in `flake.nix`. It is part of `zig build test`,
 //! because the two agree.

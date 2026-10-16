@@ -19,7 +19,7 @@
 //!     zig build test          every oracle
 //!
 //! An oracle checks this library's answers against the implementation they
-//! were modelled on -- moment.js, Go's `time`, ICU, the C library, .NET and
+//! were modeled on -- moment.js, Go's `time`, ICU, the C library, .NET and
 //! PowerShell -- rather than against what somebody remembered of it.
 
 const std = @import("std");
@@ -108,7 +108,7 @@ pub fn build(b: *std.Build) void {
     );
 
     if (b.lazyDependency("moment", .{})) |moment| {
-        // The format strings are modelled on moment.js, so moment is what
+        // The format strings are modeled on moment.js, so moment is what
         // says whether they behave. `src/oracle_dump.zig` formats a corpus
         // and `src/oracle.js` asks moment the same questions and reports
         // every answer that differs.

@@ -111,7 +111,7 @@ fn mutate(random: std.Random, seeds: []const []const u8, buffer: []u8) []const u
     var len = @min(base.len, buffer.len);
     @memcpy(buffer[0..len], base[0..len]);
 
-    // Between one and four changes, so an input stays recognisable often
+    // Between one and four changes, so an input stays recognizable often
     // enough to get deep and is wrecked often enough to test the shallow
     // paths too.
     const rounds = random.uintLessThan(usize, 4) + 1;

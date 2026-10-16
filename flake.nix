@@ -44,7 +44,7 @@
         {
           # Every package either manifest names, this one's and upstream/'s,
           # as a farm laid out the way `zig build --system` reads one. The
-          # workflows realise it and hand it to Zig, so that the dependencies
+          # workflows realize it and hand it to Zig, so that the dependencies
           # come through Nix and the niks3 cache rather than from the network.
           # Regenerate it with
           #
@@ -95,7 +95,7 @@
               pkgs.nodejs
               # The same job for Go's time layouts: `go` is both the
               # oracle for src/golayout.zig and where the reference
-              # behaviour is read from. See tools/oracle_go.go.
+              # behavior is read from. See tools/oracle_go.go.
               pkgs.go
               # And the same again for the CLDR patterns, where ICU is
               # the reference implementation of UTS #35. The C++ in

@@ -561,7 +561,7 @@ fn writeTag(
                     //     }
                     // },
 
-                    // Constant, which is moment.js's behaviour rather than an
+                    // Constant, which is moment.js's behavior rather than an
                     // oversight: see the sequences' own documentation.
                     .z => try writer.writeAll("UTC"),
                     .zz => try writer.writeAll("Coordinated Universal Time"),
@@ -1689,7 +1689,7 @@ const ParseWalk = struct {
         // it has to be right here.
         //
         // Trying the same match at successive places is what does the
-        // searching, so every sequence gets the behaviour without any of
+        // searching, so every sequence gets the behavior without any of
         // them knowing about it.
         const limit = if (self.options.mode == .strict) 0 else self.left.len;
 
@@ -2254,7 +2254,7 @@ test dayOfThisYear {
 
 /// Returns the same point in time expressed in UTC, that is with the
 /// fields shifted back by `offset` seconds and `offset` itself set to
-/// zero. The shift rolls over into the neighbouring day, month, and year
+/// zero. The shift rolls over into the neighboring day, month, and year
 /// as needed, and `weekday` is recomputed to match. Seconds and
 /// nanoseconds are carried through untouched, so a value holding a leap
 /// second keeps it.

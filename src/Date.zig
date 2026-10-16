@@ -194,7 +194,7 @@ test dayNumberFromSecondsSaturating {
 /// one, so the long one of each cycle comes *first*. Counted forwards from
 /// 1 March it comes last, and that is where the `+ 3` in the usual
 /// `(4 * days + 3) / 146097` comes from. Joffe picked `eras`
-/// to centre the widest 64-bit range on the epoch; a `Date` uses a small
+/// to center the widest 64-bit range on the epoch; a `Date` uses a small
 /// part of it.
 ///
 /// **Centuries, then the Julian map.** `cen = rev / 36524.25`, done as a
@@ -605,7 +605,7 @@ pub fn dayOfWeek(self: Date) DayOfWeek {
 ///
 /// The last days of December can belong to week 1 of the year after, and
 /// the first days of January to the last week of the year before. At the
-/// two ends of the calendar that neighbouring year is one a `Year` cannot
+/// two ends of the calendar that neighboring year is one a `Year` cannot
 /// hold, so the week of 31 December of the last `Year` would have nowhere
 /// to say which year it is in. This is one bit wider, which is exactly
 /// enough, and means `weekOfYear` never has to answer with a year that is
@@ -639,14 +639,14 @@ pub const Week = struct {
 /// by default, says Sunday and the 1st. Everything else follows.
 ///
 /// Because a week belongs wholly to one year, the days at either end of a
-/// calendar year may fall in a week of its neighbour, which is why the
+/// calendar year may fall in a week of its neighbor, which is why the
 /// year is returned alongside the week and why formatting a week beside
 /// the calendar year would be wrong.
 ///
 /// The offset of week 1 from the start of the year is found from the
 /// weekday of the anchoring January day, the day of the year is measured
 /// against it, and a result that falls off either end is carried into the
-/// neighbouring year. This is moment.js's formulation, followed
+/// neighboring year. This is moment.js's formulation, followed
 /// deliberately so that the two cannot disagree; see `tools/oracle.js`.
 pub fn weekOfYear(
     self: Date,
@@ -664,7 +664,7 @@ pub fn weekOfYear(
     const day_of_year = @as(i32, self.month.daysBefore(self.year)) + self.day;
     const week = @divFloor(day_of_year - offset - 1, 7) + 1;
 
-    // The neighbouring years are `WeekYear`s, which reach one year past
+    // The neighboring years are `WeekYear`s, which reach one year past
     // either end of the calendar, so these never overflow and never have
     // to answer with a year other than the right one.
     if (week < 1) {
@@ -833,7 +833,7 @@ test "the week rules answer at the ends of the calendar" {
                 try std.testing.expect(weeks >= 1);
 
                 // The first and last day of the year, which are the two
-                // that can fall into a neighbouring year's week.
+                // that can fall into a neighboring year's week.
                 for ([_]Date{
                     .{ .year = year, .month = .Jan, .day = 1 },
                     .{ .year = year, .month = .Jan, .day = 2 },
@@ -852,8 +852,8 @@ test "the week rules answer at the ends of the calendar" {
         }
     }
 
-    // A day of the year outside the year is carried into its neighbour,
-    // and clamped rather than carried when there is no neighbour.
+    // A day of the year outside the year is carried into its neighbor,
+    // and clamped rather than carried when there is no neighbor.
     try std.testing.expectEqual(
         Date{ .year = first, .month = .Jan, .day = 1 },
         fromDayOfYear(first, -1000),
@@ -924,14 +924,14 @@ test isoWeek {
 
 /// Returns the date `day_of_year` days into `year`, counting from 1.
 ///
-/// Values outside the year are carried into its neighbour rather than
+/// Values outside the year are carried into its neighbor rather than
 /// refused, so day 0 is the last day of the year before and day 366 of an
 /// ordinary year is the first of the year after. `weekOfYear`'s inverse
 /// needs that, because a week can begin in one year and end in another.
 pub fn fromDayOfYear(year: Year, day_of_year: i32) Date {
     const length: i32 = if (leap.is(year)) 366 else 365;
 
-    // Saturating, because carrying into a neighbour has no neighbour to
+    // Saturating, because carrying into a neighbor has no neighbor to
     // carry into at the first and last year a `Year` can hold. Stepping
     // to the same year again would recur for ever, so the day is clamped
     // into the year instead and the answer stays inside the calendar.
@@ -961,7 +961,7 @@ test fromDayOfYear {
     try std.testing.expectEqual(Date{ .year = 2024, .month = .Mar, .day = 15 }, fromDayOfYear(2024, 75));
     try std.testing.expectEqual(Date{ .year = 2024, .month = .Dec, .day = 31 }, fromDayOfYear(2024, 366));
 
-    // Out of range carries into the neighbouring year rather than failing.
+    // Out of range carries into the neighboring year rather than failing.
     try std.testing.expectEqual(Date{ .year = 2023, .month = .Dec, .day = 31 }, fromDayOfYear(2024, 0));
     try std.testing.expectEqual(Date{ .year = 2025, .month = .Jan, .day = 1 }, fromDayOfYear(2024, 367));
     try std.testing.expectEqual(Date{ .year = 2026, .month = .Jan, .day = 1 }, fromDayOfYear(2025, 366));

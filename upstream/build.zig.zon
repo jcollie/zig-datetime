@@ -13,7 +13,7 @@
         .datetime = .{
             .path = "..",
         },
-        // moment.js, which the format strings are modelled on and which the
+        // moment.js, which the format strings are modeled on and which the
         // embedded locale table is read out of.
         //
         // Pinned to a version rather than taken from the dev shell, because

@@ -145,7 +145,7 @@ fn openZone(io: std.Io, gpa: std.mem.Allocator, environ: *std.process.Environ.Ma
 }
 ```
 
-### Honouring the user's `TZ`
+### Honoring the user's `TZ`
 
 `TZ` is not simply a zone name. It may be an absolute path to a TZif file,
 or a complete POSIX rule that names no file at all, and by long convention
@@ -385,7 +385,7 @@ Two places it does not follow moment, both deliberate:
   not going to lie about a value it has.
 
 - **`z` and `zz` are constant**, `UTC` and `Coordinated Universal Time`,
-  whatever the offset. That is moment's own behaviour rather than a gap:
+  whatever the offset. That is moment's own behavior rather than a gap:
   it has no zone names at all, and real abbreviations come from
   moment-timezone, a separate package. The real one is on the value
   instead, put there by the zone that knows it:
@@ -510,7 +510,7 @@ an example. The layouts Go's own package names are here under the names it
 gives them, so `golayout.layout.rfc3339` and `golayout.layout.kitchen`
 mean what they do there.
 
-Go's behaviour is the specification and `zig build oracle-go` checks it
+Go's behavior is the specification and `zig build oracle-go` checks it
 against Go's own `time` package, formatting and parsing both. That
 includes following Go where it is unhelpful: `2006` writes a year before
 the common era with a leading minus and then will not read one back, and
@@ -609,7 +609,7 @@ is what a `DateTime` is, and a Gregorian calendar whose changeover has
 been pushed before every date there is, because ICU's is Julian before
 1582 and this library's is proleptic Gregorian throughout.
 
-Four things are deliberately not ICU's behaviour, and each is a limit
+Four things are deliberately not ICU's behavior, and each is a limit
 rather than a bug:
 
 - **`V`, `VV` and `VVV` are refused**, along with the skeleton-only `j`,
@@ -639,7 +639,7 @@ rather than a bug:
   French as written in Mali has a joining pattern that CLDR's JSON and
   ICU inherit differently, and they disagree about a comma.
 
-Beyond that, `z` and its neighbours take UTS #35's documented fallback:
+Beyond that, `z` and its neighbors take UTS #35's documented fallback:
 given no zone to name, the localized GMT format, so `z` is `GMT-5` and
 `zzzz` is `GMT-05:00`, in the locale's own spelling and digits. The
 abbreviation a zone did supply is on the value instead, put there by the
@@ -714,7 +714,7 @@ shell.
 Those are the deliberate differences, and the oracle carries the same
 list so that anything else fails. Writing:
 
-- **`%s` honours the offset.** glibc reaches a `struct tm` through
+- **`%s` honors the offset.** glibc reaches a `struct tm` through
   `mktime`, so its count of seconds is the fields read against the
   process's timezone and `tm_gmtoff` is ignored. A `DateTime` carries the
   offset that says which instant it names, and uses it.
@@ -1405,7 +1405,7 @@ from inside that directory, which is the same thing without the hop.
 
 moment and CLDR are pinned there, because each is the specification being
 tested against and a floating version would move the target; Go and ICU are
-not, because their behaviour is part of a toolchain rather than something to
+not, because their behavior is part of a toolchain rather than something to
 fetch, and each oracle prints the version it ran against. PowerShell is
 the same, and prints the .NET under it too. `-Dcldr-locales`
 narrows the embedded table, which is the quick way to iterate on one locale.
@@ -1524,7 +1524,7 @@ The documents this library is written against.
   <https://www.gnu.org/software/libc/manual/html_node/Formatting-Calendar-Time.html>.
   The extensions POSIX does not have — `%P`, `%k`, `%l`, `%s`, the `-`, `_`,
   `0`, `^` and `#` flags and the field width — and, through
-  `upstream/src/oracle_strftime.c`, the behaviour those are checked against.
+  `upstream/src/oracle_strftime.c`, the behavior those are checked against.
 - **[COREUTILS]** Free Software Foundation, "date invocation", *GNU Coreutils
   Manual*,
   <https://www.gnu.org/software/coreutils/manual/html_node/date-invocation.html>.
@@ -1618,7 +1618,7 @@ The documents this library is written against.
   <https://github.com/dotnet/runtime/tree/v10.0.0/src/libraries/System.Private.CoreLib/src/System/Globalization>.
   `FormatCustomized`, `ParseByFormat`, `DoStrictParse` and the two fast
   paths for `o` and `r`, which `dotnet` follows where the documentation is
-  silent, and through `zig build oracle-powershell` the behaviour it is
+  silent, and through `zig build oracle-powershell` the behavior it is
   checked against.
 - **[TZDB]** Internet Assigned Numbers Authority, *Time Zone Database*,
   <https://www.iana.org/time-zones>. The zone data itself, and `zic`, the

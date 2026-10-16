@@ -435,7 +435,7 @@ test format {
 /// Writes `value` under a pattern that was not known until now.
 ///
 /// This is what the locale's own patterns go through, and what a pattern
-/// read from a configuration file or a message catalogue goes through.
+/// read from a configuration file or a message catalog goes through.
 /// It returns the errors `format` raises at compile time, since a pattern
 /// that arrived as data can be wrong in a way the program has to survive.
 pub fn formatRuntime(
@@ -971,7 +971,7 @@ fn writeField(
         // `Y` is the year the week belongs to, which is not always the
         // calendar year: the last days of December can fall in week 1 of
         // the year after. Written astronomically rather than by era,
-        // which is ICU's behaviour and the reason `Y` and `y` can differ
+        // which is ICU's behavior and the reason `Y` and `y` can differ
         // by more than a year before the common era.
         'Y' => {
             const week = date.weekOfYear(locale.first_day, @intCast(locale.min_days_in_first_week));
@@ -1072,7 +1072,7 @@ fn writeField(
         // nothing is ever the ISO number here.
         //
         // `cc` writes the same unpadded number as `c`, which is ICU's
-        // behaviour rather than UTS #35's: the table assigns `c` one
+        // behavior rather than UTS #35's: the table assigns `c` one
         // numeric form and says nothing about two, and padding a weekday
         // to two digits is not something any locale asks for.
         'e', 'c' => {

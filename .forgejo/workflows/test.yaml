@@ -45,7 +45,7 @@ jobs:
       - name: Check REUSE compliance
         run: nix develop .#default -c reuse lint
 
-      - name: Realise the Zig packages
+      - name: Realize the Zig packages
         # Every package either manifest names, fetched by Nix -- and so from
         # the niks3 cache once any run on main has pushed them -- rather than
         # by Zig from the network. `--system` then forbids Zig to fetch at
@@ -92,7 +92,7 @@ jobs:
       - name: Check out
         uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Realise the Zig packages
+      - name: Realize the Zig packages
         # zigwin32 among them; see the step of the same name above.
         run: echo "ZIG_SYSTEM=$(nix build --no-link --print-out-paths .#zig-deps)" >> "$GITHUB_ENV"
 

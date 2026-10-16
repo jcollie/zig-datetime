@@ -971,7 +971,7 @@ test "TZ values are sorted into what they ask for" {
         system.resolveTz(":/usr/share/zoneinfo/America/Chicago").path,
     );
 
-    // Rules, recognised by the comma before their switch dates or by the
+    // Rules, recognized by the comma before their switch dates or by the
     // angle brackets around a numeric abbreviation.
     try testing.expectEqualStrings("CST6CDT,M3.2.0,M11.1.0", system.resolveTz("CST6CDT,M3.2.0,M11.1.0").rule);
     try testing.expectEqualStrings("EST5EDT,M3.2.0/2,M11.1.0/2", system.resolveTz("EST5EDT,M3.2.0/2,M11.1.0/2").rule);
