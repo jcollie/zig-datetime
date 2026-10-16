@@ -726,14 +726,37 @@ test januaryFirstWeekday {
     );
 }
 
-/// `leap.is`, for any year at all rather than only a `Year`.
+/// `leap.is`, for any year at all rather than only a `Year`, by the same
+/// formula; `leap.is` explains it.
 fn isLeapAnyYear(year: i64) bool {
-    return @mod(year, 4) == 0 and (@mod(year, 100) != 0 or @mod(year, 400) == 0);
+    const mask: i64 = if (@rem(year, 25) == 0) 0b1111 else 0b11;
+    return year & mask == 0;
 }
 
 test isLeapAnyYear {
     for ([_]Year{ 2000, 1900, 2024, 2025, 0, -4, -100, std.math.maxInt(Year), std.math.minInt(Year) }) |year| {
         try std.testing.expectEqual(leap.is(year), isLeapAnyYear(year));
+    }
+    // Every year in a span around year 0 and at each end of `Year`.
+    var year: Year = -100_000;
+    while (year <= 100_000) : (year += 1) {
+        try std.testing.expectEqual(leap.is(year), isLeapAnyYear(year));
+    }
+    for (0..1000) |i| {
+        const offset: Year = @intCast(i);
+        const low = std.math.minInt(Year) + offset;
+        const high = std.math.maxInt(Year) - offset;
+        try std.testing.expectEqual(leap.is(low), isLeapAnyYear(low));
+        try std.testing.expectEqual(leap.is(high), isLeapAnyYear(high));
+    }
+    // And the years just past either end, which `leap.is` cannot be asked
+    // about, against the rule as it is usually written.
+    for (1..1000) |i| {
+        const offset: i64 = @intCast(i);
+        for ([_]i64{ @as(i64, std.math.minInt(Year)) - offset, @as(i64, std.math.maxInt(Year)) + offset }) |y| {
+            const textbook = @rem(y, 4) == 0 and (@rem(y, 100) != 0 or @rem(y, 400) == 0);
+            try std.testing.expectEqual(textbook, isLeapAnyYear(y));
+        }
     }
 }
 

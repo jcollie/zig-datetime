@@ -1617,6 +1617,15 @@ The documents this library is written against.
 - **[JOFFE]** Joffe, B., *A Very Fast 64-Bit Date Algorithm: 30–40%
   faster*, 23 November 2025, <https://www.benjoffe.com/fast-date-64>. The
   conversion from a day number to a date in `Date.fromDaysSinceStartOfEra`.
+- **[JOFFE-LEAP]** Joffe, B., *The fastest "Is Leap Year" functions*,
+  11 December 2025, updated 18 December 2025,
+  <https://www.benjoffe.com/fast-leap-year>. The survey and benchmarks of
+  leap-year tests that `leap.is` was chosen from.
+- **[NERI-LEAP]** Neri, C., *libstdc++: Simplify year::is_leap()*, GCC
+  commit 86a0df1a6c7f, 11 November 2023,
+  <https://github.com/gcc-mirror/gcc/commit/86a0df1a6c7fe4a835620b868e76ea78d42d6620>.
+  The divisibility test by 25 with masks of 15 and 3 that `leap.is` uses,
+  and the argument that it is exact.
 - **[NERI]** Neri, C. and L. Schneider, "Euclidean affine functions and
   their application to calendar algorithms", *Software: Practice and
   Experience* 53(4), 937–970, 2023, <https://doi.org/10.1002/spe.3172>.

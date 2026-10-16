@@ -90,6 +90,31 @@ pub fn main(init: std.process.Init) !void {
     }
 
     {
+        // Years from the whole of `Year`, measured two ways. In the first
+        // the calls are independent, as they are when a caller has many
+        // years to ask about; in the second each call's input is picked by
+        // the answers so far, so no call can start before the one before it
+        // finishes. Look at both: they have disagreed about which of two
+        // versions was faster, once each version was inlined into a loop.
+        var years: [table_len]datetime.Year = undefined;
+        for (&years) |*y| y.* = rng.int(datetime.Year);
+
+        var t0: std.Io.Timestamp = .now(io, .awake);
+        var acc: usize = 0;
+        for (0..N) |i| acc +%= @intFromBool(datetime.leap.is(years[i & (table_len - 1)]));
+        var ns: u64 = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
+        std.mem.doNotOptimizeAway(acc);
+        report("leap.is", ns);
+
+        t0 = .now(io, .awake);
+        acc = 0;
+        for (0..N) |i| acc +%= @intFromBool(datetime.leap.is(years[(i +% acc) & (table_len - 1)]));
+        ns = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
+        std.mem.doNotOptimizeAway(acc);
+        report("leap.is (chained)", ns);
+    }
+
+    {
         const t0: std.Io.Timestamp = .now(io, .awake);
         var acc: i64 = 0;
         for (0..N) |i| {
