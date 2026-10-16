@@ -127,13 +127,38 @@ test fromMilliTimestamp {
 
 /// Converts this instant to a calendar `DateTime` in UTC. Timestamps
 /// before the Unix epoch are supported and produce dates before 1970.
+///
+/// The timestamp is an `i128`, and dividing an `i128` by a billion is not
+/// a multiplication and a shift the way dividing an `i64` is: x86-64 has
+/// no instruction for it, so the compiler calls `__divti3`, a library
+/// routine that does the long division in software. Every timestamp that
+/// fits an `i64`, which is every moment from 1677 to 2262, is split in an
+/// `i64` instead, and only the rest take the slow road. The seconds then
+/// stay an `i64` too, so the division into days and the second of the day
+/// are not `i128` divisions either. On 2026-10-16 that took `asDateTime`
+/// from 15.9 ns to 9.3 in `zig build bench`, and `TimeZone.atTimestamp`,
+/// which calls it, from 54 ns to 44.
 pub fn asDateTime(self: Instant) DateTime {
     // Floor division throughout, so that a negative timestamp rounds
     // towards the earlier date and leaves a non-negative remainder
     // rather than a negative time of day.
-    const nanosecond: Nanosecond = @intCast(@mod(self.timestamp, std.time.ns_per_s));
-    const seconds = @divFloor(self.timestamp, std.time.ns_per_s);
+    if (std.math.cast(i64, self.timestamp)) |timestamp| {
+        return fromSeconds(
+            @divFloor(timestamp, std.time.ns_per_s),
+            @intCast(@mod(timestamp, std.time.ns_per_s)),
+        );
+    }
+    return fromSeconds(
+        @divFloor(self.timestamp, std.time.ns_per_s),
+        @intCast(@mod(self.timestamp, std.time.ns_per_s)),
+    );
+}
 
+/// The rest of `asDateTime`, once the nanoseconds are split off: a count of
+/// seconds since the epoch, as an `i64` or an `i128`, and the nanosecond
+/// within that second. It is generic so that an `i64` count stays an `i64`
+/// all the way through and never meets an `i128` division.
+fn fromSeconds(seconds: anytype, nanosecond: Nanosecond) DateTime {
     const days: Date.DaysType = Date.daysFromSecondsSaturating(@intCast(std.math.clamp(seconds, std.math.minInt(i64), std.math.maxInt(i64))));
     const clock = secondofday.split(@intCast(@mod(seconds, std.time.s_per_day)));
 
@@ -150,6 +175,63 @@ pub fn asDateTime(self: Instant) DateTime {
         .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
         .offset = 0,
     };
+}
+
+test fromSeconds {
+    // The two widths give the same reading for the same count.
+    const narrow = fromSeconds(@as(i64, -1), 5);
+    const wide = fromSeconds(@as(i128, -1), 5);
+    try std.testing.expectEqual(narrow, wide);
+    try std.testing.expectEqual(DateTime{
+        .year = 1969,
+        .month = .Dec,
+        .day = 31,
+        .hour = 23,
+        .minute = 59,
+        .second = 59,
+        .nanosecond = 5,
+        .weekday = .Wed,
+    }, narrow);
+}
+
+test "asDateTime reads the same on either side of the end of an i64" {
+    // Anything that fits an `i64` goes the narrow way, and must read the
+    // same as the wide way would have read it.
+    const top: i128 = std.math.maxInt(i64);
+    const bottom: i128 = std.math.minInt(i64);
+    for ([_]i128{ top, top - 1, bottom, bottom + 1, 0, -1, 1, -std.time.ns_per_s, 1_700_000_000_123_456_789 }) |timestamp| {
+        const wide = fromSeconds(
+            @divFloor(timestamp, std.time.ns_per_s),
+            @intCast(@mod(timestamp, std.time.ns_per_s)),
+        );
+        try std.testing.expectEqual(wide, (Instant{ .timestamp = timestamp }).asDateTime());
+    }
+    // 2262-04-11T23:47:16.854775807Z is the last nanosecond an `i64` holds.
+    const last = (Instant{ .timestamp = top }).asDateTime();
+    try std.testing.expectEqual(DateTime{
+        .year = 2262,
+        .month = .Apr,
+        .day = 11,
+        .hour = 23,
+        .minute = 47,
+        .second = 16,
+        .nanosecond = 854_775_807,
+        .weekday = .Fri,
+    }, last);
+    const next = (Instant{ .timestamp = top + 1 }).asDateTime();
+    try std.testing.expectEqual(@as(Nanosecond, 854_775_808), next.nanosecond);
+    // And 1677-09-21T00:12:43.145224192Z the first.
+    const first = (Instant{ .timestamp = bottom }).asDateTime();
+    try std.testing.expectEqual(DateTime{
+        .year = 1677,
+        .month = .Sep,
+        .day = 21,
+        .hour = 0,
+        .minute = 12,
+        .second = 43,
+        .nanosecond = 145_224_192,
+        .weekday = .Tue,
+    }, first);
 }
 
 test "instantTest" {
