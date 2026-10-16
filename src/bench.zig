@@ -96,6 +96,9 @@ pub fn main(init: std.process.Init) !void {
         // the answers so far, so no call can start before the one before it
         // finishes. Look at both: they have disagreed about which of two
         // versions was faster, once each version was inlined into a loop.
+        // When one compiles to a branch and the other to a conditional
+        // move, a branch these years almost never take wins the chained
+        // run without being faster; `leap.is` has the measurements.
         var years: [table_len]datetime.Year = undefined;
         for (&years) |*y| y.* = rng.int(datetime.Year);
 

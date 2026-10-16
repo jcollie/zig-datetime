@@ -45,6 +45,20 @@ const Year = @import("year.zig").Year;
 /// correction, and `zig build bench` measured it at 1.27 ns a call to this
 /// one's 0.64.
 ///
+/// The chained `leap.is` benchmark, where each call waits on the one
+/// before, measures the old form faster, 2.8 ns to 3.4. That is not the
+/// arithmetic. Inlined into that loop, LLVM compiles the old form's choice
+/// of mask to a branch where it compiles this one's to a conditional move.
+/// The benchmark's years are uniform over `Year`, so about one in a
+/// hundred is a century, the branch is almost always predicted "not a
+/// century", and the processor goes on with the mask of 3 without waiting
+/// for the division, which is checked off the critical path. A conditional
+/// move has to wait. With a fresh random year every call and half of them
+/// centuries, so that the prediction is a coin toss, the old form fell to
+/// 7.2 ns and this one to 5.3. The branch is LLVM's choice, made only in
+/// that loop, and not something either form asks for; this form is kept
+/// for being faster when the calls are independent and in its callers.
+///
 /// Ben Joffe's survey of leap-year tests
 /// (<https://www.benjoffe.com/fast-leap-year>) offers two others. His own
 /// "fuzzy century" test is this one with the division by 25 written out
