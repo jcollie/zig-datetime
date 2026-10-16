@@ -159,7 +159,7 @@ pub fn asDateTime(self: Instant) DateTime {
 /// within that second. It is generic so that an `i64` count stays an `i64`
 /// all the way through and never meets an `i128` division.
 fn fromSeconds(seconds: anytype, nanosecond: Nanosecond) DateTime {
-    const days: Date.DayNumber = Date.daysFromSecondsSaturating(@intCast(std.math.clamp(seconds, std.math.minInt(i64), std.math.maxInt(i64))));
+    const days: Date.DayNumber = Date.dayNumberFromSecondsSaturating(@intCast(std.math.clamp(seconds, std.math.minInt(i64), std.math.maxInt(i64))));
     const clock = secondofday.split(@intCast(@mod(seconds, std.time.s_per_day)));
 
     const date = Date.fromDayNumber(days);

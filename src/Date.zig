@@ -134,12 +134,12 @@ pub const max_seconds: i64 = @as(i64, max_day_number) * std.time.s_per_day + (st
 
 test min_seconds {
     // The bounds are instants on the bounding dates.
-    try std.testing.expectEqual(min_day_number, daysFromSecondsSaturating(min_seconds));
-    try std.testing.expectEqual(max_day_number, daysFromSecondsSaturating(max_seconds));
+    try std.testing.expectEqual(min_day_number, dayNumberFromSecondsSaturating(min_seconds));
+    try std.testing.expectEqual(max_day_number, dayNumberFromSecondsSaturating(max_seconds));
 
     // And a second further out saturates rather than moving.
-    try std.testing.expectEqual(min_day_number, daysFromSecondsSaturating(min_seconds - 1));
-    try std.testing.expectEqual(max_day_number, daysFromSecondsSaturating(max_seconds + 1));
+    try std.testing.expectEqual(min_day_number, dayNumberFromSecondsSaturating(min_seconds - 1));
+    try std.testing.expectEqual(max_day_number, dayNumberFromSecondsSaturating(max_seconds + 1));
 }
 
 /// Returns the day number `seconds` seconds after the epoch falls in,
@@ -149,31 +149,31 @@ test min_seconds {
 /// `i32`, so the furthest date there is sits around 6.8e16 seconds from
 /// the epoch and an `i64` goes to 9.2e18. Converting the excess would be
 /// an `@intCast` that cannot fit, which is a panic in a safe build and
-/// illegal behaviour in a fast one.
+/// illegal behavior in a fast one.
 ///
 /// Clamping rather than refusing keeps every caller total. The answer for
 /// an instant outside the calendar is the first or last date there is,
 /// which is wrong in the same way that the question was.
-pub fn daysFromSecondsSaturating(seconds: i64) DayNumber {
+pub fn dayNumberFromSecondsSaturating(seconds: i64) DayNumber {
     const days = @divFloor(seconds, std.time.s_per_day);
     if (days < min_day_number) return min_day_number;
     if (days > max_day_number) return max_day_number;
     return @intCast(days);
 }
 
-test daysFromSecondsSaturating {
-    try std.testing.expectEqual(@as(DayNumber, 0), daysFromSecondsSaturating(0));
-    try std.testing.expectEqual(@as(DayNumber, 1), daysFromSecondsSaturating(std.time.s_per_day));
+test dayNumberFromSecondsSaturating {
+    try std.testing.expectEqual(@as(DayNumber, 0), dayNumberFromSecondsSaturating(0));
+    try std.testing.expectEqual(@as(DayNumber, 1), dayNumberFromSecondsSaturating(std.time.s_per_day));
 
     // Floor division, so a second before the epoch is the day before it.
-    try std.testing.expectEqual(@as(DayNumber, -1), daysFromSecondsSaturating(-1));
+    try std.testing.expectEqual(@as(DayNumber, -1), dayNumberFromSecondsSaturating(-1));
 
     // Past the end of the calendar the answer stops moving rather than
     // wrapping or trapping, and what it stops at is a date.
-    try std.testing.expectEqual(max_day_number, daysFromSecondsSaturating(std.math.maxInt(i64)));
-    try std.testing.expectEqual(min_day_number, daysFromSecondsSaturating(std.math.minInt(i64)));
-    _ = fromDayNumber(daysFromSecondsSaturating(std.math.maxInt(i64)));
-    _ = fromDayNumber(daysFromSecondsSaturating(std.math.minInt(i64)));
+    try std.testing.expectEqual(max_day_number, dayNumberFromSecondsSaturating(std.math.maxInt(i64)));
+    try std.testing.expectEqual(min_day_number, dayNumberFromSecondsSaturating(std.math.minInt(i64)));
+    _ = fromDayNumber(dayNumberFromSecondsSaturating(std.math.maxInt(i64)));
+    _ = fromDayNumber(dayNumberFromSecondsSaturating(std.math.minInt(i64)));
 }
 
 /// Returns the date that is `days` days after 1970-01-01; negative values

@@ -227,7 +227,7 @@ pub const Posix = struct {
         // Saturating, because a caller may hand in any `i64` and the sum
         // of an extreme one and an offset is not one.
         const local = timestamp +| self.std_offset;
-        const days = Date.daysFromSecondsSaturating(local);
+        const days = Date.dayNumberFromSecondsSaturating(local);
 
         // The year, and its first of January. Every switch below is an
         // offset from that one day number, which is what keeps the
@@ -365,7 +365,7 @@ pub const Posix = struct {
         };
 
         const local = timestamp +| self.std_offset;
-        const days = Date.daysFromSecondsSaturating(local);
+        const days = Date.dayNumberFromSecondsSaturating(local);
         const placed = Date.yearAndFirstDay(days);
         const year = placed.year;
         const january_first = placed.january_first;
