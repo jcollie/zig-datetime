@@ -1630,11 +1630,11 @@ The documents this library is written against.
   that `-Dbig-test-years` runs.
 - **[JOFFE]** Joffe, B., *A Very Fast 64-Bit Date Algorithm: 30–40%
   faster*, 23 November 2025, <https://www.benjoffe.com/fast-date-64>. The
-  conversion from a day number to a date in `Date.fromDaysSinceStartOfEra`.
+  conversion from a day number to a date in `Date.fromDayNumber`.
 - **[JOFFE-MAP]** Joffe, B., *The Julian Map: A Faster technique for
   Gregorian Date Conversion*, 3 November 2025,
   <https://www.benjoffe.com/fast-date>. The conversion from a date to a day
-  number in `Date.toDaysSinceStartOfEra`.
+  number in `Date.toDayNumber`.
 - **[JOFFE-LEAP]** Joffe, B., *The fastest "Is Leap Year" functions*,
   11 December 2025, updated 18 December 2025,
   <https://www.benjoffe.com/fast-leap-year>. The survey and benchmarks of
@@ -1642,7 +1642,7 @@ The documents this library is written against.
 - **[JOFFE-WEEKDAY]** Joffe, B., *A faster way to calculate the day of the
   week*, 17 August 2026, <https://www.benjoffe.com/fast-day-of-week>. The
   64-bit multiply-add-shift weekday that was measured against
-  `DayOfWeek.fromDaysSinceStartOfEra` and not adopted.
+  `DayOfWeek.fromDayNumber` and not adopted.
 - **[JOFFE-TIME]** Joffe, B., *A faster way to convert a timestamp ➜ Hour,
   Min, Sec*, 7 September 2026, <https://www.benjoffe.com/fast-time-of-day>.
   The split of a second of the day into hour, minute and second that
@@ -1656,7 +1656,7 @@ The documents this library is written against.
   their application to calendar algorithms", *Software: Practice and
   Experience* 53(4), 937–970, 2023, <https://doi.org/10.1002/spe.3172>.
   The fixed-point divisions and the `bump` that Joffe's algorithms build
-  on, and the inverse that `Date.toDaysSinceStartOfEra` refines.
+  on, and the inverse that `Date.toDayNumber` refines.
 - **[RFC822]** Crocker, D., *Standard for the Format of ARPA Internet Text
   Messages*, RFC 822, August 1982,
   <https://www.rfc-editor.org/info/rfc822>. The date syntax `rfc822` reads

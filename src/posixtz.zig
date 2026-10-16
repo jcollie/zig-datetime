@@ -66,7 +66,7 @@ pub const Rule = union(enum) {
         switch (self) {
             .month_week_day => |spec| {
                 const first_of_month = january_first + spec.month.daysBefore(year);
-                const first_weekday = @backingInt(DayOfWeek.fromDaysSinceStartOfEra(first_of_month));
+                const first_weekday = @backingInt(DayOfWeek.fromDayNumber(first_of_month));
                 const wanted = @backingInt(spec.weekday);
 
                 // The first `wanted` weekday of the month, then forward by
@@ -102,8 +102,8 @@ pub const Rule = union(enum) {
     /// reads: this is what the rule means, and `dayNumber` is how the hot
     /// path asks for it.
     fn dayOfMonth(self: Rule, year: Year) struct { month: Month, day: Day } {
-        const january_first = (Date{ .year = year, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
-        const date = Date.fromDaysSinceStartOfEra(self.dayNumber(year, january_first));
+        const january_first = (Date{ .year = year, .month = .Jan, .day = 1 }).toDayNumber();
+        const date = Date.fromDayNumber(self.dayNumber(year, january_first));
         return .{ .month = date.month, .day = date.day };
     }
 
@@ -155,7 +155,7 @@ pub const Transition = struct {
             .rule = .{ .month_week_day = .{ .month = .Mar, .week = 2, .weekday = .Sun } },
         };
 
-        const january_first = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+        const january_first = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDayNumber();
         const at = transition.timestamp(2024, -6 * std.time.s_per_hour, january_first);
         try std.testing.expectEqual(@as(i64, 1710057600), at);
     }
@@ -620,7 +620,7 @@ test "the shortcut in spanAt agrees with a full scan" {
         // opposite sides of.
         var year: Year = 2015;
         while (year <= 2025) : (year += 1) {
-            const first = (Date{ .year = year, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+            const first = (Date{ .year = year, .month = .Jan, .day = 1 }).toDayNumber();
             if (rule.dst) |dst| {
                 for ([_]i64{
                     dst.start.timestamp(year, rule.std_offset, first),
@@ -659,8 +659,8 @@ test yearLength {
 
     // And it is the distance between two consecutive first of Januaries,
     // which is the only reason it is here.
-    const first = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
-    const second = (Date{ .year = 2025, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+    const first = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDayNumber();
+    const second = (Date{ .year = 2025, .month = .Jan, .day = 1 }).toDayNumber();
     try std.testing.expectEqual(yearLength(2024), second - first);
 }
 

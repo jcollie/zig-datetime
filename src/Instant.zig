@@ -162,7 +162,7 @@ fn fromSeconds(seconds: anytype, nanosecond: Nanosecond) DateTime {
     const days: Date.DaysType = Date.daysFromSecondsSaturating(@intCast(std.math.clamp(seconds, std.math.minInt(i64), std.math.maxInt(i64))));
     const clock = secondofday.split(@intCast(@mod(seconds, std.time.s_per_day)));
 
-    const date = Date.fromDaysSinceStartOfEra(days);
+    const date = Date.fromDayNumber(days);
 
     return .{
         .year = date.year,
@@ -172,7 +172,7 @@ fn fromSeconds(seconds: anytype, nanosecond: Nanosecond) DateTime {
         .minute = clock.minute,
         .second = clock.second,
         .nanosecond = nanosecond,
-        .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
+        .weekday = DayOfWeek.fromDayNumber(days),
         .offset = 0,
     };
 }

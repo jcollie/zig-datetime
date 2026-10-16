@@ -45,7 +45,7 @@ const cldr = datetime.cldr;
 /// calendar rather than at a round number.
 fn at(year: i32, month: datetime.Month, day: u8, hour: u8, minute: u8, second: u8, milli: u16) i64 {
     const date: Date = .{ .year = year, .month = month, .day = day };
-    const days: i64 = date.toDaysSinceStartOfEra();
+    const days: i64 = date.toDayNumber();
     return ((days * 86400) + @as(i64, hour) * 3600 + @as(i64, minute) * 60 + second) * 1000 + milli;
 }
 

@@ -8,7 +8,7 @@
 //! of the proleptic Gregorian calendar, so a weekday is a day count taken
 //! modulo seven and never has to be looked up; that is what lets
 //! `Date.dayOfWeek` derive one rather than carry it around. See
-//! `DayOfWeek.fromDaysSinceStartOfEra`.
+//! `DayOfWeek.fromDayNumber`.
 
 const std = @import("std");
 
@@ -258,7 +258,7 @@ pub const DayOfWeek = enum(u3) {
     /// and the `TimeZone` lookups, which call this, came out the same
     /// within the noise of `zig build bench`. So this stays, and the
     /// two magic constants do not come in.
-    pub fn fromDaysSinceStartOfEra(days: Date.DaysType) DayOfWeek {
+    pub fn fromDayNumber(days: Date.DaysType) DayOfWeek {
         const result = if (days >= -4)
             @rem(days + 4, 7)
         else
@@ -267,14 +267,14 @@ pub const DayOfWeek = enum(u3) {
         return @fromBackingInt(@intCast(result));
     }
 
-    test fromDaysSinceStartOfEra {
+    test fromDayNumber {
         // The epoch itself was a Thursday.
-        try std.testing.expectEqual(DayOfWeek.Thu, fromDaysSinceStartOfEra(0));
-        try std.testing.expectEqual(DayOfWeek.Fri, fromDaysSinceStartOfEra(1));
-        try std.testing.expectEqual(DayOfWeek.Thu, fromDaysSinceStartOfEra(7));
+        try std.testing.expectEqual(DayOfWeek.Thu, fromDayNumber(0));
+        try std.testing.expectEqual(DayOfWeek.Fri, fromDayNumber(1));
+        try std.testing.expectEqual(DayOfWeek.Thu, fromDayNumber(7));
 
         // Negative counts run backwards into the days before it.
-        try std.testing.expectEqual(DayOfWeek.Wed, fromDaysSinceStartOfEra(-1));
+        try std.testing.expectEqual(DayOfWeek.Wed, fromDayNumber(-1));
     }
 
     /// The type the name maps below are built from. Comparison ignores
@@ -443,7 +443,7 @@ test "weekdayFromDays" {
     };
 
     for (tests) |case| {
-        const result = DayOfWeek.fromDaysSinceStartOfEra(case.days);
+        const result = DayOfWeek.fromDayNumber(case.days);
         try std.testing.expectEqual(case.result, result);
     }
 }

@@ -542,7 +542,7 @@ fn parseMarkingZone(value: []const u8) ParseError!Marked {
         // 24:00 is the end of the day, which is the same instant as
         // midnight starting the next one.
         if (time.end_of_day) {
-            date = Date.fromDaysSinceStartOfEra(date.toDaysSinceStartOfEra() + 1);
+            date = Date.fromDayNumber(date.toDayNumber() + 1);
         }
     }
 
@@ -733,10 +733,10 @@ fn weekDate(cursor: *Cursor, year: Year, extended: bool, precision: *Precision) 
 
     // ISO 8601 anchors week 1 as the week containing January 4th.
     const anchor: Date = .{ .year = year, .month = .Jan, .day = 4 };
-    const week1_monday = anchor.toDaysSinceStartOfEra() -
+    const week1_monday = anchor.toDayNumber() -
         (@as(Date.DaysType, anchor.dayOfWeek().isoWeekdayNumber()) - 1);
 
-    return Date.fromDaysSinceStartOfEra(week1_monday +
+    return Date.fromDayNumber(week1_monday +
         (@as(Date.DaysType, week) - 1) * 7 +
         (@as(Date.DaysType, weekday) - 1));
 }

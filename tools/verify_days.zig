@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
-//! Checks `Date.fromDaysSinceStartOfEra` against Hinnant's
+//! Checks `Date.fromDayNumber` against Hinnant's
 //! `civil_from_days` for every day number a `Date` can hold, from
 //! `Date.min_days` to `Date.max_days`: about 1.57 trillion of them, and
-//! checks that `Date.toDaysSinceStartOfEra` takes each date it gives back
+//! checks that `Date.toDayNumber` takes each date it gives back
 //! to the day number it came from.
 //!
 //! The library converts in both directions with Ben Joffe's fixed-point
@@ -45,11 +45,11 @@ pub fn firstDisagreement(first: DaysType, last: DaysType) ?DaysType {
     var day = first;
     while (day <= last) : (day += 1) {
         const expected = hinnant.civilFromDays(day);
-        const got = Date.fromDaysSinceStartOfEra(day);
+        const got = Date.fromDayNumber(day);
         if (expected.year != got.year or
             expected.month != got.month.monthNumber() or
             expected.day != got.day or
-            got.toDaysSinceStartOfEra() != day) return day;
+            got.toDayNumber() != day) return day;
     }
     return null;
 }
@@ -132,12 +132,12 @@ pub fn main(init: std.process.Init.Minimal) !void {
     const disagreement = shared.disagreement.load(.monotonic);
     if (disagreement != std.math.maxInt(i64)) {
         const day: DaysType = @intCast(disagreement);
-        const got = Date.fromDaysSinceStartOfEra(day);
+        const got = Date.fromDayNumber(day);
         std.debug.print("day {d}: Hinnant {any}, Joffe {any}, back to {d}\n", .{
             day,
             hinnant.civilFromDays(day),
             got,
-            got.toDaysSinceStartOfEra(),
+            got.toDayNumber(),
         });
         return error.Disagreement;
     }

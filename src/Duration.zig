@@ -276,7 +276,7 @@ pub fn addToDateCheckedWith(self: Duration, date: Date, arithmetic: Arithmetic) 
     const days = switch (arithmetic) {
         .xml_schema => blk: {
             const clamped: Day = @min(date.day, month.lastDay(year));
-            break :blk @as(i128, (Date{ .year = year, .month = month, .day = clamped }).toDaysSinceStartOfEra()) + self.days;
+            break :blk @as(i128, (Date{ .year = year, .month = month, .day = clamped }).toDayNumber()) + self.days;
         },
         .composite => blk: {
             // A day the duration does not move is truncated to its month,
@@ -286,14 +286,14 @@ pub fn addToDateCheckedWith(self: Duration, date: Date, arithmetic: Arithmetic) 
             // next month, which is what the carry does.
             if (self.days == 0) {
                 const clamped: Day = @min(date.day, month.lastDay(year));
-                break :blk @as(i128, (Date{ .year = year, .month = month, .day = clamped }).toDaysSinceStartOfEra());
+                break :blk @as(i128, (Date{ .year = year, .month = month, .day = clamped }).toDayNumber());
             }
-            const first = (Date{ .year = year, .month = month, .day = 1 }).toDaysSinceStartOfEra();
+            const first = (Date{ .year = year, .month = month, .day = 1 }).toDayNumber();
             break :blk @as(i128, first) + (date.day - 1) + self.days;
         },
     };
     if (days < Date.min_days or days > Date.max_days) return error.OutOfRange;
-    return Date.fromDaysSinceStartOfEra(@intCast(days));
+    return Date.fromDayNumber(@intCast(days));
 }
 
 test "the examples of ISO 8601-2:2019, Annex D, that begin on a real date" {

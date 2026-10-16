@@ -426,7 +426,7 @@ fn localSeconds(local: DateTime) i64 {
         .month = local.month,
         .day = local.day,
     };
-    return @as(i64, date.toDaysSinceStartOfEra()) * std.time.s_per_day +
+    return @as(i64, date.toDayNumber()) * std.time.s_per_day +
         @as(i64, local.hour) * std.time.s_per_hour +
         @as(i64, local.minute) * std.time.s_per_min +
         @as(i64, local.second);

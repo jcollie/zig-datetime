@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 //! Howard Hinnant's `civil_from_days` and `days_from_civil`, kept as a
-//! reference to check `Date.fromDaysSinceStartOfEra` and
-//! `Date.toDaysSinceStartOfEra` against. It is not part of the library:
+//! reference to check `Date.fromDayNumber` and
+//! `Date.toDayNumber` against. It is not part of the library:
 //! `root.zig` does not export it, and nothing outside the tests, the fuzz
 //! targets and `tools/verify_days.zig` calls it.
 //!

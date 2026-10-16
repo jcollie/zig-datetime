@@ -1102,7 +1102,7 @@ fn localeRoundTripProperty(text: []const u8) !void {
     // write since the format string below cannot express anything wider.
     const span = 3_000_000;
     const days: Date.DaysType = @mod(std.mem.readInt(i32, text[1..5], .little), span) - span / 3;
-    const date = Date.fromDaysSinceStartOfEra(days);
+    const date = Date.fromDayNumber(days);
     if (!date.isRegular() or date.year < 1 or date.year > 9999) return;
 
     const value: DateTime = .{
@@ -1578,11 +1578,11 @@ fn checkArithmetic(start: DateTime, duration: Duration, arithmetic: Duration.Ari
         // moved, in which case its full value counts from the first of the
         // month and the excess runs into the next.
         const days = if (arithmetic == .composite and moved != 0)
-            @as(i256, (Date{ .year = year, .month = month, .day = 1 }).toDaysSinceStartOfEra()) + (start.day - 1) + moved
+            @as(i256, (Date{ .year = year, .month = month, .day = 1 }).toDayNumber()) + (start.day - 1) + moved
         else
-            @as(i256, (Date{ .year = year, .month = month, .day = @min(start.day, month.lastDay(year)) }).toDaysSinceStartOfEra()) + moved;
+            @as(i256, (Date{ .year = year, .month = month, .day = @min(start.day, month.lastDay(year)) }).toDayNumber()) + moved;
         if (days < Date.min_days or days > Date.max_days) break :blk null;
-        break :blk Date.fromDaysSinceStartOfEra(@intCast(days));
+        break :blk Date.fromDayNumber(@intCast(days));
     };
 
     const value = got catch |err| {
@@ -1613,8 +1613,8 @@ fn checkArithmetic(start: DateTime, duration: Duration, arithmetic: Duration.Ari
         // Only whole days: the day number moved by exactly that many, and
         // the time of day did not move at all.
         try std.testing.expectEqual(
-            @as(i256, start.asDate().toDaysSinceStartOfEra()) + duration.days,
-            @as(i256, value.asDate().toDaysSinceStartOfEra()),
+            @as(i256, start.asDate().toDayNumber()) + duration.days,
+            @as(i256, value.asDate().toDayNumber()),
         );
         try std.testing.expectEqual(start.hour, value.hour);
         try std.testing.expectEqual(start.nanosecond, value.nanosecond);
@@ -1658,7 +1658,7 @@ test "fuzz the calendar round trips" {
             };
 
             // A date is its day number and back again.
-            try std.testing.expectEqual(date, Date.fromDaysSinceStartOfEra(date.toDaysSinceStartOfEra()));
+            try std.testing.expectEqual(date, Date.fromDayNumber(date.toDayNumber()));
 
             // And its day of the year and back again.
             const day_of_year = @as(i32, date.month.daysBefore(date.year)) + date.day;
@@ -1689,7 +1689,7 @@ fn calendarProperty(random: std.Random) !void {
 }
 
 fn checkCalendar(date: Date) !void {
-    try std.testing.expectEqual(date, Date.fromDaysSinceStartOfEra(date.toDaysSinceStartOfEra()));
+    try std.testing.expectEqual(date, Date.fromDayNumber(date.toDayNumber()));
 
     const day_of_year = @as(i32, date.month.daysBefore(date.year)) + date.day;
     try std.testing.expectEqual(date, Date.fromDayOfYear(date.year, day_of_year));
@@ -1707,7 +1707,7 @@ test "random calendar round trips" {
     try overRandom(calendarProperty);
 }
 
-// `Date.fromDaysSinceStartOfEra` and `Date.toDaysSinceStartOfEra` are
+// `Date.fromDayNumber` and `Date.toDayNumber` are
 // Joffe's algorithms, and `hinnant.civilFromDays` and
 // `hinnant.daysFromCivil` the plain ones they replaced. They have to agree
 // on every day number a `Date` holds; `zig build verify-days` checks all of
@@ -1736,13 +1736,13 @@ fn hinnantProperty(random: std.Random) !void {
 
 fn checkAgainstHinnant(days: Date.DaysType) !void {
     const expected = hinnant.civilFromDays(days);
-    const got = Date.fromDaysSinceStartOfEra(days);
+    const got = Date.fromDayNumber(days);
     errdefer std.debug.print("day {d}: Hinnant {any}, got {any}\n", .{ days, expected, got });
     try std.testing.expectEqual(expected.year, got.year);
     try std.testing.expectEqual(expected.month, got.month.monthNumber());
     try std.testing.expectEqual(expected.day, got.day);
     try std.testing.expectEqual(@as(i64, days), hinnant.daysFromCivil(expected));
-    try std.testing.expectEqual(days, got.toDaysSinceStartOfEra());
+    try std.testing.expectEqual(days, got.toDayNumber());
 }
 
 test "random Date day numbers against Hinnant" {

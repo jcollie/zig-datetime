@@ -64,14 +64,14 @@ pub fn main(init: std.process.Init) !void {
     }
 
     var days: [table_len]Date.DaysType = undefined;
-    for (&days, dates) |*d, date| d.* = date.toDaysSinceStartOfEra();
+    for (&days, dates) |*d, date| d.* = date.toDayNumber();
 
     // --- calendar arithmetic ------------------------------------------
 
     {
         const t0: std.Io.Timestamp = .now(io, .awake);
         var acc: i64 = 0;
-        for (0..N) |i| acc +%= dates[i & (table_len - 1)].toDaysSinceStartOfEra();
+        for (0..N) |i| acc +%= dates[i & (table_len - 1)].toDayNumber();
         const ns: u64 = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
         std.mem.doNotOptimizeAway(acc);
         report("Date.toDays", ns);
@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
         const t0: std.Io.Timestamp = .now(io, .awake);
         var acc: i64 = 0;
         for (0..N) |i| {
-            const date = Date.fromDaysSinceStartOfEra(days[i & (table_len - 1)]);
+            const date = Date.fromDayNumber(days[i & (table_len - 1)]);
             acc +%= date.year + date.day;
         }
         const ns: u64 = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
@@ -119,14 +119,14 @@ pub fn main(init: std.process.Init) !void {
         // dates above.
         var t0: std.Io.Timestamp = .now(io, .awake);
         var acc: usize = 0;
-        for (0..N) |i| acc +%= datetime.DayOfWeek.fromDaysSinceStartOfEra(days[i & (table_len - 1)]).weekdayNumber();
+        for (0..N) |i| acc +%= datetime.DayOfWeek.fromDayNumber(days[i & (table_len - 1)]).weekdayNumber();
         var ns: u64 = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
         std.mem.doNotOptimizeAway(acc);
         report("DayOfWeek.fromDays", ns);
 
         t0 = .now(io, .awake);
         acc = 0;
-        for (0..N) |i| acc +%= datetime.DayOfWeek.fromDaysSinceStartOfEra(days[(i +% acc) & (table_len - 1)]).weekdayNumber();
+        for (0..N) |i| acc +%= datetime.DayOfWeek.fromDayNumber(days[(i +% acc) & (table_len - 1)]).weekdayNumber();
         ns = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
         std.mem.doNotOptimizeAway(acc);
         report("DayOfWeek.fromDays (chained)", ns);

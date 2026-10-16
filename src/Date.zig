@@ -20,14 +20,14 @@
 //! March-based year but counts years *backwards* from a far future leap
 //! day, which lines the long four-year cycles and the long centuries up
 //! with the start of the count, and it does the whole conversion in four
-//! multiplications. See `fromDaysSinceStartOfEra`.
+//! multiplications. See `fromDayNumber`.
 //!
 //! **Date to day number** is the inverse from Joffe's *The Julian Map*
 //! (2025-11-03): <https://www.benjoffe.com/fast-date>, a refinement of
 //! Neri and Schneider's. It shifts the year forward by whole eras so that
 //! all of it is unsigned, and counts the days before a year as 365 a year
 //! plus the leap days, with no division by an era at all. See
-//! `toDaysSinceStartOfEra`.
+//! `toDayNumber`.
 //!
 //! Both build on the fixed-point technique of Neri and Schneider,
 //! *Euclidean affine functions and their application to calendar
@@ -97,23 +97,23 @@ pub const min_days: DaysType = (Date{
     .year = std.math.minInt(Year),
     .month = .Jan,
     .day = 1,
-}).toDaysSinceStartOfEra();
+}).toDayNumber();
 
 pub const max_days: DaysType = (Date{
     .year = std.math.maxInt(Year),
     .month = .Dec,
     .day = 31,
-}).toDaysSinceStartOfEra();
+}).toDayNumber();
 
 test min_days {
     // The bounds are dates, and round trip like any other.
     try std.testing.expectEqual(
         Date{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 },
-        fromDaysSinceStartOfEra(min_days),
+        fromDayNumber(min_days),
     );
     try std.testing.expectEqual(
         Date{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31 },
-        fromDaysSinceStartOfEra(max_days),
+        fromDayNumber(max_days),
     );
 
     // And they are inside what `DaysType` can hold, with room to spare,
@@ -171,8 +171,8 @@ test daysFromSecondsSaturating {
     // wrapping or trapping, and what it stops at is a date.
     try std.testing.expectEqual(max_days, daysFromSecondsSaturating(std.math.maxInt(i64)));
     try std.testing.expectEqual(min_days, daysFromSecondsSaturating(std.math.minInt(i64)));
-    _ = fromDaysSinceStartOfEra(daysFromSecondsSaturating(std.math.maxInt(i64)));
-    _ = fromDaysSinceStartOfEra(daysFromSecondsSaturating(std.math.minInt(i64)));
+    _ = fromDayNumber(daysFromSecondsSaturating(std.math.maxInt(i64)));
+    _ = fromDayNumber(daysFromSecondsSaturating(std.math.minInt(i64)));
 }
 
 /// Returns the date that is `days` days after 1970-01-01; negative values
@@ -260,7 +260,7 @@ test daysFromSecondsSaturating {
 /// article also gives smaller constants for ARM, where large immediates
 /// are slow to load; this is the x86-64 form, which is correct everywhere
 /// and has not been measured on ARM.
-pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
+pub fn fromDayNumber(days: DaysType) Date {
     std.debug.assert(days >= min_days and days <= max_days);
 
     const eras: u64 = 4726498270;
@@ -317,7 +317,7 @@ pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
 /// `posixtz` works out every switch of a rule as an offset from the first
 /// of January, and this is where that day comes from.
 pub fn yearAndFirstDay(days: DaysType) struct { year: Year, january_first: DaysType } {
-    const date = fromDaysSinceStartOfEra(days);
+    const date = fromDayNumber(days);
     const into_month: DaysType = date.day - 1;
     const january_first = switch (date.month) {
         .Jan => days - into_month,
@@ -330,14 +330,14 @@ pub fn yearAndFirstDay(days: DaysType) struct { year: Year, january_first: DaysT
 }
 
 test yearAndFirstDay {
-    const new_year = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+    const new_year = (Date{ .year = 2024, .month = .Jan, .day = 1 }).toDayNumber();
 
     // A day names its own year, and the first of January names itself.
     const opening = yearAndFirstDay(new_year);
     try std.testing.expectEqual(@as(Year, 2024), opening.year);
     try std.testing.expectEqual(new_year, opening.january_first);
 
-    const summer = yearAndFirstDay((Date{ .year = 2024, .month = .Jul, .day = 4 }).toDaysSinceStartOfEra());
+    const summer = yearAndFirstDay((Date{ .year = 2024, .month = .Jul, .day = 4 }).toDayNumber());
     try std.testing.expectEqual(@as(Year, 2024), summer.year);
     try std.testing.expectEqual(new_year, summer.january_first);
 
@@ -347,8 +347,8 @@ test yearAndFirstDay {
     // Every day of a leap year and the ones either side of it names the
     // first of January that the other direction, which shares nothing
     // with it, puts in front of it.
-    var day = (Date{ .year = 2023, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
-    const last = (Date{ .year = 2025, .month = .Dec, .day = 31 }).toDaysSinceStartOfEra();
+    var day = (Date{ .year = 2023, .month = .Jan, .day = 1 }).toDayNumber();
+    const last = (Date{ .year = 2025, .month = .Dec, .day = 31 }).toDayNumber();
     while (day <= last) : (day += 1) try expectFirstDay(day);
 
     // And so do the days at either end of the calendar.
@@ -360,40 +360,40 @@ test yearAndFirstDay {
 
 fn expectFirstDay(day: DaysType) !void {
     const placed = yearAndFirstDay(day);
-    const first = (Date{ .year = placed.year, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+    const first = (Date{ .year = placed.year, .month = .Jan, .day = 1 }).toDayNumber();
     try std.testing.expectEqual(first, placed.january_first);
     try std.testing.expect(day >= first and day - first < 366);
 }
 
-test fromDaysSinceStartOfEra {
+test fromDayNumber {
     try std.testing.expectEqual(
         Date{ .year = 1970, .month = .Jan, .day = 1 },
-        fromDaysSinceStartOfEra(0),
+        fromDayNumber(0),
     );
     try std.testing.expectEqual(
         Date{ .year = 1970, .month = .Jan, .day = 2 },
-        fromDaysSinceStartOfEra(1),
+        fromDayNumber(1),
     );
 
     // Negative counts reach dates before the epoch.
     try std.testing.expectEqual(
         Date{ .year = 1969, .month = .Dec, .day = 31 },
-        fromDaysSinceStartOfEra(-1),
+        fromDayNumber(-1),
     );
 }
 
-/// Asserts that `fromDaysSinceStartOfEra` gives the date Hinnant's
-/// `civil_from_days` does for `days`, and that `toDaysSinceStartOfEra`
+/// Asserts that `fromDayNumber` gives the date Hinnant's
+/// `civil_from_days` does for `days`, and that `toDayNumber`
 /// takes that date back to `days`, as Hinnant's `days_from_civil` does.
 fn expectHinnant(days: DaysType) !void {
     const expected = hinnant.civilFromDays(days);
-    const got = fromDaysSinceStartOfEra(days);
+    const got = fromDayNumber(days);
     errdefer std.debug.print("day {d}: Hinnant {any}, got {any}\n", .{ days, expected, got });
     try std.testing.expectEqual(expected.year, got.year);
     try std.testing.expectEqual(expected.month, got.month.monthNumber());
     try std.testing.expectEqual(expected.day, got.day);
     try std.testing.expectEqual(@as(i64, days), hinnant.daysFromCivil(expected));
-    try std.testing.expectEqual(days, got.toDaysSinceStartOfEra());
+    try std.testing.expectEqual(days, got.toDayNumber());
 }
 
 test expectHinnant {
@@ -407,7 +407,7 @@ test expectHinnant {
 // the epoch, around the end of every century in several eras near and
 // far, and at both ends of the range a `Date` holds. `zig build
 // verify-days` runs the same comparison over every day number there is.
-test "fromDaysSinceStartOfEra and toDaysSinceStartOfEra agree with Hinnant" {
+test "fromDayNumber and toDayNumber agree with Hinnant" {
     // Every day of eleven thousand years around the epoch.
     var day: DaysType = -2_000_000;
     while (day <= 2_000_000) : (day += 1) try expectHinnant(day);
@@ -475,7 +475,7 @@ test "civilFromDays" {
     };
 
     for (tests) |case| {
-        const result = Date.fromDaysSinceStartOfEra(case.days);
+        const result = Date.fromDayNumber(case.days);
         try std.testing.expectEqual(case.result, result);
     }
 }
@@ -521,11 +521,11 @@ test "civilFromDays" {
 ///
 /// The largest value along the way is the shifted year's day count, about
 /// 1.6 * 10^12, far inside a `u64`. `zig build verify-days` checks that
-/// this undoes `fromDaysSinceStartOfEra` for every day number a `Date` can
+/// this undoes `fromDayNumber` for every day number a `Date` can
 /// hold, which is every date there is, and on 2026-10-16 it did for all
 /// 1,568,704,592,610 of them. The tests compare it with Hinnant's
 /// `days_from_civil` in `hinnant.zig`.
-pub fn toDaysSinceStartOfEra(self: Date) DaysType {
+pub fn toDayNumber(self: Date) DaysType {
     std.debug.assert(self.day >= 1 and self.day <= self.month.lastDay(self.year));
 
     // 5368710 eras is 2147484000 years, one era more than the 2^31 + 1 a
@@ -545,19 +545,19 @@ pub fn toDaysSinceStartOfEra(self: Date) DaysType {
     return @intCast(days - @as(i64, @intCast(rata_shift)));
 }
 
-test toDaysSinceStartOfEra {
+test toDayNumber {
     try std.testing.expectEqual(
         @as(DaysType, 0),
-        (Date{ .year = 1970, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra(),
+        (Date{ .year = 1970, .month = .Jan, .day = 1 }).toDayNumber(),
     );
     try std.testing.expectEqual(
         @as(DaysType, -1),
-        (Date{ .year = 1969, .month = .Dec, .day = 31 }).toDaysSinceStartOfEra(),
+        (Date{ .year = 1969, .month = .Dec, .day = 31 }).toDayNumber(),
     );
 
-    // It is the inverse of `fromDaysSinceStartOfEra`.
+    // It is the inverse of `fromDayNumber`.
     const date: Date = .{ .year = 2024, .month = .Mar, .day = 15 };
-    try std.testing.expectEqual(date, fromDaysSinceStartOfEra(date.toDaysSinceStartOfEra()));
+    try std.testing.expectEqual(date, fromDayNumber(date.toDayNumber()));
 }
 
 test "daysFromCivil" {
@@ -589,15 +589,15 @@ test "daysFromCivil" {
     };
 
     for (tests) |case| {
-        const result = Date.toDaysSinceStartOfEra(case.date);
+        const result = Date.toDayNumber(case.date);
         try std.testing.expectEqual(case.result, result);
     }
 }
 
 /// Returns the day of the week this date falls on.
 pub fn dayOfWeek(self: Date) DayOfWeek {
-    const days = self.toDaysSinceStartOfEra();
-    return DayOfWeek.fromDaysSinceStartOfEra(days);
+    const days = self.toDayNumber();
+    return DayOfWeek.fromDayNumber(days);
 }
 
 /// A week-numbering year: a `Year` and one more at each end.
@@ -996,16 +996,16 @@ pub fn fromWeek(
     // day number outside the calendar is clamped to its first or last day,
     // as `fromDayOfYear` clamps.
     const january_first: i64 = if (week_year > std.math.maxInt(Year))
-        @as(i64, (Date{ .year = std.math.maxInt(Year), .month = .Jan, .day = 1 }).toDaysSinceStartOfEra()) +
+        @as(i64, (Date{ .year = std.math.maxInt(Year), .month = .Jan, .day = 1 }).toDayNumber()) +
             (if (leap.is(std.math.maxInt(Year))) @as(i64, 366) else 365)
     else if (week_year < std.math.minInt(Year))
-        @as(i64, (Date{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 }).toDaysSinceStartOfEra()) -
+        @as(i64, (Date{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 }).toDayNumber()) -
             (if (isLeapAnyYear(week_year)) @as(i64, 366) else 365)
     else
-        (Date{ .year = @intCast(week_year), .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+        (Date{ .year = @intCast(week_year), .month = .Jan, .day = 1 }).toDayNumber();
 
     const days = std.math.clamp(january_first + day_of_year - 1, min_days, max_days);
-    return fromDaysSinceStartOfEra(@intCast(days));
+    return fromDayNumber(@intCast(days));
 }
 
 test fromWeek {

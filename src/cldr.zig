@@ -1056,7 +1056,7 @@ fn writeField(
         // since noon on the 1st of January 4713 BC, demarcated at local
         // midnight rather than at noon. 2440588 is the day the Unix epoch
         // falls on, which is what turns one count into the other.
-        'g' => try writeSignedNumber(writer, locale, @as(i64, date.toDaysSinceStartOfEra()) + 2440588, count),
+        'g' => try writeSignedNumber(writer, locale, @as(i64, date.toDayNumber()) + 2440588, count),
 
         // ----- Weekday -----
 

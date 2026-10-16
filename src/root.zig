@@ -157,8 +157,8 @@ test "every date in a span of years, forwards" {
 
     // The day before the span starts, so that the first date of the sweep
     // is checked against something rather than taken on trust.
-    var previous_day = (Date{ .year = first, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra() - 1;
-    var previous_weekday = DayOfWeek.fromDaysSinceStartOfEra(previous_day);
+    var previous_day = (Date{ .year = first, .month = .Jan, .day = 1 }).toDayNumber() - 1;
+    var previous_weekday = DayOfWeek.fromDayNumber(previous_day);
     var count: u64 = 0;
 
     var year: Year = first;
@@ -170,11 +170,11 @@ test "every date in a span of years, forwards" {
             while (day <= end_of_month) : (day += 1) {
                 const date: Date = .{ .year = year, .month = month, .day = day };
 
-                const days = date.toDaysSinceStartOfEra();
+                const days = date.toDayNumber();
                 try std.testing.expectEqual(previous_day + 1, days);
-                try std.testing.expectEqual(date, Date.fromDaysSinceStartOfEra(days));
+                try std.testing.expectEqual(date, Date.fromDayNumber(days));
 
-                const weekday = DayOfWeek.fromDaysSinceStartOfEra(days);
+                const weekday = DayOfWeek.fromDayNumber(days);
                 try std.testing.expectEqual(previous_weekday.next(), weekday);
                 try std.testing.expectEqual(previous_weekday, weekday.prev());
 

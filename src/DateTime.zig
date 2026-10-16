@@ -1538,7 +1538,7 @@ test "a locale round trips every day of a year" {
         try std.testing.expectEqual(dt.weekday, parsed.value.weekday);
 
         if (std.meta.eql(date, last)) break;
-        date = Date.fromDaysSinceStartOfEra(date.toDaysSinceStartOfEra() + 1);
+        date = Date.fromDayNumber(date.toDayNumber() + 1);
     }
 }
 
@@ -1892,7 +1892,7 @@ pub fn parseWith(
         }
         state.datetime.hour = 0;
 
-        const next = Date.fromDaysSinceStartOfEra(state.datetime.asDate().toDaysSinceStartOfEra() + 1);
+        const next = Date.fromDayNumber(state.datetime.asDate().toDayNumber() + 1);
         state.datetime.year = next.year;
         state.datetime.month = next.month;
         state.datetime.day = next.day;
@@ -1902,7 +1902,7 @@ pub fn parseWith(
     // it belongs to may not have been parsed yet, so it has to be checked
     // against that month once everything is in. Without this, a date like
     // 2024-02-31 reaches `updateDayOfWeek` and trips the assertion in
-    // `Date.toDaysSinceStartOfEra`.
+    // `Date.toDayNumber`.
     if (!state.datetime.asDate().isRegular()) return error.ParseError;
 
     // Every sequence that moves the date leaves the weekday stale, so it
@@ -2101,7 +2101,7 @@ test asDate {
 /// names exactly one instant, so unlike `TimeZone.resolve` there is
 /// nothing here that can be ambiguous or missing.
 pub fn toInstant(self: DateTime) Instant {
-    const seconds = @as(i64, self.asDate().toDaysSinceStartOfEra()) * std.time.s_per_day +
+    const seconds = @as(i64, self.asDate().toDayNumber()) * std.time.s_per_day +
         @as(i64, self.hour) * std.time.s_per_hour +
         @as(i64, self.minute) * std.time.s_per_min +
         @as(i64, self.second) -
@@ -2251,11 +2251,11 @@ pub fn toUtc(self: DateTime) DateTime {
         @as(i32, if (leap_second) 59 else self.second) -
         self.offset;
 
-    const days = date.toDaysSinceStartOfEra() +
+    const days = date.toDayNumber() +
         @as(Date.DaysType, @divFloor(seconds, std.time.s_per_day));
     const clock = secondofday.split(@intCast(@mod(seconds, std.time.s_per_day)));
 
-    const utc_date = Date.fromDaysSinceStartOfEra(days);
+    const utc_date = Date.fromDayNumber(days);
     return .{
         .year = utc_date.year,
         .month = utc_date.month,
@@ -2264,7 +2264,7 @@ pub fn toUtc(self: DateTime) DateTime {
         .minute = clock.minute,
         .second = if (leap_second) 60 else clock.second,
         .nanosecond = self.nanosecond,
-        .weekday = DayOfWeek.fromDaysSinceStartOfEra(days),
+        .weekday = DayOfWeek.fromDayNumber(days),
         .offset = 0,
     };
 }
