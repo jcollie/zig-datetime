@@ -36,6 +36,7 @@ const Year = @import("year.zig").Year;
 const cldr = @import("cldr.zig");
 const dotnet = @import("dotnet.zig");
 const golayout = @import("golayout.zig");
+const hinnant = @import("hinnant");
 const iso8601 = @import("iso8601.zig");
 const locale = @import("locale.zig");
 const posixtz = @import("posixtz.zig");
@@ -1704,6 +1705,45 @@ fn checkCalendar(date: Date) !void {
 
 test "random calendar round trips" {
     try overRandom(calendarProperty);
+}
+
+// `Date.fromDaysSinceStartOfEra` is Joffe's fixed-point algorithm, and
+// `hinnant.civilFromDays` the plain one it replaced. They have to agree on
+// every day number a `Date` holds; `zig build verify-days` checks all of
+// them, and these look for a disagreement on every ordinary test run.
+test "fuzz Date.fromDaysSinceStartOfEra against Hinnant" {
+    const driver = struct {
+        fn one(_: void, smith: *std.testing.Smith) anyerror!void {
+            try checkAgainstHinnant(smith.valueRangeAtMost(Date.DaysType, Date.min_days, Date.max_days));
+        }
+    };
+    try std.testing.fuzz({}, driver.one, .{});
+}
+
+/// A day number anywhere a `Date` reaches, drawn the way `randomYear`
+/// draws a year: often near the present, sometimes anywhere, and sometimes
+/// at one of the two ends.
+fn hinnantProperty(random: std.Random) !void {
+    const days: Date.DaysType = switch (random.uintLessThan(u8, 8)) {
+        0 => Date.min_days + random.intRangeAtMost(Date.DaysType, 0, 146097),
+        1 => Date.max_days - random.intRangeAtMost(Date.DaysType, 0, 146097),
+        2, 3 => random.intRangeAtMost(Date.DaysType, Date.min_days, Date.max_days),
+        else => random.intRangeAtMost(Date.DaysType, -4_000_000, 4_000_000),
+    };
+    try checkAgainstHinnant(days);
+}
+
+fn checkAgainstHinnant(days: Date.DaysType) !void {
+    const expected = hinnant.civilFromDays(days);
+    const got = Date.fromDaysSinceStartOfEra(days);
+    errdefer std.debug.print("day {d}: Hinnant {any}, got {any}\n", .{ days, expected, got });
+    try std.testing.expectEqual(expected.year, got.year);
+    try std.testing.expectEqual(expected.month, got.month.monthNumber());
+    try std.testing.expectEqual(expected.day, got.day);
+}
+
+test "random Date.fromDaysSinceStartOfEra against Hinnant" {
+    try overRandom(hinnantProperty);
 }
 
 // Formatting and parsing are inverses for any instant, which is the

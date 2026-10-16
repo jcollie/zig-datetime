@@ -121,10 +121,12 @@ pub const leap = @import("leap.zig");
 /// `-Dbig-test-years`. Zero, the default, skips it.
 const big_test_years = @import("build_options").big_test_years;
 
-// Hinnant's own verification of the algorithms `Date` and `DayOfWeek` are
-// built on, from *chrono-Compatible Low-Level Date Algorithms* (the section
-// headed "Yes, but how do you know this all really works?"):
-// <https://howardhinnant.github.io/date_algorithms.html>.
+// Hinnant's own verification of his date algorithms, from *chrono-Compatible
+// Low-Level Date Algorithms* (the section headed "Yes, but how do you know
+// this all really works?"):
+// <https://howardhinnant.github.io/date_algorithms.html>. It is a property of
+// the calendar rather than of any one algorithm, so it checks `Date` and
+// `DayOfWeek` whichever algorithms they are built on.
 //
 // It walks every date of a span of years in order and checks three
 // properties at each one: that the day number is exactly one more than the

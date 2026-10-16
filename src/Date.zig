@@ -4,27 +4,44 @@
 //! A calendar date: a year, a month and a day, with no time of day and no
 //! timezone attached.
 //!
-//! Conversion to and from a day number runs on Howard Hinnant's
-//! `civil_from_days` and `days_from_civil`, derived in *chrono-Compatible
-//! Low-Level Date Algorithms*, which the page itself dates 2021-09-01:
-//! <https://howardhinnant.github.io/date_algorithms.html>.
+//! A date is converted to and from a *day number*, a count of days from
+//! 1970-01-01, with a different algorithm in each direction.
 //!
+//! **Date to day number** is Howard Hinnant's `days_from_civil`, derived
+//! in *chrono-Compatible Low-Level Date Algorithms*, which the page itself
+//! dates 2021-09-01: <https://howardhinnant.github.io/date_algorithms.html>.
 //! Two ideas carry the whole of it. The year is shifted to start in March,
 //! so that the leap day falls at the end of it and the month lengths become
 //! a repeating pattern that a single division can invert. And the calendar
 //! is cut into *eras* of 400 years, which is the period after which the
 //! proleptic Gregorian calendar repeats exactly: every era is 146097 days
-//! long, whichever one it is. So a conversion factors the era out first and
-//! then works with a day-of-era in `[0, 146096]` and a year-of-era in
-//! `[0, 399]` — which is why getting one era right gets all of time right,
-//! and why so many of the assertions in these functions name those two
-//! ranges.
-//! See `fromDaysSinceStartOfEra` and `toDaysSinceStartOfEra`.
+//! long, whichever one it is. So the conversion factors the era out first
+//! and then works with a year-of-era in `[0, 399]` and a day-of-era in
+//! `[0, 146096]`, which is why getting one era right gets all of time
+//! right. See `toDaysSinceStartOfEra`. Hinnant dedicates the algorithms to
+//! the public domain ("Consider these donated to the public domain").
 //!
-//! Hinnant dedicates the algorithms to the public domain ("Consider these
-//! donated to the public domain"), so no permission is needed to carry them
-//! into an MIT-licensed library; the citation is here because the
-//! derivation is worth having beside the code.
+//! **Day number to date** is Ben Joffe's *A Very Fast 64-Bit Date
+//! Algorithm* (2025-11-23): <https://www.benjoffe.com/fast-date-64>. It
+//! keeps the March-based year but counts years *backwards* from a far
+//! future leap day, which lines the long four-year cycles and the long
+//! centuries up with the start of the count, and it does the whole
+//! conversion in four multiplications. It builds on the fixed-point
+//! technique of Neri and Schneider, *Euclidean affine functions and their
+//! application to calendar algorithms* (2022),
+//! <https://doi.org/10.1002/spe.3172>. See `fromDaysSinceStartOfEra`. It
+//! is written here from the description in the article, not translated
+//! from the reference implementation.
+//!
+//! Joffe replaced Hinnant's `civil_from_days` in that direction because it
+//! measured more than three times as fast in `zig build bench` (2.0 ns
+//! against 7.0 ns a conversion, ReleaseFast, x86-64), and because the
+//! range it is correct over, which Joffe established by testing rather
+//! than proof, has been checked exhaustively against Hinnant's for every
+//! day number a `Date` can hold. Hinnant's version is kept in
+//! `hinnant.zig` as the reference the tests compare against. Joffe's
+//! inverse was not adopted: Hinnant's `days_from_civil` already measures
+//! about 4 ns.
 
 const Date = @This();
 
@@ -36,6 +53,7 @@ const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const leap = @import("leap.zig");
 const iso8601 = @import("iso8601.zig");
 const json = @import("json.zig");
+const hinnant = @import("hinnant");
 
 year: Year,
 month: Month,
@@ -157,110 +175,157 @@ test daysFromSecondsSaturating {
 }
 
 /// Returns the date that is `days` days after 1970-01-01; negative values
-/// give dates before the epoch.
+/// give dates before the epoch. Asserts that `days` is in
+/// `[min_days, max_days]`.
 ///
-/// This is Hinnant's `civil_from_days`. Adding
-/// 719468 moves the count off the Unix epoch and onto 0000-03-01, the first
-/// day of era 0, so that every day number in range is a non-negative
-/// distance into some era. Dividing by 146097 gives the era and the
-/// remainder the day-of-era. The year-of-era comes out of the day-of-era by
-/// `(doe - doe/1460 + doe/36524 - doe/146096) / 365`, whose three
-/// corrections are the three days on which a plain `doe / 365` steps a year
-/// early: day 1460, which is still year 3 because the first four years hold
-/// 1461 days; day 36524, which is already year 100 because the first
-/// century holds 36524 days; and day 146096, the last day of the era, which
-/// would otherwise come out as year 400. What is left is a day-of-year
-/// counted from 1 March, and `(5 * doy + 2) / 153` turns that into a month
-/// because March-based month lengths run 31, 30, 31, 30, 31, 31, 30, 31,
-/// 30, 31, 31, 28 — a line fits the first eleven of them exactly, and
-/// February's short month is at the end where nothing follows it to be
-/// thrown off. January and February are then carried forward into the next
-/// calendar year, which is where the March-based year and the civil one
-/// part company.
+/// This is Ben Joffe's 64-bit algorithm. Like Hinnant's it works in
+/// March-based years, which put the leap day at the end of a year, but it
+/// counts them backwards, and that is the idea everything else follows
+/// from.
 ///
-/// Hinnant writes the era as `z >= 0 ? z : z - 146096` because C++ divides
-/// towards zero and the algorithm wants flooring; the same guard is kept
-/// here around `@divTrunc` rather than reaching for `@divFloor`, so that
-/// this reads as the published algorithm does.
+/// **Reverse the count.** `rev = d_shift - days` counts days backwards
+/// from 29 February of the year `400 * eras`, a leap day ending a
+/// March-based year in a year divisible by 400. `d_shift` is that day's
+/// number: 719469 days back from 1970-01-01 is 0000-02-29, and `eras`
+/// eras of 146097 days on from there. Counted backwards from such a day,
+/// the first year is the 366-day one and the first century the 36525-day
+/// one, so the long one of each cycle comes *first*. Counted forwards from
+/// 1 March it comes last, and that is where the `+ 3` in the usual
+/// `(4 * days + 3) / 146097` comes from. Joffe picked `eras`
+/// to centre the widest 64-bit range on the epoch; a `Date` uses a small
+/// part of it.
+///
+/// **Centuries, then the Julian map.** `cen = rev / 36524.25`, done as a
+/// multiplication by `c1 = floor(2^64 * 4 / 146097)` keeping the high 64
+/// bits, counts the whole centuries behind `rev`. With the long century
+/// first, the boundaries at 36525, 73049 and 109573 days are each just
+/// past a multiple of 36524.25, so this is exact. `jul = rev + cen - cen
+/// / 4` then puts back the leap day the Gregorian calendar drops in three
+/// centuries out of four, and what is left counts days as though every
+/// fourth year were a leap year: a Julian count, with no century rule
+/// left in it.
+///
+/// **Years.** `num = jul * c2`, with `c2 = ceil(2^64 * 4 / 1461)`, is
+/// `jul / 365.25` in 64.64 fixed point. Its high half is the number of
+/// whole years behind `jul`, exact for the same reason the centuries were,
+/// and `yrs = y_shift - high` turns that back into a forward March-based
+/// year: `y_shift = 400 * eras - 1`, the year whose March starts the last
+/// year before the count began. Its low half `low` is how far into the
+/// backward year `jul` is, as a fraction of 365.25 days.
+///
+/// **The year part, and its drift.** `ypt = low * 782432 >> 64` scales
+/// that fraction so that a day is about 2142.2 units: it is a day of the
+/// year counted backwards, without the division Neri and Schneider spend
+/// on getting it exactly. Measuring a year in units of 365.25 days rather
+/// than its real length leaves it a quarter of a day out per year,
+/// resetting every four: 0, ¾, ½ and ¼ of a day in the four years of a
+/// cycle, leap year first.
+///
+/// **January and February.** `ypt < 126464`, which is 59.03 days, is the
+/// first 59 or 60 days of a backward year: the January and February that
+/// end the March-based year and belong to the next calendar one. That is
+/// `bump`, and the year is incremented by it at the end.
+///
+/// **One linear map to month and day.** `n = (yrs % 4) * 512 + shift -
+/// ypt` turns the count forwards again and lays it out with 65536 units a
+/// month, so the month is `n >> 16` and the day is the low 16 bits divided
+/// by about 2140. Those are close to the 30.6-day average of a March-based
+/// month, which is the line Hinnant's `(5 * doy + 2) / 153` draws, and
+/// the leeway between 2140 and the true 2142.2 a day is what lets the line
+/// land on every month boundary. `shift` places 1 March at the bottom of
+/// month 3; for January and February it is 786432, twelve months of 65536,
+/// smaller, so they come out as 1 and 2 rather than 13 and 14 without a
+/// separate subtraction. `(yrs % 4) * 512` cancels the drift: in a
+/// calendar of 32-day months 512 units is a quarter of a day, so it adds
+/// ¾, ½, ¼ and 0 of a day in the four years, and after it every common
+/// year is a quarter of a day behind and the leap year three quarters
+/// ahead. That is one day apart, the leap day, and a quarter of a day is
+/// inside the leeway. `yrs` may have wrapped below zero, but 2^64 is a
+/// multiple of 4, so `yrs % 4` is the same as it would have been unwrapped.
+///
+/// **The day.** `(n % 65536) * c3 >> 64`, with `c3 = floor(2^64 / 2140)`,
+/// divides the low 16 bits by 2140 and gives the day of the month from
+/// zero. Neri and Schneider divide by 2141 at this point; Joffe found 2140
+/// to be the divisor the drift correction needs.
+///
+/// Every division is a multiplication whose high half is wanted, which is
+/// the upper register of a 64-by-64 multiply and costs nothing more to
+/// take, so the whole conversion is four multiplications and no division.
+///
+/// Joffe gives the range as ±1.89 trillion years, from testing rather than
+/// proof; `tools/verify_days.zig` checks every day number from `min_days`
+/// to `max_days` against Hinnant's `civil_from_days` in `hinnant.zig`. On
+/// 2026-10-16 all 1,568,704,592,610 of them agreed. The
+/// article also gives smaller constants for ARM, where large immediates
+/// are slow to load; this is the x86-64 form, which is correct everywhere
+/// and has not been measured on ARM.
 pub fn fromDaysSinceStartOfEra(days: DaysType) Date {
-    const z = days + 719468;
+    std.debug.assert(days >= min_days and days <= max_days);
 
-    const era = @divTrunc(if (z >= 0) z else z - 146096, 146097);
+    const eras: u64 = 4726498270;
+    const d_shift: u64 = 146097 * eras - 719469;
+    const y_shift: u64 = 400 * eras - 1;
+    const c1: u64 = 505054698555331;
+    const c2: u64 = 50504432782230121;
+    const c3: u64 = 8619973866219416;
 
-    const day_of_era = (z - era * 146097);
-    std.debug.assert(day_of_era >= 0 and day_of_era <= 146096);
+    // `days` is far inside `d_shift` either way, so this never wraps.
+    const rev: u64 = @intCast(@as(i64, d_shift) - days);
 
-    const year_of_era = @divTrunc(day_of_era - @divTrunc(day_of_era, 1460) + @divTrunc(day_of_era, 36524) - @divTrunc(day_of_era, 146096), 365);
-    std.debug.assert(year_of_era >= 0 and year_of_era <= 399);
+    const cen: u64 = @truncate((@as(u128, rev) * c1) >> 64);
+    const jul: u64 = rev + cen - cen / 4;
 
-    const year_0 = year_of_era + era * 400;
+    const num: u128 = @as(u128, jul) * c2;
+    const yrs: u64 = y_shift -% @as(u64, @truncate(num >> 64));
+    const low: u64 = @truncate(num);
+    const ypt: u64 = @truncate((@as(u128, 782432) * low) >> 64);
 
-    const day_of_year = day_of_era - (365 * year_of_era + @divTrunc(year_of_era, 4) - @divTrunc(year_of_era, 100));
-    std.debug.assert(day_of_year >= 0 and day_of_year <= 365);
+    const bump = ypt < 126464;
+    const shift: u64 = if (bump) 191360 else 977792;
 
-    const month_0 = @divTrunc(5 * day_of_year + 2, 153);
-    std.debug.assert(month_0 >= 0 and month_0 <= 11);
+    const n: u64 = (yrs % 4) * 512 + shift - ypt;
+    const day_0: u64 = @truncate((@as(u128, n % 65536) * c3) >> 64);
 
-    const month = month_0 + (if (month_0 < 10) @as(DaysType, 3) else @as(DaysType, -9));
+    const month = n / 65536;
     std.debug.assert(month >= 1 and month <= 12);
 
-    const year = year_0 + (if (month <= 2) @as(Year, 1) else @as(Year, 0));
+    const year = @as(i64, @bitCast(yrs)) + @intFromBool(bump);
     std.debug.assert(year >= std.math.minInt(Year) and year <= std.math.maxInt(Year));
 
-    const day = day_of_year - @divTrunc(153 * month_0 + 2, 5) + 1;
-    std.debug.assert(day >= 1 and day <= @as(Month, @fromBackingInt(@intCast(month))).lastDay(@intCast(year)));
-
-    return Date{
+    const date: Date = .{
         .year = @intCast(year),
         .month = @fromBackingInt(@intCast(month)),
-        .day = @intCast(day),
+        .day = @intCast(day_0 + 1),
     };
+    std.debug.assert(date.isRegular());
+    return date;
 }
 
 /// The year a day number falls in, together with the day number of that
 /// year's first of January.
 ///
-/// `fromDaysSinceStartOfEra` answers this too, by way of a month and a
-/// day that then have to be added back up. This stops short of them: it is
-/// the first half of Hinnant's `civil_from_days`, run only as far as the
-/// year-of-era and the March-based day-of-year. That algorithm counts
-/// years from March so that the leap day lands at the end of one, which is
-/// why there is a year to name before there is a month: the March-based
-/// day of year decides which side of the new year the date falls on, and
-/// the first of January is that many days back plus or minus the run from
-/// January to March.
+/// The date is worked out in full and the days before it in its year are
+/// taken back off, in March-based terms so that there is one line and no
+/// table: from March on, `(153 * (month - 3) + 2) / 5` is the run from the
+/// first of March to the first of the month — the same line Hinnant's
+/// `days_from_civil` draws — and the first of January is 59 days before
+/// the first of March, or 60 in a leap year. In January and February
+/// there is no leap day behind the date to count, so the only question is
+/// whether January's 31 days are.
 ///
 /// `posixtz` works out every switch of a rule as an offset from the first
 /// of January, and this is where that day comes from.
 pub fn yearAndFirstDay(days: DaysType) struct { year: Year, january_first: DaysType } {
-    const z = days + 719468;
-
-    const era = @divTrunc(if (z >= 0) z else z - 146096, 146097);
-
-    const day_of_era = (z - era * 146097);
-    std.debug.assert(day_of_era >= 0 and day_of_era <= 146096);
-
-    const year_of_era = @divTrunc(day_of_era - @divTrunc(day_of_era, 1460) + @divTrunc(day_of_era, 36524) - @divTrunc(day_of_era, 146096), 365);
-    std.debug.assert(year_of_era >= 0 and year_of_era <= 399);
-
-    const year_0 = year_of_era + era * 400;
-
-    const day_of_year = day_of_era - (365 * year_of_era + @divTrunc(year_of_era, 4) - @divTrunc(year_of_era, 100));
-    std.debug.assert(day_of_year >= 0 and day_of_year <= 365);
-
-    // The last 59 or 60 days of a March-based year are the January and
-    // February of the next calendar one, and 306 is the run from the
-    // first of March to the end of December.
-    if (day_of_year < 306) {
-        const year: Year = @intCast(year_0);
-        const before_march: DaysType = if (leap.is(year)) 60 else 59;
-        return .{ .year = year, .january_first = days - day_of_year - before_march };
-    }
-
-    return .{
-        .year = @intCast(year_0 + 1),
-        .january_first = days - day_of_year + 306,
+    const date = fromDaysSinceStartOfEra(days);
+    const into_month: DaysType = date.day - 1;
+    const january_first = switch (date.month) {
+        .Jan => days - into_month,
+        .Feb => days - into_month - 31,
+        else => days - into_month -
+            @divTrunc(153 * (@as(DaysType, date.month.monthNumber()) - 3) + 2, 5) -
+            @as(DaysType, if (leap.is(date.year)) 60 else 59),
     };
+    return .{ .year = date.year, .january_first = january_first };
 }
 
 test yearAndFirstDay {
@@ -278,17 +343,25 @@ test yearAndFirstDay {
     // And the day before belongs to the year before.
     try std.testing.expectEqual(@as(Year, 2023), yearAndFirstDay(new_year - 1).year);
 
-    // It is the same answer the full conversion gives, all the way
-    // through a leap year and the ones either side of it.
+    // Every day of a leap year and the ones either side of it names the
+    // first of January that the other direction, which shares nothing
+    // with it, puts in front of it.
     var day = (Date{ .year = 2023, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
     const last = (Date{ .year = 2025, .month = .Dec, .day = 31 }).toDaysSinceStartOfEra();
-    while (day <= last) : (day += 1) {
-        const date = fromDaysSinceStartOfEra(day);
-        const first = day - (@as(DaysType, date.month.daysBefore(date.year)) + date.day - 1);
-        const placed = yearAndFirstDay(day);
-        try std.testing.expectEqual(date.year, placed.year);
-        try std.testing.expectEqual(first, placed.january_first);
+    while (day <= last) : (day += 1) try expectFirstDay(day);
+
+    // And so do the days at either end of the calendar.
+    for (0..800) |i| {
+        try expectFirstDay(min_days + @as(DaysType, @intCast(i)));
+        try expectFirstDay(max_days - @as(DaysType, @intCast(i)));
     }
+}
+
+fn expectFirstDay(day: DaysType) !void {
+    const placed = yearAndFirstDay(day);
+    const first = (Date{ .year = placed.year, .month = .Jan, .day = 1 }).toDaysSinceStartOfEra();
+    try std.testing.expectEqual(first, placed.january_first);
+    try std.testing.expect(day >= first and day - first < 366);
 }
 
 test fromDaysSinceStartOfEra {
@@ -306,6 +379,53 @@ test fromDaysSinceStartOfEra {
         Date{ .year = 1969, .month = .Dec, .day = 31 },
         fromDaysSinceStartOfEra(-1),
     );
+}
+
+/// Asserts that `fromDaysSinceStartOfEra` gives the date Hinnant's
+/// `civil_from_days` does for `days`.
+fn expectHinnant(days: DaysType) !void {
+    const expected = hinnant.civilFromDays(days);
+    const got = fromDaysSinceStartOfEra(days);
+    errdefer std.debug.print("day {d}: Hinnant {any}, got {any}\n", .{ days, expected, got });
+    try std.testing.expectEqual(expected.year, got.year);
+    try std.testing.expectEqual(expected.month, got.month.monthNumber());
+    try std.testing.expectEqual(expected.day, got.day);
+}
+
+// Joffe's algorithm against Hinnant's, which is slower and easy to check
+// by eye, wherever a fixed-point calendar is most likely to slip: around
+// the epoch, around the end of every century in several eras near and
+// far, and at both ends of the range a `Date` holds. `zig build
+// verify-days` runs the same comparison over every day number there is.
+test "fromDaysSinceStartOfEra agrees with Hinnant" {
+    // Every day of eleven thousand years around the epoch.
+    var day: DaysType = -2_000_000;
+    while (day <= 2_000_000) : (day += 1) try expectHinnant(day);
+
+    // A week either side of 1 January and of the end of February of every
+    // century year, in the eras around year 0 and the ones around the
+    // ends of a `Year`.
+    const centuries = [_][2]i64{
+        .{ -400_000, 400_000 },
+        .{ std.math.minInt(Year) + 1, std.math.minInt(Year) + 400_000 },
+        .{ std.math.maxInt(Year) - 400_000, std.math.maxInt(Year) - 1 },
+    };
+    for (centuries) |span| {
+        var year = span[0] - @mod(span[0], 100) + 100;
+        while (year <= span[1]) : (year += 100) {
+            inline for (.{ Month.Jan, Month.Mar }) |month| {
+                const anchor = (Date{ .year = @intCast(year), .month = month, .day = 1 }).toDaysSinceStartOfEra();
+                var offset: DaysType = -7;
+                while (offset <= 7) : (offset += 1) try expectHinnant(anchor + offset);
+            }
+        }
+    }
+
+    // A thousand years at each end.
+    for (0..366_000) |i| {
+        try expectHinnant(min_days + @as(DaysType, @intCast(i)));
+        try expectHinnant(max_days - @as(DaysType, @intCast(i)));
+    }
 }
 
 test "civilFromDays" {

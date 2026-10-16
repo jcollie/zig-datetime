@@ -212,6 +212,17 @@ pub fn build(b: *std.Build) void {
     else
         b.path("src/tzdata/stub.zig");
 
+    // Hinnant's `civil_from_days`, which `Date` is checked against and
+    // which the library does not export. A module of its own rather than a
+    // file of this one, because `tools/verify_days.zig` needs it as well,
+    // and a file may belong to only one module in a compilation.
+    const hinnant = b.createModule(.{
+        .root_source_file = b.path("src/hinnant.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("hinnant", hinnant);
+
     module.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
     module.addAnonymousImport("locales", .{ .root_source_file = locales_source });
     module.addAnonymousImport("cldrlocales", .{ .root_source_file = cldr_locales_source });
@@ -245,6 +256,12 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_tests.step);
+
+    // Its tests are its own module's, so the library's do not include them.
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+        .root_module = hinnant,
+        .filters = &.{test_filter},
+    })).step);
 
     // Zig emits the API documentation as a side effect of compiling, so
     // this builds the library purely to get at it. The result is a static
@@ -310,6 +327,12 @@ pub fn build(b: *std.Build) void {
     bench_datetime.addAnonymousImport("tzdata", .{ .root_source_file = tzdata_source });
     bench_datetime.addAnonymousImport("locales", .{ .root_source_file = locales_source });
     bench_datetime.addImport("build_options", options.createModule());
+    const bench_hinnant = b.createModule(.{
+        .root_source_file = b.path("src/hinnant.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    bench_datetime.addImport("hinnant", bench_hinnant);
     if (target.result.os.tag == .windows) {
         if (b.lazyDependency("zigwin32", .{})) |zigwin32| {
             bench_datetime.addImport("win32", zigwin32.module("win32"));
@@ -335,6 +358,38 @@ pub fn build(b: *std.Build) void {
 
     const bench_step = b.step("bench", "Run the benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // Every day number a `Date` holds, through Joffe's algorithm and
+    // Hinnant's, which the library no longer uses but keeps to check it
+    // against. ReleaseFast for the same reason as the benchmarks, and so it
+    // shares their instances of the modules: it is half an hour on every
+    // processor there is, and Debug would make it days.
+    const verify_days = b.addExecutable(.{
+        .name = "verify-days",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/verify_days.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .imports = &.{
+                .{ .name = "datetime", .module = bench_datetime },
+                .{ .name = "hinnant", .module = bench_hinnant },
+            },
+        }),
+    });
+
+    const run_verify_days = b.addRunArtifact(verify_days);
+    run_verify_days.stdio = .inherit;
+
+    const verify_days_step = b.step(
+        "verify-days",
+        "Check Joffe's day-number conversion against Hinnant's for every day number a Date holds",
+    );
+    verify_days_step.dependOn(&run_verify_days.step);
+
+    // It has a test of its own, and nothing else would build it.
+    test_step.dependOn(&b.addRunArtifact(
+        b.addTest(.{ .root_module = verify_days.root_module }),
+    ).step);
 
     // CLDR's table of Windows zone names against IANA ones, which is what
     // `tzdb.windows` reads. It is checked into the tree rather than

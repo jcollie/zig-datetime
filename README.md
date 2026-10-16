@@ -1246,14 +1246,16 @@ use, public for anyone who wants the same text without JSON around it.
 
 ## The calendar arithmetic
 
-Turning a date into a day number and back is Howard Hinnant's, from
-[*chrono-Compatible Low-Level Date
-Algorithms*](https://howardhinnant.github.io/date_algorithms.html):
-`days_from_civil`, `civil_from_days`, `weekday_from_days` and
-`weekday_difference`, in `src/Date.zig` and `src/dayofweek.zig`, with the
-derivations quoted in the doc comments there.
+Turning a date into a day number — a count of days from 1970-01-01 — is
+Howard Hinnant's `days_from_civil`, from [*chrono-Compatible Low-Level Date
+Algorithms*](https://howardhinnant.github.io/date_algorithms.html), and so
+are `weekday_from_days` and `weekday_difference`. Turning a day number back
+into a date is Ben Joffe's [*A Very Fast 64-Bit Date
+Algorithm*](https://www.benjoffe.com/fast-date-64). Both are in
+`src/Date.zig` and `src/dayofweek.zig`, with the derivations in the doc
+comments there.
 
-Two ideas do the work. The year is shifted to begin in March, which puts
+Two ideas do the work in Hinnant's. The year is shifted to begin in March, which puts
 the leap day at the end of it and leaves month lengths that a single
 division inverts. And the calendar is cut into *eras* of 400 years, the
 period after which the proleptic Gregorian calendar repeats exactly —
@@ -1270,8 +1272,23 @@ do is validity checking, deliberately, so `Date.isRegular` and the
 assertions inside the conversions are this library's own. The paper's own
 verification is kept, and runs: see `-Dbig-test-years` below.
 
-Hinnant dedicates the algorithms to the public domain, so they are here
-under the same MIT licence as the rest without any further condition.
+Joffe's goes the other way in four multiplications and no division. It
+keeps the March-based year but counts years backwards from a far-future
+leap day, which puts the long year of every four and the long century of
+every four at the start of the count rather than the end, and it reads the
+month and day off a single fixed-point line, correcting the quarter-day
+drift that measuring years in units of 365.25 days leaves. It is more than
+three times as fast as Hinnant's `civil_from_days` in `zig build bench`.
+Its author established its range by testing rather than proof, so
+`zig build verify-days` compares it with Hinnant's for every day number a
+`Date` can hold (see [Testing](#testing)), and the tests and fuzz targets
+compare the two on every ordinary run. Hinnant's version is kept in
+`src/hinnant.zig` for that purpose and is not part of the API.
+
+Hinnant dedicates his algorithms to the public domain. Joffe's is written
+here from the description in his article rather than translated from his
+reference implementation. Both are here under the same MIT licence as the
+rest without any further condition.
 
 ## A note on offsets
 
@@ -1337,6 +1354,7 @@ zig build oracle-cldr              # the CLDR patterns against ICU
 zig build oracle-strftime          # the strftime conversions against the C library
 zig build oracle-powershell        # the .NET format strings and Get-Date against .NET and PowerShell
 zig build bench                    # always ReleaseFast, whatever -Doptimize says
+zig build verify-days              # every day number, Joffe against Hinnant
 ```
 
 Every oracle is part of `zig build test`, so an ordinary run needs `node`,
@@ -1436,6 +1454,14 @@ against the seventeen the paper reports for the same sweep in C++ in
 
 The seed is the test runner's, so a failure replays exactly.
 
+`zig build verify-days` converts every day number from `Date.min_days` to
+`Date.max_days` — about 1.57 trillion, every day of every year a `Year`
+holds — with both Joffe's algorithm and Hinnant's and stops at the first
+disagreement. It is always ReleaseFast and uses every processor, and is
+not part of `zig build test` because it takes about half an hour on sixteen
+threads. Its last run, on 2026-10-16, found all 1,568,704,592,610 in
+agreement.
+
 Beside the mutation and generator targets are `std.testing.fuzz` ones,
 which Zig's own coverage-guided fuzzer drives:
 
@@ -1473,8 +1499,7 @@ refuses those from a `file://` page.
 
 ## References cited
 
-The documents this library is written against. They are kept in a Zotero
-collection called `zig-datetime`, with the full text of each RFC attached.
+The documents this library is written against.
 
 - **[POSIX]** The Open Group and IEEE, *The Open Group Base Specifications
   Issue 8*, IEEE Std 1003.1-2024,
@@ -1587,8 +1612,16 @@ collection called `zig-datetime`, with the full text of each RFC attached.
   reference compiler `-Dembed-tzdata` builds and runs.
 - **[HINNANT]** Hinnant, H., *chrono-Compatible Low-Level Date Algorithms*,
   <https://howardhinnant.github.io/date_algorithms.html>. `days_from_civil`
-  and `civil_from_days`, which `Date` is built on, and the sweep over every
-  date in a span of years that `-Dbig-test-years` runs.
+  and `civil_from_days`, which `Date` is built on and checked against, and
+  the sweep over every date in a span of years that `-Dbig-test-years` runs.
+- **[JOFFE]** Joffe, B., *A Very Fast 64-Bit Date Algorithm: 30–40%
+  faster*, 23 November 2025, <https://www.benjoffe.com/fast-date-64>. The
+  conversion from a day number to a date in `Date.fromDaysSinceStartOfEra`.
+- **[NERI]** Neri, C. and L. Schneider, "Euclidean affine functions and
+  their application to calendar algorithms", *Software: Practice and
+  Experience* 53(4), 937–970, 2023, <https://doi.org/10.1002/spe.3172>.
+  The fixed-point divisions and the `bump` that Joffe's algorithm builds
+  on.
 - **[RFC822]** Crocker, D., *Standard for the Format of ARPA Internet Text
   Messages*, RFC 822, August 1982,
   <https://www.rfc-editor.org/info/rfc822>. The date syntax `rfc822` reads
