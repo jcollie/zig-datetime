@@ -359,10 +359,10 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run the benchmarks");
     bench_step.dependOn(&run_bench.step);
 
-    // Every day number a `Date` holds, through Joffe's algorithm and
-    // Hinnant's, which the library no longer uses but keeps to check it
+    // Every day number a `Date` holds, through Joffe's algorithms and
+    // Hinnant's, which the library no longer uses but keeps to check them
     // against. ReleaseFast for the same reason as the benchmarks, and so it
-    // shares their instances of the modules: it is half an hour on every
+    // shares their instances of the modules: it is forty minutes on every
     // processor there is, and Debug would make it days.
     const verify_days = b.addExecutable(.{
         .name = "verify-days",

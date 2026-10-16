@@ -1707,11 +1707,12 @@ test "random calendar round trips" {
     try overRandom(calendarProperty);
 }
 
-// `Date.fromDaysSinceStartOfEra` is Joffe's fixed-point algorithm, and
-// `hinnant.civilFromDays` the plain one it replaced. They have to agree on
-// every day number a `Date` holds; `zig build verify-days` checks all of
+// `Date.fromDaysSinceStartOfEra` and `Date.toDaysSinceStartOfEra` are
+// Joffe's algorithms, and `hinnant.civilFromDays` and
+// `hinnant.daysFromCivil` the plain ones they replaced. They have to agree
+// on every day number a `Date` holds; `zig build verify-days` checks all of
 // them, and these look for a disagreement on every ordinary test run.
-test "fuzz Date.fromDaysSinceStartOfEra against Hinnant" {
+test "fuzz Date day numbers against Hinnant" {
     const driver = struct {
         fn one(_: void, smith: *std.testing.Smith) anyerror!void {
             try checkAgainstHinnant(smith.valueRangeAtMost(Date.DaysType, Date.min_days, Date.max_days));
@@ -1740,9 +1741,11 @@ fn checkAgainstHinnant(days: Date.DaysType) !void {
     try std.testing.expectEqual(expected.year, got.year);
     try std.testing.expectEqual(expected.month, got.month.monthNumber());
     try std.testing.expectEqual(expected.day, got.day);
+    try std.testing.expectEqual(@as(i64, days), hinnant.daysFromCivil(expected));
+    try std.testing.expectEqual(days, got.toDaysSinceStartOfEra());
 }
 
-test "random Date.fromDaysSinceStartOfEra against Hinnant" {
+test "random Date day numbers against Hinnant" {
     try overRandom(hinnantProperty);
 }
 
