@@ -63,7 +63,7 @@ pub fn main(init: std.process.Init) !void {
         d.* = .{ .year = dt.year, .month = dt.month, .day = dt.day };
     }
 
-    var days: [table_len]Date.DaysType = undefined;
+    var days: [table_len]Date.DayNumber = undefined;
     for (&days, dates) |*d, date| d.* = date.toDayNumber();
 
     // --- calendar arithmetic ------------------------------------------

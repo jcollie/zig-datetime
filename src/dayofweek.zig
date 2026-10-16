@@ -246,7 +246,7 @@ pub const DayOfWeek = enum(u3) {
     /// Ben Joffe's article on weekdays
     /// (<https://www.benjoffe.com/fast-day-of-week>) gathers faster ways to
     /// take that remainder. Most are for 32-bit day counts, which a
-    /// `DaysType` is not. The one that fits takes the low 64 bits of
+    /// `DayNumber` is not. The one that fits takes the low 64 bits of
     /// `days * ceil(2^64 / 7)`, adds a constant that turns the circle round
     /// to Thursday, and keeps the top three bits: since 7 is one less than
     /// 8, multiplying by about 8/7 lands each day in its own eighth of the
@@ -258,7 +258,7 @@ pub const DayOfWeek = enum(u3) {
     /// and the `TimeZone` lookups, which call this, came out the same
     /// within the noise of `zig build bench`. So this stays, and the
     /// two magic constants do not come in.
-    pub fn fromDayNumber(days: Date.DaysType) DayOfWeek {
+    pub fn fromDayNumber(days: Date.DayNumber) DayOfWeek {
         const result = if (days >= -4)
             @rem(days + 4, 7)
         else

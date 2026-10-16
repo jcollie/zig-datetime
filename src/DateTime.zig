@@ -2284,7 +2284,7 @@ pub fn toUtc(self: DateTime) DateTime {
         self.offset;
 
     const days = date.toDayNumber() +
-        @as(Date.DaysType, @divFloor(seconds, std.time.s_per_day));
+        @as(Date.DayNumber, @divFloor(seconds, std.time.s_per_day));
     const clock = secondofday.split(@intCast(@mod(seconds, std.time.s_per_day)));
 
     const utc_date = Date.fromDayNumber(days);

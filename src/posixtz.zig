@@ -62,7 +62,7 @@ pub const Rule = union(enum) {
     /// between them by the length of a year. Converting inside would put
     /// two conversions behind every switch and twelve behind every
     /// `Posix.spanAt`.
-    fn dayNumber(self: Rule, year: Year, january_first: Date.DaysType) Date.DaysType {
+    fn dayNumber(self: Rule, year: Year, january_first: Date.DayNumber) Date.DayNumber {
         switch (self) {
             .month_week_day => |spec| {
                 const first_of_month = january_first + spec.month.daysBefore(year);
@@ -142,7 +142,7 @@ pub const Transition = struct {
 
     /// Returns the Unix timestamp at which this transition happens in
     /// `year`, given the UTC offset in effect just before it.
-    fn timestamp(self: Transition, year: Year, offset_before: i32, january_first: Date.DaysType) i64 {
+    fn timestamp(self: Transition, year: Year, offset_before: i32, january_first: Date.DayNumber) i64 {
         const midnight = @as(i64, self.rule.dayNumber(year, january_first)) * std.time.s_per_day;
         return midnight + self.time - offset_before;
     }
@@ -378,7 +378,7 @@ pub const Posix = struct {
         const previous = year -| 1;
         const next = year +| 1;
         const years = [_]Year{ previous, year, next };
-        const firsts = [_]Date.DaysType{
+        const firsts = [_]Date.DayNumber{
             if (previous == year) january_first else january_first - yearLength(previous),
             january_first,
             if (next == year) january_first else january_first + yearLength(year),
@@ -560,7 +560,7 @@ pub fn parse(text: []const u8) ParseError!Posix {
 
 /// How many days `year` has, which is how the rule evaluation steps from
 /// one year's first of January to its neighbour's without converting one.
-fn yearLength(year: Year) Date.DaysType {
+fn yearLength(year: Year) Date.DayNumber {
     return if (Month.Feb.lastDay(year) == 29) 366 else 365;
 }
 
@@ -652,10 +652,10 @@ test "the shortcut in spanAt agrees with a full scan" {
 }
 
 test yearLength {
-    try std.testing.expectEqual(@as(Date.DaysType, 366), yearLength(2024));
-    try std.testing.expectEqual(@as(Date.DaysType, 365), yearLength(2025));
-    try std.testing.expectEqual(@as(Date.DaysType, 365), yearLength(2100));
-    try std.testing.expectEqual(@as(Date.DaysType, 366), yearLength(2000));
+    try std.testing.expectEqual(@as(Date.DayNumber, 366), yearLength(2024));
+    try std.testing.expectEqual(@as(Date.DayNumber, 365), yearLength(2025));
+    try std.testing.expectEqual(@as(Date.DayNumber, 365), yearLength(2100));
+    try std.testing.expectEqual(@as(Date.DayNumber, 366), yearLength(2000));
 
     // And it is the distance between two consecutive first of Januaries,
     // which is the only reason it is here.

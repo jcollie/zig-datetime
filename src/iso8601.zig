@@ -734,11 +734,11 @@ fn weekDate(cursor: *Cursor, year: Year, extended: bool, precision: *Precision) 
     // ISO 8601 anchors week 1 as the week containing January 4th.
     const anchor: Date = .{ .year = year, .month = .Jan, .day = 4 };
     const week1_monday = anchor.toDayNumber() -
-        (@as(Date.DaysType, anchor.dayOfWeek().isoWeekdayNumber()) - 1);
+        (@as(Date.DayNumber, anchor.dayOfWeek().isoWeekdayNumber()) - 1);
 
     return Date.fromDayNumber(week1_monday +
-        (@as(Date.DaysType, week) - 1) * 7 +
-        (@as(Date.DaysType, weekday) - 1));
+        (@as(Date.DayNumber, week) - 1) * 7 +
+        (@as(Date.DayNumber, weekday) - 1));
 }
 
 test weekDate {

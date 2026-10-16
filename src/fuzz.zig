@@ -1101,7 +1101,7 @@ fn localeRoundTripProperty(text: []const u8) !void {
     // Any day of a wide span, kept inside what a four digit year can
     // write since the format string below cannot express anything wider.
     const span = 3_000_000;
-    const days: Date.DaysType = @mod(std.mem.readInt(i32, text[1..5], .little), span) - span / 3;
+    const days: Date.DayNumber = @mod(std.mem.readInt(i32, text[1..5], .little), span) - span / 3;
     const date = Date.fromDayNumber(days);
     if (!date.isRegular() or date.year < 1 or date.year > 9999) return;
 
@@ -1715,7 +1715,7 @@ test "random calendar round trips" {
 test "fuzz Date day numbers against Hinnant" {
     const driver = struct {
         fn one(_: void, smith: *std.testing.Smith) anyerror!void {
-            try checkAgainstHinnant(smith.valueRangeAtMost(Date.DaysType, Date.min_days, Date.max_days));
+            try checkAgainstHinnant(smith.valueRangeAtMost(Date.DayNumber, Date.min_days, Date.max_days));
         }
     };
     try std.testing.fuzz({}, driver.one, .{});
@@ -1725,16 +1725,16 @@ test "fuzz Date day numbers against Hinnant" {
 /// draws a year: often near the present, sometimes anywhere, and sometimes
 /// at one of the two ends.
 fn hinnantProperty(random: std.Random) !void {
-    const days: Date.DaysType = switch (random.uintLessThan(u8, 8)) {
-        0 => Date.min_days + random.intRangeAtMost(Date.DaysType, 0, 146097),
-        1 => Date.max_days - random.intRangeAtMost(Date.DaysType, 0, 146097),
-        2, 3 => random.intRangeAtMost(Date.DaysType, Date.min_days, Date.max_days),
-        else => random.intRangeAtMost(Date.DaysType, -4_000_000, 4_000_000),
+    const days: Date.DayNumber = switch (random.uintLessThan(u8, 8)) {
+        0 => Date.min_days + random.intRangeAtMost(Date.DayNumber, 0, 146097),
+        1 => Date.max_days - random.intRangeAtMost(Date.DayNumber, 0, 146097),
+        2, 3 => random.intRangeAtMost(Date.DayNumber, Date.min_days, Date.max_days),
+        else => random.intRangeAtMost(Date.DayNumber, -4_000_000, 4_000_000),
     };
     try checkAgainstHinnant(days);
 }
 
-fn checkAgainstHinnant(days: Date.DaysType) !void {
+fn checkAgainstHinnant(days: Date.DayNumber) !void {
     const expected = hinnant.civilFromDays(days);
     const got = Date.fromDayNumber(days);
     errdefer std.debug.print("day {d}: Hinnant {any}, got {any}\n", .{ days, expected, got });

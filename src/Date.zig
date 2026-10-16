@@ -81,25 +81,26 @@ test isRegular {
     try std.testing.expect(!(Date{ .year = 2024, .month = .Jan, .day = 0 }).isRegular());
 }
 
-/// A count of days since 1970-01-01, wide enough for every date a `Year`
-/// can hold: the whole span of years at the longest a year can be.
-pub const DaysType = std.math.IntFittingRange(
+/// A day number: a count of days since 1970-01-01, negative before it,
+/// wide enough for every date a `Year` can hold: the whole span of years
+/// at the longest a year can be.
+pub const DayNumber = std.math.IntFittingRange(
     std.math.minInt(Year) * 366,
     std.math.maxInt(Year) * 366,
 );
 
 /// The day numbers of the first and last dates a `Date` can hold.
 ///
-/// `DaysType` is sized for 366 days a year, which is more than a year
+/// `DayNumber` is sized for 366 days a year, which is more than a year
 /// actually has, so its own extremes name years a `Year` cannot. These
 /// are the real bounds, and what a saturating conversion saturates to.
-pub const min_days: DaysType = (Date{
+pub const min_days: DayNumber = (Date{
     .year = std.math.minInt(Year),
     .month = .Jan,
     .day = 1,
 }).toDayNumber();
 
-pub const max_days: DaysType = (Date{
+pub const max_days: DayNumber = (Date{
     .year = std.math.maxInt(Year),
     .month = .Dec,
     .day = 31,
@@ -116,10 +117,10 @@ test min_days {
         fromDayNumber(max_days),
     );
 
-    // And they are inside what `DaysType` can hold, with room to spare,
+    // And they are inside what `DayNumber` can hold, with room to spare,
     // because it is sized for a longer year than there is.
-    try std.testing.expect(min_days > std.math.minInt(DaysType));
-    try std.testing.expect(max_days < std.math.maxInt(DaysType));
+    try std.testing.expect(min_days > std.math.minInt(DayNumber));
+    try std.testing.expect(max_days < std.math.maxInt(DayNumber));
 }
 
 /// The first and last instants that fall on a date a `Date` can hold, as
@@ -153,7 +154,7 @@ test min_seconds {
 /// Clamping rather than refusing keeps every caller total. The answer for
 /// an instant outside the calendar is the first or last date there is,
 /// which is wrong in the same way that the question was.
-pub fn daysFromSecondsSaturating(seconds: i64) DaysType {
+pub fn daysFromSecondsSaturating(seconds: i64) DayNumber {
     const days = @divFloor(seconds, std.time.s_per_day);
     if (days < min_days) return min_days;
     if (days > max_days) return max_days;
@@ -161,11 +162,11 @@ pub fn daysFromSecondsSaturating(seconds: i64) DaysType {
 }
 
 test daysFromSecondsSaturating {
-    try std.testing.expectEqual(@as(DaysType, 0), daysFromSecondsSaturating(0));
-    try std.testing.expectEqual(@as(DaysType, 1), daysFromSecondsSaturating(std.time.s_per_day));
+    try std.testing.expectEqual(@as(DayNumber, 0), daysFromSecondsSaturating(0));
+    try std.testing.expectEqual(@as(DayNumber, 1), daysFromSecondsSaturating(std.time.s_per_day));
 
     // Floor division, so a second before the epoch is the day before it.
-    try std.testing.expectEqual(@as(DaysType, -1), daysFromSecondsSaturating(-1));
+    try std.testing.expectEqual(@as(DayNumber, -1), daysFromSecondsSaturating(-1));
 
     // Past the end of the calendar the answer stops moving rather than
     // wrapping or trapping, and what it stops at is a date.
@@ -260,7 +261,7 @@ test daysFromSecondsSaturating {
 /// article also gives smaller constants for ARM, where large immediates
 /// are slow to load; this is the x86-64 form, which is correct everywhere
 /// and has not been measured on ARM.
-pub fn fromDayNumber(days: DaysType) Date {
+pub fn fromDayNumber(days: DayNumber) Date {
     std.debug.assert(days >= min_days and days <= max_days);
 
     const eras: u64 = 4726498270;
@@ -316,15 +317,15 @@ pub fn fromDayNumber(days: DaysType) Date {
 ///
 /// `posixtz` works out every switch of a rule as an offset from the first
 /// of January, and this is where that day comes from.
-pub fn yearAndFirstDay(days: DaysType) struct { year: Year, january_first: DaysType } {
+pub fn yearAndFirstDay(days: DayNumber) struct { year: Year, january_first: DayNumber } {
     const date = fromDayNumber(days);
-    const into_month: DaysType = date.day - 1;
+    const into_month: DayNumber = date.day - 1;
     const january_first = switch (date.month) {
         .Jan => days - into_month,
         .Feb => days - into_month - 31,
         else => days - into_month -
-            @divTrunc(153 * (@as(DaysType, date.month.monthNumber()) - 3) + 2, 5) -
-            @as(DaysType, if (leap.is(date.year)) 60 else 59),
+            @divTrunc(153 * (@as(DayNumber, date.month.monthNumber()) - 3) + 2, 5) -
+            @as(DayNumber, if (leap.is(date.year)) 60 else 59),
     };
     return .{ .year = date.year, .january_first = january_first };
 }
@@ -353,12 +354,12 @@ test yearAndFirstDay {
 
     // And so do the days at either end of the calendar.
     for (0..800) |i| {
-        try expectFirstDay(min_days + @as(DaysType, @intCast(i)));
-        try expectFirstDay(max_days - @as(DaysType, @intCast(i)));
+        try expectFirstDay(min_days + @as(DayNumber, @intCast(i)));
+        try expectFirstDay(max_days - @as(DayNumber, @intCast(i)));
     }
 }
 
-fn expectFirstDay(day: DaysType) !void {
+fn expectFirstDay(day: DayNumber) !void {
     const placed = yearAndFirstDay(day);
     const first = (Date{ .year = placed.year, .month = .Jan, .day = 1 }).toDayNumber();
     try std.testing.expectEqual(first, placed.january_first);
@@ -385,7 +386,7 @@ test fromDayNumber {
 /// Asserts that `fromDayNumber` gives the date Hinnant's
 /// `civil_from_days` does for `days`, and that `toDayNumber`
 /// takes that date back to `days`, as Hinnant's `days_from_civil` does.
-fn expectHinnant(days: DaysType) !void {
+fn expectHinnant(days: DayNumber) !void {
     const expected = hinnant.civilFromDays(days);
     const got = fromDayNumber(days);
     errdefer std.debug.print("day {d}: Hinnant {any}, got {any}\n", .{ days, expected, got });
@@ -409,7 +410,7 @@ test expectHinnant {
 // verify-days` runs the same comparison over every day number there is.
 test "fromDayNumber and toDayNumber agree with Hinnant" {
     // Every day of eleven thousand years around the epoch.
-    var day: DaysType = -2_000_000;
+    var day: DayNumber = -2_000_000;
     while (day <= 2_000_000) : (day += 1) try expectHinnant(day);
 
     // A week either side of 1 January and of the end of February of every
@@ -424,8 +425,8 @@ test "fromDayNumber and toDayNumber agree with Hinnant" {
         var year = span[0] - @mod(span[0], 100) + 100;
         while (year <= span[1]) : (year += 100) {
             inline for (.{ Month.Jan, Month.Mar }) |month| {
-                const anchor: DaysType = @intCast(hinnant.daysFromCivil(.{ .year = year, .month = month.monthNumber(), .day = 1 }));
-                var offset: DaysType = -7;
+                const anchor: DayNumber = @intCast(hinnant.daysFromCivil(.{ .year = year, .month = month.monthNumber(), .day = 1 }));
+                var offset: DayNumber = -7;
                 while (offset <= 7) : (offset += 1) try expectHinnant(anchor + offset);
             }
         }
@@ -433,13 +434,13 @@ test "fromDayNumber and toDayNumber agree with Hinnant" {
 
     // A thousand years at each end.
     for (0..366_000) |i| {
-        try expectHinnant(min_days + @as(DaysType, @intCast(i)));
-        try expectHinnant(max_days - @as(DaysType, @intCast(i)));
+        try expectHinnant(min_days + @as(DayNumber, @intCast(i)));
+        try expectHinnant(max_days - @as(DayNumber, @intCast(i)));
     }
 }
 
 test "civilFromDays" {
-    const tests = [_]struct { days: DaysType, result: Date }{
+    const tests = [_]struct { days: DayNumber, result: Date }{
         .{
             .days = 0,
             .result = Date{
@@ -525,7 +526,7 @@ test "civilFromDays" {
 /// hold, which is every date there is, and on 2026-10-16 it did for all
 /// 1,568,704,592,610 of them. The tests compare it with Hinnant's
 /// `days_from_civil` in `hinnant.zig`.
-pub fn toDayNumber(self: Date) DaysType {
+pub fn toDayNumber(self: Date) DayNumber {
     std.debug.assert(self.day >= 1 and self.day <= self.month.lastDay(self.year));
 
     // 5368710 eras is 2147484000 years, one era more than the 2^31 + 1 a
@@ -547,11 +548,11 @@ pub fn toDayNumber(self: Date) DaysType {
 
 test toDayNumber {
     try std.testing.expectEqual(
-        @as(DaysType, 0),
+        @as(DayNumber, 0),
         (Date{ .year = 1970, .month = .Jan, .day = 1 }).toDayNumber(),
     );
     try std.testing.expectEqual(
-        @as(DaysType, -1),
+        @as(DayNumber, -1),
         (Date{ .year = 1969, .month = .Dec, .day = 31 }).toDayNumber(),
     );
 
@@ -561,7 +562,7 @@ test toDayNumber {
 }
 
 test "daysFromCivil" {
-    const tests = [_]struct { date: Date, result: DaysType }{
+    const tests = [_]struct { date: Date, result: DayNumber }{
         .{
             .date = .{
                 .year = 1970,

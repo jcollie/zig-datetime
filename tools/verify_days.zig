@@ -31,7 +31,7 @@ const Io = std.Io;
 const Date = @import("datetime").Date;
 const hinnant = @import("hinnant");
 
-const DaysType = Date.DaysType;
+const DayNumber = Date.DayNumber;
 
 /// Days per chunk. Large enough that taking the next one costs nothing
 /// beside checking it, small enough that progress shows every second or
@@ -41,7 +41,7 @@ const chunk_len: i64 = 1 << 28;
 /// Returns the first day number in `[first, last]` on which the two
 /// algorithms disagree about the date, or whose date does not convert back
 /// to it, or null if there is no such day number.
-pub fn firstDisagreement(first: DaysType, last: DaysType) ?DaysType {
+pub fn firstDisagreement(first: DayNumber, last: DayNumber) ?DayNumber {
     var day = first;
     while (day <= last) : (day += 1) {
         const expected = hinnant.civilFromDays(day);
@@ -55,9 +55,9 @@ pub fn firstDisagreement(first: DaysType, last: DaysType) ?DaysType {
 }
 
 test firstDisagreement {
-    try std.testing.expectEqual(@as(?DaysType, null), firstDisagreement(-100_000, 100_000));
-    try std.testing.expectEqual(@as(?DaysType, null), firstDisagreement(Date.min_days, Date.min_days + 1000));
-    try std.testing.expectEqual(@as(?DaysType, null), firstDisagreement(Date.max_days - 1000, Date.max_days));
+    try std.testing.expectEqual(@as(?DayNumber, null), firstDisagreement(-100_000, 100_000));
+    try std.testing.expectEqual(@as(?DayNumber, null), firstDisagreement(Date.min_days, Date.min_days + 1000));
+    try std.testing.expectEqual(@as(?DayNumber, null), firstDisagreement(Date.max_days - 1000, Date.max_days));
 }
 
 /// What the tasks share: where the next chunk starts, how many are done,
@@ -131,7 +131,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
 
     const disagreement = shared.disagreement.load(.monotonic);
     if (disagreement != std.math.maxInt(i64)) {
-        const day: DaysType = @intCast(disagreement);
+        const day: DayNumber = @intCast(disagreement);
         const got = Date.fromDayNumber(day);
         std.debug.print("day {d}: Hinnant {any}, Joffe {any}, back to {d}\n", .{
             day,
