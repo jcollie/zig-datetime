@@ -306,28 +306,93 @@ pub fn fromDayNumber(days: DayNumber) Date {
 /// The year a day number falls in, together with the day number of that
 /// year's first of January.
 ///
-/// The date is worked out in full and the days before it in its year are
-/// taken back off, in March-based terms so that there is one line and no
-/// table: from March on, `(153 * (month - 3) + 2) / 5` is the run from the
-/// first of March to the first of the month — the same line Hinnant's
-/// `days_from_civil` draws — and the first of January is 59 days before
-/// the first of March, or 60 in a leap year. In January and February
-/// there is no leap day behind the date to count, so the only question is
-/// whether January's 31 days are.
+/// This is Ben Joffe's ordinal-date algorithm, which goes from a day number
+/// to a year and a day of the year without the month and day in between.
+/// It is `fromDayNumber`'s method run in January-based years and forward
+/// rather than backward, which is the same trick from the other side: a
+/// count of January-based years that starts at a year divisible by 400
+/// also meets the long one of each cycle *first*, since that year is a
+/// leap year and starts a century with 25 of them.
+///
+/// **Shift.** `day = days + d_shift` counts days from 1 January of the
+/// year `-400 * eras`: 719162 days back from 1970-01-01 is 0001-01-01,
+/// 366 more is 0000-01-01, and `eras` eras of 146097 days on from there.
+/// Every day number a `Date` can hold comes out positive, so the rest is
+/// unsigned.
+///
+/// **Centuries.** `day * c1`, with `c1 = floor(2^64 * 4 / 146097)`, is
+/// `day / 36524.25` in 64.64 fixed point. The high half `cen` is the whole
+/// centuries behind `day`, exact because the long century comes first. The
+/// low half `cpt` is how far into its century `day` is, and it is what
+/// the leap test is read from. The Gregorian calendar drops the leap day
+/// of a century year in three centuries out of four, those with
+/// `cen % 4 != 0`, so a day is in such a year exactly when `cen % 4 != 0`
+/// and `cpt` is within the first 365 days of the century. `julian` is
+/// true in every other year: the ones whose leap day the Julian calendar's
+/// every-fourth-year rule gets right.
+///
+/// **The Julian map.** `jul = day + cen - cen / 4` puts back the dropped
+/// leap days, one at the start of each century the Gregorian calendar
+/// shortened, and what is left counts days as though every fourth year
+/// were a leap year.
+///
+/// **Years.** `jul * c2`, with `c2 = ceil(2^64 * 4 / 1461)`, is `jul /
+/// 365.25` in the same fixed point. Its high half is the years since the
+/// start of the count, exact because the leap year of each four comes
+/// first, and `y_shift = 400 * eras` turns that back into a year. Its low
+/// half `ypt` is how far into the year `jul` is, and `ypt * 1461 >> 66`,
+/// which is `ypt * 365.25` with the fraction dropped, is the day of the
+/// year from zero.
+///
+/// **The century years.** In a century year the calendar shortened, the
+/// map's added day sits before 1 January, so every day of that year
+/// lands one place later in the Julian count than it is. That is exactly
+/// the one that counting the day of the year from one, not zero, would
+/// add, so the day of the year is the Julian one plus `julian`: plus one
+/// in every year but those, where the map has already added it.
+///
+/// The first of January is then the day of the year back from `days`.
+/// Two multiplications and no division, where working out the date in
+/// full takes four multiplications and the month line besides.
+///
+/// The article is a draft, and gives its 64-bit constants as unbalanced
+/// around zero. `tools/verify_days.zig` checks the year against Hinnant's
+/// `civil_from_days`, and the first of January against what `toDayNumber`
+/// gives for it, for every day number from `min_day_number` to
+/// `max_day_number`.
 ///
 /// `posixtz` works out every switch of a rule as an offset from the first
 /// of January, and this is where that day comes from.
 pub fn yearAndFirstDay(days: DayNumber) struct { year: Year, january_first: DayNumber } {
-    const date = fromDayNumber(days);
-    const into_month: DayNumber = date.day - 1;
-    const january_first = switch (date.month) {
-        .Jan => days - into_month,
-        .Feb => days - into_month - 31,
-        else => days - into_month -
-            @divTrunc(153 * (@as(DayNumber, date.month.monthNumber()) - 3) + 2, 5) -
-            @as(DayNumber, if (leap.is(date.year)) 60 else 59),
+    const eras: u64 = 5_000_000_000;
+    const d_shift: u64 = 146097 * eras + 719162 + 366;
+    const y_shift: u64 = 400 * eras;
+    const c1: u64 = (4 << 64) / 146097;
+    const c2: u64 = (4 << 64) / 1461 + 1;
+    // 365 days into a century, in the units `cpt` counts in.
+    const first_year: u64 = (365 << 64) / 36525;
+
+    // `days` is far inside `d_shift` either way, so this never wraps.
+    const day: u64 = @intCast(@as(i64, d_shift) + days);
+
+    const cn: u128 = @as(u128, day) * c1;
+    const cen: u64 = @truncate(cn >> 64);
+    const cpt: u64 = @truncate(cn);
+    const julian = cen % 4 == 0 or cpt > first_year;
+    const jul: u64 = day + cen - cen / 4;
+
+    const yn: u128 = @as(u128, jul) * c2;
+    const yrs: u64 = @truncate(yn >> 64);
+    const ypt: u64 = @truncate(yn);
+    const day_of_year: u64 = @as(u64, @truncate((@as(u128, ypt) * 1461) >> 66)) + @intFromBool(julian);
+
+    const year = @as(i64, @intCast(yrs)) - @as(i64, y_shift);
+    std.debug.assert(year >= std.math.minInt(Year) and year <= std.math.maxInt(Year));
+    std.debug.assert(day_of_year >= 1 and day_of_year <= 366);
+    return .{
+        .year = @intCast(year),
+        .january_first = days - @as(DayNumber, @intCast(day_of_year)) + 1,
     };
-    return .{ .year = date.year, .january_first = january_first };
 }
 
 test yearAndFirstDay {

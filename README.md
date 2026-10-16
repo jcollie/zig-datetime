@@ -1276,6 +1276,17 @@ before the month from Neri and Schneider's fixed-point line. They are
 about three and a half and one and three-quarter times as fast as
 Hinnant's `civil_from_days` and `days_from_civil` in `zig build bench`.
 
+Where only the year and the first of January are wanted, which is how
+`posixtz` places every switch of a rule, `Date.yearAndFirstDay` skips the
+month and day altogether with Joffe's [*Faster Ordinal Date
+Algorithms*](https://www.benjoffe.com/fast-ordinal-date). It counts
+January-based years forward from a year divisible by 400, which meets the
+long year and the long century first just as counting backward does, and
+reads the year and the day of the year from two multiplications. Whether
+the year is one whose leap day the Gregorian calendar drops falls out of
+the century step, from how far into its century the day is, so no
+separate leap-year test is needed.
+
 What that buys is a calendar exact in both directions for every year a
 `Year` can hold, with no epoch-relative special cases and nothing that
 degrades far from 1970. `Year` is an `i32`, numbered astronomically, so
@@ -1284,8 +1295,8 @@ part of any of the algorithms, so `Date.isRegular` and the assertions
 inside the conversions are this library's own.
 
 Joffe established the range of his algorithms by testing rather than
-proof, so `zig build verify-days` checks them against Hinnant's for every
-day number a `Date` can hold (see [Testing](#testing)), and the tests and
+proof, so `zig build verify-days` checks them against Hinnant's, and
+`yearAndFirstDay` against the full conversion, for every day number a `Date` can hold (see [Testing](#testing)), and the tests and
 fuzz targets compare the two on every ordinary run. Hinnant's versions are
 kept in `src/hinnant.zig` for that purpose and are not part of the API.
 Hinnant's own verification, a sweep over every date of a span of years, is
@@ -1470,10 +1481,12 @@ The seed is the test runner's, so a failure replays exactly.
 `Date.max_day_number` — about 1.57 trillion, every day of every year a `Year`
 holds — with both Joffe's algorithm and Hinnant's, converts each date back
 to a day number, and stops at the first disagreement or the first date that
-does not come back to where it started. It is always ReleaseFast and uses
+does not come back to where it started, or the first year or first of
+January `Date.yearAndFirstDay` gets wrong. It is always ReleaseFast and uses
 every processor, and is not part of `zig build test` because it takes about
-forty minutes on sixteen threads. Its last run, on 2026-10-16, found all
-1,568,704,592,610 in agreement both ways.
+fifty minutes on sixteen threads. Its last run, on 2026-10-16, found all
+1,568,704,592,610 in agreement both ways, and `yearAndFirstDay` right on
+every one.
 
 Beside the mutation and generator targets are `std.testing.fuzz` ones,
 which Zig's own coverage-guided fuzzer drives:
@@ -1639,6 +1652,10 @@ The documents this library is written against.
   11 December 2025, updated 18 December 2025,
   <https://www.benjoffe.com/fast-leap-year>. The survey and benchmarks of
   leap-year tests that `leap.is` was chosen from.
+- **[JOFFE-ORDINAL]** Joffe, B., *Faster Ordinal Date Algorithms*, draft,
+  3 January 2026, <https://www.benjoffe.com/fast-ordinal-date>. The
+  conversion from a day number to a year and its first of January in
+  `Date.yearAndFirstDay`.
 - **[JOFFE-WEEKDAY]** Joffe, B., *A faster way to calculate the day of the
   week*, 17 August 2026, <https://www.benjoffe.com/fast-day-of-week>. The
   64-bit multiply-add-shift weekday that was measured against

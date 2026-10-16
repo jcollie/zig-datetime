@@ -5,7 +5,8 @@
 //! every day number a `Date` can hold, from `Date.min_day_number` to
 //! `Date.max_day_number`: about 1.57 trillion of them, and checks that
 //! `Date.toDayNumber` takes each date it gives back to the day number it
-//! came from.
+//! came from, and that `Date.yearAndFirstDay` names the same year and the
+//! first of January `Date.toDayNumber` gives for it.
 //!
 //! The library converts in both directions with Ben Joffe's fixed-point
 //! algorithms, whose author established their range by testing rather than
@@ -14,7 +15,7 @@
 //! for the range this library uses the question is settled rather than
 //! sampled. Every date a `Date` can hold is the date of exactly one of these
 //! day numbers, so the round trip checks the conversion back on every date
-//! there is. It takes about forty minutes on a sixteen-thread machine, which
+//! there is. It takes about fifty minutes on a sixteen-thread machine, which
 //! is why it is a build step of its own and not part of `zig build test`.
 //!
 //!     zig build verify-days
@@ -40,7 +41,8 @@ const chunk_len: i64 = 1 << 28;
 
 /// Returns the first day number in `[first, last]` on which the two
 /// algorithms disagree about the date, or whose date does not convert back
-/// to it, or null if there is no such day number.
+/// to it, or whose year and first of January `yearAndFirstDay` gets wrong,
+/// or null if there is no such day number.
 pub fn firstDisagreement(first: DayNumber, last: DayNumber) ?DayNumber {
     var day = first;
     while (day <= last) : (day += 1) {
@@ -50,6 +52,9 @@ pub fn firstDisagreement(first: DayNumber, last: DayNumber) ?DayNumber {
             expected.month != got.month.monthNumber() or
             expected.day != got.day or
             got.toDayNumber() != day) return day;
+        const placed = Date.yearAndFirstDay(day);
+        if (placed.year != expected.year or
+            placed.january_first != (Date{ .year = got.year, .month = .Jan, .day = 1 }).toDayNumber()) return day;
     }
     return null;
 }
@@ -133,11 +138,12 @@ pub fn main(init: std.process.Init.Minimal) !void {
     if (disagreement != std.math.maxInt(i64)) {
         const day: DayNumber = @intCast(disagreement);
         const got = Date.fromDayNumber(day);
-        std.debug.print("day {d}: Hinnant {any}, Joffe {any}, back to {d}\n", .{
+        std.debug.print("day {d}: Hinnant {any}, Joffe {any}, back to {d}, year and first day {any}\n", .{
             day,
             hinnant.civilFromDays(day),
             got,
             got.toDayNumber(),
+            Date.yearAndFirstDay(day),
         });
         return error.Disagreement;
     }
