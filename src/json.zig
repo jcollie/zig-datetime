@@ -34,7 +34,7 @@ const iso8601 = @import("iso8601.zig");
 /// Text that is not the representation at all is `InvalidCharacter`, which
 /// is what `std.json` answers for a string that should have been a number
 /// and is not. A representation whose components are out of range — a
-/// month of 13, an interval that runs backwards, a duration too long to
+/// month of 13, an interval that runs backward, a duration too long to
 /// add — is `Overflow`, which is its answer for a number too large for
 /// the integer it was read into.
 pub const TextError = error{ InvalidCharacter, Overflow };

@@ -663,7 +663,7 @@ fn adjustedCount(
 /// ones do; see `cldrlocale.AvailableFormat` for why, and supply your own
 /// `Locale` or fill the field in on a copy of one of these.
 ///
-/// The matched pattern's field widths are adjusted towards the request
+/// The matched pattern's field widths are adjusted toward the request
 /// where the entry's key and the request disagree, which is what makes a
 /// two-digit day out of a locale that files a one-digit one. That is done
 /// while writing rather than by building a new pattern, so nothing here

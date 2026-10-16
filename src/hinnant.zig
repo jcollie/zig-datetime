@@ -83,7 +83,7 @@ test civilFromDays {
 /// Returns the number of days from 1970-01-01 to `date`; negative for dates
 /// before it. `date` must be a real date.
 ///
-/// `civilFromDays` read backwards. January and February are moved into the
+/// `civilFromDays` read backward. January and February are moved into the
 /// previous year, so that the year begins on 1 March and the leap day is
 /// its last day. The year is split into an era and a year-of-era, flooring
 /// so that years before 0 land in negative eras. `(153 * mp + 2) / 5` is

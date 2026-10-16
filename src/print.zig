@@ -134,7 +134,7 @@ test "print ordinal normal" {
 /// zero is written as `+00:00` rather than as `Z`.
 ///
 /// Neither RFC 822 nor ISO 8601 can express an offset finer than a minute,
-/// so an offset that is not a whole number of minutes is truncated towards
+/// so an offset that is not a whole number of minutes is truncated toward
 /// zero. That only arises for the local mean time offsets that timezones
 /// used before standard time, such as America/Chicago's -5:50:36.
 pub fn offset(writer: anytype, seconds: i32, separator: enum { none, colon }) !void {
@@ -156,7 +156,7 @@ test offset {
         .{ .seconds = 5 * std.time.s_per_hour + 45 * std.time.s_per_min, .colon = "+05:45", .none = "+0545" },
         .{ .seconds = -(3 * std.time.s_per_hour + 30 * std.time.s_per_min), .colon = "-03:30", .none = "-0330" },
         .{ .seconds = 14 * std.time.s_per_hour, .colon = "+14:00", .none = "+1400" },
-        // America/Chicago's local mean time, truncated towards zero.
+        // America/Chicago's local mean time, truncated toward zero.
         .{ .seconds = -21036, .colon = "-05:50", .none = "-0550" },
     };
 

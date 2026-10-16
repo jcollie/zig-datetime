@@ -326,7 +326,7 @@ pub const Interval = union(enum) {
     /// what `std.json.Stringify` calls when it meets one, in a field or on its
     /// own.
     ///
-    /// Reading is `iso8601.parseInterval`, so a string that runs backwards, or
+    /// Reading is `iso8601.parseInterval`, so a string that runs backward, or
     /// whose duration would carry an endpoint outside the years a `Year` can
     /// hold, is refused, and `start` and `end` are safe on what comes back.
     /// It is stricter than that parser in one way: every endpoint written has
@@ -412,8 +412,8 @@ pub const Interval = union(enum) {
 /// Which occurrence the text names depends on the form (ISO 8601-1:2019,
 /// 5.6.1).
 /// A start and an end, or a start and a duration, name the **first**
-/// interval, and the series runs forwards from it. A duration and an end
-/// name the **last**, and the series runs backwards from it: `R/P1Y/1985-
+/// interval, and the series runs forward from it. A duration and an end
+/// name the **last**, and the series runs backward from it: `R/P1Y/1985-
 /// 04-12T23:20:50Z` is an unbounded run of years that finished in April
 /// 1985. `iterator` walks outward from the named occurrence in whichever
 /// direction that is.
@@ -429,30 +429,30 @@ pub const RecurringInterval = struct {
     /// when it was written as a duration and an end.
     interval: Interval,
 
-    /// Whether the series runs forwards from `interval`, which is the case
+    /// Whether the series runs forward from `interval`, which is the case
     /// unless it was written as a duration and an end, where `interval` is
     /// the last occurrence and the rest came before it.
-    pub fn isForwards(self: RecurringInterval) bool {
+    pub fn isForward(self: RecurringInterval) bool {
         return self.interval != .duration_end;
     }
 
-    test isForwards {
+    test isForward {
         const monthly: RecurringInterval = .{ .count = null, .interval = .{ .start_duration = .{
             .start = .{ .year = 2024, .month = .Jan, .day = 1 },
             .duration = .{ .months = 1 },
         } } };
-        try std.testing.expect(monthly.isForwards());
+        try std.testing.expect(monthly.isForward());
 
         const ending: RecurringInterval = .{ .count = null, .interval = .{ .duration_end = .{
             .duration = .{ .months = 1 },
             .end = .{ .year = 2024, .month = .Jan, .day = 1 },
         } } };
-        try std.testing.expect(!ending.isForwards());
+        try std.testing.expect(!ending.isForward());
     }
 
     /// The occurrences of the series, starting with the one the text wrote
-    /// and walking away from it — forwards in time, or backwards when
-    /// `isForwards` says not.
+    /// and walking away from it — forward in time, or backward when
+    /// `isForward` says not.
     pub fn iterator(self: RecurringInterval) Iterator {
         return .{ .remaining = self.count, .current = self.interval };
     }
@@ -519,7 +519,7 @@ pub const RecurringInterval = struct {
 
         test next {
             // Written as a duration and an end, so the text names the last
-            // occurrence and the series runs backwards from it.
+            // occurrence and the series runs backward from it.
             const series: RecurringInterval = .{ .count = 2, .interval = .{ .duration_end = .{
                 .duration = .{ .days = 1 },
                 .end = .{ .year = 2024, .month = .Mar, .day = 15 },

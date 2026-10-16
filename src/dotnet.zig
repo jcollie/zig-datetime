@@ -572,9 +572,9 @@ test specifierOf {
 /// Whether the month name at `at` takes the form a language uses after a
 /// day number, which is .NET's `IsUseGenitiveForm`.
 ///
-/// It looks backwards from the month for the nearest `d` and counts the
+/// It looks backward from the month for the nearest `d` and counts the
 /// run of `d`s it belongs to; one or two is a day of the month, and says
-/// yes. Failing that it looks forwards past the month the same way. A run
+/// yes. Failing that it looks forward past the month the same way. A run
 /// of three or more is a weekday name and says nothing. Quotes are not
 /// taken into account, which is .NET's behavior rather than an oversight
 /// here: a `d` inside quoted text counts.

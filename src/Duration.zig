@@ -83,7 +83,7 @@ test negate {
     try std.testing.expect(d.negate().eql(.{ .months = -1, .days = 2 }));
 }
 
-/// Which direction this duration points: `1` forwards, `-1` backwards, `0`
+/// Which direction this duration points: `1` forward, `-1` backward, `0`
 /// for no time at all, and **null** when its fields disagree.
 ///
 /// Fields can disagree because nothing stops a caller building
@@ -318,7 +318,7 @@ fn splitMonths(total_months: anytype) struct { year: i128, month: Month } {
 test splitMonths {
     try std.testing.expectEqual(@as(i128, 2024), splitMonths(@as(i64, 2024 * 12 + 6)).year);
     try std.testing.expectEqual(Month.Jul, splitMonths(@as(i64, 2024 * 12 + 6)).month);
-    // A negative count rounds towards the earlier year.
+    // A negative count rounds toward the earlier year.
     try std.testing.expectEqual(@as(i128, -1), splitMonths(@as(i64, -1)).year);
     try std.testing.expectEqual(Month.Dec, splitMonths(@as(i64, -1)).month);
     // The two widths agree.

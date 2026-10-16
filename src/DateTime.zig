@@ -2043,7 +2043,7 @@ fn splitDays(total: anytype) struct { days: i128, nanosecond_of_day: u64 } {
 }
 
 test splitDays {
-    // A negative count rounds towards the earlier day.
+    // A negative count rounds toward the earlier day.
     const before = splitDays(@as(i64, -1));
     try std.testing.expectEqual(@as(i128, -1), before.days);
     try std.testing.expectEqual(@as(u64, std.time.ns_per_day - 1), before.nanosecond_of_day);
@@ -2064,7 +2064,7 @@ test add {
         (DateTime{ .year = 2001, .month = .Dec, .day = 1, .hour = 10, .minute = 30 })
             .add(.{ .nanoseconds = 25 * Duration.nanoseconds_per_hour }),
     );
-    // Backwards over a month boundary.
+    // Backward over a month boundary.
     try std.testing.expectEqual(
         DateTime{ .year = 2001, .month = .Nov, .day = 30, .hour = 23, .weekday = .Fri },
         (DateTime{ .year = 2001, .month = .Dec, .day = 1 })

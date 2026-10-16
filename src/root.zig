@@ -149,7 +149,7 @@ const big_test_years = @import("build_options").big_test_years;
 // The second is the paper's test as published, and it checks the paper's
 // published count as well, so a disagreement about how many days those two
 // million years hold is itself a failure.
-test "every date in a span of years, forwards" {
+test "every date in a span of years, forward" {
     if (big_test_years == 0) return error.SkipZigTest;
 
     const first: Year = -@as(Year, @intCast(big_test_years));

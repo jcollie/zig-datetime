@@ -1043,8 +1043,8 @@ has at most one sign, in front of everything, and cannot write it. ISO
 that is what `format` writes for such a duration: `P1M-1D`, or
 `P-1Y-2M3D`. `parseDuration` reads both forms back, but not a sign in
 both places at once, `-P1Y-2M`, which Part 2 forbids. An interval refuses
-any negative component, because a mixed duration runs forwards from some
-dates and backwards from others: `P1M-30D` is a day earlier from the 31st
+any negative component, because a mixed duration runs forward from some
+dates and backward from others: `P1M-30D` is a day earlier from the 31st
 of January and a day later from the 1st of March. And
 `DurationParseResult.fractional` says which component carried a decimal
 fraction, because a caller may allow fewer of them than ISO 8601 does —
@@ -1109,7 +1109,7 @@ basic form can have its date left out and nothing finer. The result also
 reports, for each endpoint that was a date, the `has_offset` and
 `precision` that `parse` would have.
 
-An interval has to run forwards — an end before its start is
+An interval has to run forward — an end before its start is
 `error.OutOfRange` — and a duration in one may not carry a sign. A
 duration that would carry the other endpoint outside the years a `Year`
 can hold is refused at parse time, which is what makes `start` and `end`
@@ -1153,9 +1153,9 @@ The count is the number of intervals, the first one included — the
 standard reads its own `R15/…` as "fifteen recurrences" — and `R/` with no
 count is unbounded. The form decides which occurrence the text names. A
 start and an end, or a start and a duration, name the **first**, and the
-series runs forwards. A duration and an end name the **last**:
+series runs forward. A duration and an end name the **last**:
 `R/P1Y/1985-04-12T23:20:50Z` is an unbounded run of years that ended in
-April 1985. `iterator` walks outward from the one named, and `isForwards`
+April 1985. `iterator` walks outward from the one named, and `isForward`
 says which way.
 
 `R0` and `R-1` are refused. Neither ISO 8601-1:2019 nor ISO 8601-2:2019
@@ -1230,7 +1230,7 @@ reduced time on purpose: `iso8601.parse` reports `has_offset` and
 
 A string that is not the representation is `error.InvalidCharacter`, and
 one whose components are out of range — a month of 13, an interval that
-runs backwards — is `error.Overflow`. Those are the errors `std.json`
+runs backward — is `error.Overflow`. Those are the errors `std.json`
 gives for a malformed and an oversized number, so they sit in the error
 sets it already has. Anything but a string is `error.UnexpectedToken`.
 
@@ -1265,7 +1265,7 @@ right means all of time is right. There is no table anywhere, and no
 leap-year test in the round trip itself.
 
 From a day number to a date takes four multiplications and no division.
-It keeps the March-based year but counts years backwards from a far-future
+It keeps the March-based year but counts years backward from a far-future
 leap day, which puts the long year of every four and the long century of
 every four at the start of the count rather than the end, and it reads the
 month and day off a single fixed-point line, correcting the quarter-day
@@ -1326,7 +1326,7 @@ The version lives in three places that have to agree — both dependency
 hashes in `build.zig.zon` and the `tz_release` constant in `build.zig`,
 which the generated data records as its own version — so the script
 rewrites all three together and verifies afterwards that no reference to
-the old release survived. It refuses to move backwards, and checks that
+the old release survived. It refuses to move backward, and checks that
 both tarballs are actually published before touching anything, since
 IANA's version endpoint has been known to move first.
 

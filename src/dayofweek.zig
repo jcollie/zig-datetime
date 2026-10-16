@@ -235,7 +235,7 @@ pub const DayOfWeek = enum(u3) {
     /// Adding 4 rebases the count on the Sunday four days before the epoch,
     /// since the epoch was a Thursday and Thursday is 4 in this numbering,
     /// so the remainder modulo 7 is then the weekday directly.
-    /// The second branch is there because `@rem` truncates towards zero,
+    /// The second branch is there because `@rem` truncates toward zero,
     /// so for a count more than four days before the epoch `days + 4` is
     /// negative and the remainder comes out in `[-6, 0]`; shifting by 5
     /// instead and adding 6 maps that range onto `[0, 6]` without a
@@ -273,7 +273,7 @@ pub const DayOfWeek = enum(u3) {
         try std.testing.expectEqual(DayOfWeek.Fri, fromDayNumber(1));
         try std.testing.expectEqual(DayOfWeek.Thu, fromDayNumber(7));
 
-        // Negative counts run backwards into the days before it.
+        // Negative counts run backward into the days before it.
         try std.testing.expectEqual(DayOfWeek.Wed, fromDayNumber(-1));
     }
 
@@ -397,7 +397,7 @@ test weekdayDifference {
     try std.testing.expectEqual(@as(u3, 2), weekdayDifference(.Sun, .Tue));
     try std.testing.expectEqual(@as(u3, 0), weekdayDifference(.Wed, .Wed));
 
-    // Counting is always forwards, so going back a day is six days on.
+    // Counting is always forward, so going back a day is six days on.
     try std.testing.expectEqual(@as(u3, 6), weekdayDifference(.Tue, .Mon));
 }
 

@@ -348,7 +348,7 @@ test "mutate iso8601.parseDuration" {
 // ISO 8601 intervals ---------------------------------------------------
 
 /// Whatever `iso8601.parseInterval` accepts has well formed endpoints that
-/// run forwards, can be resolved without a panic, and survives being
+/// run forward, can be resolved without a panic, and survives being
 /// written out and read back.
 fn iso8601IntervalProperty(text: []const u8) !void {
     const result = iso8601.parseInterval(text) catch return;
@@ -443,7 +443,7 @@ fn iso8601RecurringProperty(text: []const u8) !void {
         try std.testing.expect(occurrence.length() >= 0);
         if (previous) |p| {
             // Consecutive: the series has no gaps and no overlaps.
-            if (series.isForwards()) {
+            if (series.isForward()) {
                 try std.testing.expectEqual(p.end().toInstant(), occurrence.start().toInstant());
             } else {
                 try std.testing.expectEqual(p.start().toInstant(), occurrence.end().toInstant());

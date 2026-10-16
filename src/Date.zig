@@ -17,7 +17,7 @@
 //!
 //! **Day number to date** is Joffe's *A Very Fast 64-Bit Date Algorithm*
 //! (2025-11-23): <https://www.benjoffe.com/fast-date-64>. It keeps the
-//! March-based year but counts years *backwards* from a far future leap
+//! March-based year but counts years *backward* from a far future leap
 //! day, which lines the long four-year cycles and the long centuries up
 //! with the start of the count, and it does the whole conversion in four
 //! multiplications. See `fromDayNumber`.
@@ -182,16 +182,16 @@ test dayNumberFromSecondsSaturating {
 ///
 /// This is Ben Joffe's 64-bit algorithm. Like Hinnant's it works in
 /// March-based years, which put the leap day at the end of a year, but it
-/// counts them backwards, and that is the idea everything else follows
+/// counts them backward, and that is the idea everything else follows
 /// from.
 ///
-/// **Reverse the count.** `rev = d_shift - days` counts days backwards
+/// **Reverse the count.** `rev = d_shift - days` counts days backward
 /// from 29 February of the year `400 * eras`, a leap day ending a
 /// March-based year in a year divisible by 400. `d_shift` is that day's
 /// number: 719469 days back from 1970-01-01 is 0000-02-29, and `eras`
-/// eras of 146097 days on from there. Counted backwards from such a day,
+/// eras of 146097 days on from there. Counted backward from such a day,
 /// the first year is the 366-day one and the first century the 36525-day
-/// one, so the long one of each cycle comes *first*. Counted forwards from
+/// one, so the long one of each cycle comes *first*. Counted forward from
 /// 1 March it comes last, and that is where the `+ 3` in the usual
 /// `(4 * days + 3) / 146097` comes from. Joffe picked `eras`
 /// to center the widest 64-bit range on the epoch; a `Date` uses a small
@@ -217,7 +217,7 @@ test dayNumberFromSecondsSaturating {
 ///
 /// **The year part, and its drift.** `ypt = low * 782432 >> 64` scales
 /// that fraction so that a day is about 2142.2 units: it is a day of the
-/// year counted backwards, without the division Neri and Schneider spend
+/// year counted backward, without the division Neri and Schneider spend
 /// on getting it exactly. Measuring a year in units of 365.25 days rather
 /// than its real length leaves it a quarter of a day out per year,
 /// resetting every four: 0, ¾, ½ and ¼ of a day in the four years of a
@@ -229,7 +229,7 @@ test dayNumberFromSecondsSaturating {
 /// `bump`, and the year is incremented by it at the end.
 ///
 /// **One linear map to month and day.** `n = (yrs % 4) * 512 + shift -
-/// ypt` turns the count forwards again and lays it out with 65536 units a
+/// ypt` turns the count forward again and lays it out with 65536 units a
 /// month, so the month is `n >> 16` and the day is the low 16 bits divided
 /// by about 2140. Those are close to the 30.6-day average of a March-based
 /// month, which is the line Hinnant's `(5 * doy + 2) / 153` draws, and
@@ -794,23 +794,23 @@ test "a week at either end of the calendar names its real year" {
     const last = std.math.maxInt(Year);
     const first = std.math.minInt(Year);
     for ([_]struct { DayOfWeek, i8 }{ .{ .Mon, 4 }, .{ .Sun, 1 } }) |rule| {
-        var crossed_forwards = false;
-        var crossed_backwards = false;
+        var crossed_forward = false;
+        var crossed_backward = false;
         for (25..32) |day| {
             const date: Date = .{ .year = last, .month = .Dec, .day = @intCast(day) };
             const week = date.weekOfYear(rule[0], rule[1]);
-            if (week.year > last) crossed_forwards = true;
+            if (week.year > last) crossed_forward = true;
             try std.testing.expectEqual(date, fromWeek(week.year, week.week, date.dayOfWeek(), rule[0], rule[1]));
         }
         for (1..8) |day| {
             const date: Date = .{ .year = first, .month = .Jan, .day = @intCast(day) };
             const week = date.weekOfYear(rule[0], rule[1]);
-            if (week.year < first) crossed_backwards = true;
+            if (week.year < first) crossed_backward = true;
             try std.testing.expectEqual(date, fromWeek(week.year, week.week, date.dayOfWeek(), rule[0], rule[1]));
         }
         // With these two rules the calendar's own ends do cross over, so
         // the test is not passing by never reaching the case it is for.
-        try std.testing.expect(crossed_forwards or crossed_backwards);
+        try std.testing.expect(crossed_forward or crossed_backward);
     }
 }
 

@@ -1083,11 +1083,11 @@ pub const IntervalParseResult = struct {
 /// should go. Such an end is not an error but a full representation, here
 /// the year 314, which then fails the check below.
 ///
-/// The interval has to run forwards. An end before its start, compared as
+/// The interval has to run forward. An end before its start, compared as
 /// instants, is `error.OutOfRange`; an interval of no length is not. A
 /// duration cannot carry a sign here, and cannot have a negative component:
 /// ISO 8601-1 writes an interval's duration with no sign at all (5.5.2),
-/// and the signs are ISO 8601-2's (4.4.1.9, 14.2); see `forwards`. A duration that would carry the other
+/// and the signs are ISO 8601-2's (4.4.1.9, 14.2); see `forward`. A duration that would carry the other
 /// endpoint outside the years a `Year` can hold is `error.OutOfRange`
 /// too, which is what makes `Interval.start` and `end` safe to call on
 /// anything this returns.
@@ -1108,7 +1108,7 @@ pub fn parseInterval(value: []const u8) ParseError!IntervalParseResult {
     if (first.len != 0 and (first[0] == 'P' or first[0] == 'p')) {
         const d = try parseDuration(first);
         if (d.str.len != first.len) return error.ParseError;
-        try forwards(d.value);
+        try forward(d.value);
         const e = try parse(second);
         _ = e.value.addChecked(d.value.negate()) catch return error.OutOfRange;
         return .{
@@ -1129,7 +1129,7 @@ pub fn parseInterval(value: []const u8) ParseError!IntervalParseResult {
     // Start, then duration.
     if (second.len != 0 and (second[0] == 'P' or second[0] == 'p')) {
         const d = try parseDuration(second);
-        try forwards(d.value);
+        try forward(d.value);
         _ = s.result.value.addChecked(d.value) catch return error.OutOfRange;
         return .{
             .str = value[0 .. consumed + d.str.len],
@@ -1281,11 +1281,11 @@ test parseInterval {
         "2024-03-15/-P1D",
         "-P1D/2024-03-15",
         "2024-03-15/P-1D",
-        // Mixed, which runs forwards from some dates and backwards from
-        // others; see `forwards`.
+        // Mixed, which runs forward from some dates and backward from
+        // others; see `forward`.
         "2024-01-31/P1M-30D",
         "P1M-30D/2024-03-15",
-        // Backwards.
+        // Backward.
         "2024-03-16/2024-03-15",
         "2024-03-15T10:00/09:00",
         // The first part has to be all of what comes before the separator.
@@ -1404,10 +1404,10 @@ test parseRecurringInterval {
     );
 
     // Unbounded, and written as a duration and an end, so the series runs
-    // backwards from the interval the text names.
+    // backward from the interval the text names.
     const ending = try parseRecurringInterval("R/P1Y2M15DT12H/1985-04-12T23:20:50Z");
     try std.testing.expectEqual(@as(?u64, null), ending.value.count);
-    try std.testing.expect(!ending.value.isForwards());
+    try std.testing.expect(!ending.value.isForward());
 
     // Both endpoints, and the abbreviated end `parseInterval` reads.
     const pair = try parseRecurringInterval("R2/2024-03-15T09:00Z/17:00");
@@ -1446,20 +1446,20 @@ test parseRecurringInterval {
 /// zero or positive.
 ///
 /// Checking the result of adding it would not be enough. A duration whose
-/// components disagree in sign runs forwards from some dates and backwards
+/// components disagree in sign runs forward from some dates and backward
 /// from others — `P1M-30D` from the 31st of January is the 30th, a day
 /// earlier, and from the 1st of March is the 31st, a day later — so an
-/// interval with one might check out and then run backwards on the next
+/// interval with one might check out and then run backward on the next
 /// step of a `RecurringInterval`. ISO 8601-1 writes an interval's duration
 /// with no signs at all, and holding it to that is what makes every interval
-/// this reads, and every series, run forwards however far it goes.
-fn forwards(duration: Duration) ParseError!void {
+/// this reads, and every series, run forward however far it goes.
+fn forward(duration: Duration) ParseError!void {
     if (duration.months < 0 or duration.days < 0 or duration.nanoseconds < 0) return error.OutOfRange;
 }
 
-test forwards {
-    try forwards(.{ .months = 1, .days = 2 });
-    try std.testing.expectError(error.OutOfRange, forwards(.{ .months = 1, .days = -30 }));
+test forward {
+    try forward(.{ .months = 1, .days = 2 });
+    try std.testing.expectError(error.OutOfRange, forward(.{ .months = 1, .days = -30 }));
 }
 
 /// Where the two parts of an interval divide: the first solidus or double

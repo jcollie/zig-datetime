@@ -140,7 +140,7 @@ test fromMilliTimestamp {
 /// which calls it, from 54 ns to 44.
 pub fn asDateTime(self: Instant) DateTime {
     // Floor division throughout, so that a negative timestamp rounds
-    // towards the earlier date and leaves a non-negative remainder
+    // toward the earlier date and leaves a non-negative remainder
     // rather than a negative time of day.
     if (std.math.cast(i64, self.timestamp)) |timestamp| {
         return fromSeconds(
@@ -335,7 +335,7 @@ test asDateTime {
     try std.testing.expectEqual(DayOfWeek.Thu, epoch.weekday);
 
     // One nanosecond earlier is the last instant of 1969, not a negative
-    // time of day: the split rounds towards the earlier date.
+    // time of day: the split rounds toward the earlier date.
     const before = (Instant{ .timestamp = -1 }).asDateTime();
     try std.testing.expectEqual(@as(Year, 1969), before.year);
     try std.testing.expectEqual(Month.Dec, before.month);
