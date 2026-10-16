@@ -1993,36 +1993,68 @@ pub fn addChecked(self: DateTime, duration: Duration) error{OutOfRange}!DateTime
 /// fit the `i64` the days are counted in, and the calendar step itself,
 /// which `Duration.addToDateChecked` checks.
 pub fn addCheckedWith(self: DateTime, duration: Duration, arithmetic: Duration.Arithmetic) error{OutOfRange}!DateTime {
-    const time_of_day: i128 = @as(i128, self.hour) * Duration.nanoseconds_per_hour +
-        @as(i128, self.minute) * Duration.nanoseconds_per_minute +
-        @as(i128, self.second) * Duration.nanoseconds_per_second +
-        @as(i128, self.nanosecond);
+    const time_of_day: i64 = @as(i64, self.hour) * std.time.ns_per_hour +
+        @as(i64, self.minute) * std.time.ns_per_min +
+        @as(i64, self.second) * std.time.ns_per_s +
+        @as(i64, self.nanosecond);
 
     const total = std.math.add(i128, time_of_day, duration.nanoseconds) catch return error.OutOfRange;
-    const carry = @divFloor(total, Duration.nanoseconds_per_day);
-    // `@mod` rather than `total - carry * nanoseconds_per_day`: flooring
-    // rounds `carry` down, so near the bottom of an `i128` the product lands
-    // below it and the subtraction overflows before it can be taken back.
-    // The remainder is the same number and never leaves the range of a day.
-    const rest = @mod(total, Duration.nanoseconds_per_day);
+    // Any sum that fits an `i64`, a span of about 292 years, is split in an
+    // `i64`: a division of an `i128` is a call to `__divti3`, where an `i64`
+    // one by a constant is a multiplication and a shift.
+    const split = if (std.math.cast(i64, total)) |narrow| splitDays(narrow) else splitDays(total);
 
     const date = try (Duration{
         .months = duration.months,
-        .days = std.math.cast(i64, duration.days + carry) orelse return error.OutOfRange,
+        .days = std.math.cast(i64, duration.days + split.days) orelse return error.OutOfRange,
     }).addToDateCheckedWith(self.asDate(), arithmetic);
 
+    const clock = secondofday.split(@intCast(split.nanosecond_of_day / std.time.ns_per_s));
     var result: DateTime = .{
         .year = date.year,
         .month = date.month,
         .day = date.day,
-        .hour = @intCast(@divFloor(rest, Duration.nanoseconds_per_hour)),
-        .minute = @intCast(@mod(@divFloor(rest, Duration.nanoseconds_per_minute), 60)),
-        .second = @intCast(@mod(@divFloor(rest, Duration.nanoseconds_per_second), 60)),
-        .nanosecond = @intCast(@mod(rest, Duration.nanoseconds_per_second)),
+        .hour = clock.hour,
+        .minute = clock.minute,
+        .second = clock.second,
+        .nanosecond = @intCast(split.nanosecond_of_day % std.time.ns_per_s),
         .offset = self.offset,
     };
     result.updateDayOfWeek();
     return result;
+}
+
+/// The whole days in a count of nanoseconds, rounded down, and the
+/// nanoseconds left over within the last of them, as `addCheckedWith`
+/// carries a sum of a time of day and a duration into the date.
+///
+/// It is generic so that an `i64` count is divided as an `i64`; the days
+/// come back as an `i128` either way, which is free. The
+/// remainder comes from `@mod` rather than `total - days * ns_per_day`:
+/// flooring rounds `days` down, so near the bottom of the type the product
+/// lands below it and the subtraction overflows before it can be taken
+/// back. `@mod` gives the same number and never leaves the range of a day,
+/// which is why it can be handed back unsigned.
+fn splitDays(total: anytype) struct { days: i128, nanosecond_of_day: u64 } {
+    return .{
+        .days = @divFloor(total, std.time.ns_per_day),
+        .nanosecond_of_day = @intCast(@mod(total, std.time.ns_per_day)),
+    };
+}
+
+test splitDays {
+    // A negative count rounds towards the earlier day.
+    const before = splitDays(@as(i64, -1));
+    try std.testing.expectEqual(@as(i128, -1), before.days);
+    try std.testing.expectEqual(@as(u64, std.time.ns_per_day - 1), before.nanosecond_of_day);
+    // The two widths agree, and the wide one survives the bottom of an
+    // `i128`.
+    const narrow = splitDays(@as(i64, std.math.minInt(i64)));
+    const wide = splitDays(@as(i128, std.math.minInt(i64)));
+    try std.testing.expectEqual(narrow.days, wide.days);
+    try std.testing.expectEqual(narrow.nanosecond_of_day, wide.nanosecond_of_day);
+    const bottom = splitDays(@as(i128, std.math.minInt(i128)));
+    try std.testing.expect(bottom.nanosecond_of_day < std.time.ns_per_day);
 }
 
 test add {

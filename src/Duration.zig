@@ -267,11 +267,16 @@ pub fn addToDateChecked(self: Duration, date: Date) error{OutOfRange}!Date {
 /// The arithmetic is done in an `i128` throughout, which no `i64` month or
 /// day count can overflow, and narrowed only once the answer is known to
 /// fit. Narrowing first is what would make a large duration a crash instead
-/// of an error.
+/// of an error. The one exception is the division of the month count into
+/// years and months, which is done in an `i64` whenever the count fits one,
+/// as it does for every duration of fewer than about 768 quadrillion years:
+/// a division of an `i128` is a call to `__divti3`, where an `i64` one by a
+/// constant is a multiplication and a shift.
 pub fn addToDateCheckedWith(self: Duration, date: Date, arithmetic: Arithmetic) error{OutOfRange}!Date {
     const total_months = @as(i128, date.year) * 12 + (@backingInt(date.month) - 1) + self.months;
-    const year = std.math.cast(Year, @divFloor(total_months, 12)) orelse return error.OutOfRange;
-    const month: Month = @fromBackingInt(@intCast(@as(u8, @intCast(@mod(total_months, 12) + 1))));
+    const split = if (std.math.cast(i64, total_months)) |narrow| splitMonths(narrow) else splitMonths(total_months);
+    const year = std.math.cast(Year, split.year) orelse return error.OutOfRange;
+    const month = split.month;
 
     const days = switch (arithmetic) {
         .xml_schema => blk: {
@@ -294,6 +299,33 @@ pub fn addToDateCheckedWith(self: Duration, date: Date, arithmetic: Arithmetic) 
     };
     if (days < Date.min_days or days > Date.max_days) return error.OutOfRange;
     return Date.fromDayNumber(@intCast(days));
+}
+
+/// A count of months since January of year 0 as a year, rounded down, and
+/// the month within it, as `addToDateCheckedWith` takes a date's month
+/// forward by a duration's months.
+///
+/// It is generic so that an `i64` count is divided as an `i64`; the year
+/// comes back as an `i128` either way, which is free, and is narrowed by the
+/// caller once it is known to fit.
+fn splitMonths(total_months: anytype) struct { year: i128, month: Month } {
+    return .{
+        .year = @divFloor(total_months, 12),
+        .month = @fromBackingInt(@as(u4, @intCast(@mod(total_months, 12) + 1))),
+    };
+}
+
+test splitMonths {
+    try std.testing.expectEqual(@as(i128, 2024), splitMonths(@as(i64, 2024 * 12 + 6)).year);
+    try std.testing.expectEqual(Month.Jul, splitMonths(@as(i64, 2024 * 12 + 6)).month);
+    // A negative count rounds towards the earlier year.
+    try std.testing.expectEqual(@as(i128, -1), splitMonths(@as(i64, -1)).year);
+    try std.testing.expectEqual(Month.Dec, splitMonths(@as(i64, -1)).month);
+    // The two widths agree.
+    const narrow = splitMonths(@as(i64, std.math.minInt(i64)));
+    const wide = splitMonths(@as(i128, std.math.minInt(i64)));
+    try std.testing.expectEqual(narrow.year, wide.year);
+    try std.testing.expectEqual(narrow.month, wide.month);
 }
 
 test "the examples of ISO 8601-2:2019, Annex D, that begin on a real date" {

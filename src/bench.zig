@@ -160,6 +160,25 @@ pub fn main(init: std.process.Init) !void {
         report("DateTime.toUtc", ns);
     }
 
+    {
+        // Durations of up to forty days either way, in nanoseconds alone,
+        // so that the time spent is the sub-day split and the carry into
+        // the date rather than the month arithmetic.
+        var durations: [table_len]datetime.Duration = undefined;
+        for (&durations) |*d| d.* = .{
+            .nanoseconds = rng.intRangeAtMost(i128, -40 * std.time.ns_per_day, 40 * std.time.ns_per_day),
+        };
+        const t0: std.Io.Timestamp = .now(io, .awake);
+        var acc: i64 = 0;
+        for (0..N) |i| {
+            const dt = datetimes[i & (table_len - 1)].add(durations[(i *% 7) & (table_len - 1)]);
+            acc +%= dt.day + dt.hour;
+        }
+        const ns: u64 = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
+        std.mem.doNotOptimizeAway(acc);
+        report("DateTime.add", ns);
+    }
+
     // --- formatting ---------------------------------------------------
 
     {
