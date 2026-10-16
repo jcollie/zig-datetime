@@ -1466,8 +1466,8 @@ against the seventeen the paper reports for the same sweep in C++ in
 
 The seed is the test runner's, so a failure replays exactly.
 
-`zig build verify-days` converts every day number from `Date.min_days` to
-`Date.max_days` — about 1.57 trillion, every day of every year a `Year`
+`zig build verify-days` converts every day number from `Date.min_day_number` to
+`Date.max_day_number` — about 1.57 trillion, every day of every year a `Year`
 holds — with both Joffe's algorithm and Hinnant's, converts each date back
 to a day number, and stops at the first disagreement or the first date that
 does not come back to where it started. It is always ReleaseFast and uses

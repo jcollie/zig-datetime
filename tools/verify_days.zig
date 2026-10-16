@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: © 2026 Jeffrey C. Ollie <jeff@ocjtech.us>
 // SPDX-License-Identifier: MIT
 
-//! Checks `Date.fromDayNumber` against Hinnant's
-//! `civil_from_days` for every day number a `Date` can hold, from
-//! `Date.min_days` to `Date.max_days`: about 1.57 trillion of them, and
-//! checks that `Date.toDayNumber` takes each date it gives back
-//! to the day number it came from.
+//! Checks `Date.fromDayNumber` against Hinnant's `civil_from_days` for
+//! every day number a `Date` can hold, from `Date.min_day_number` to
+//! `Date.max_day_number`: about 1.57 trillion of them, and checks that
+//! `Date.toDayNumber` takes each date it gives back to the day number it
+//! came from.
 //!
 //! The library converts in both directions with Ben Joffe's fixed-point
 //! algorithms, whose author established their range by testing rather than
@@ -56,14 +56,14 @@ pub fn firstDisagreement(first: DayNumber, last: DayNumber) ?DayNumber {
 
 test firstDisagreement {
     try std.testing.expectEqual(@as(?DayNumber, null), firstDisagreement(-100_000, 100_000));
-    try std.testing.expectEqual(@as(?DayNumber, null), firstDisagreement(Date.min_days, Date.min_days + 1000));
-    try std.testing.expectEqual(@as(?DayNumber, null), firstDisagreement(Date.max_days - 1000, Date.max_days));
+    try std.testing.expectEqual(@as(?DayNumber, null), firstDisagreement(Date.min_day_number, Date.min_day_number + 1000));
+    try std.testing.expectEqual(@as(?DayNumber, null), firstDisagreement(Date.max_day_number - 1000, Date.max_day_number));
 }
 
 /// What the tasks share: where the next chunk starts, how many are done,
 /// and the earliest disagreement any of them has found.
 const Shared = struct {
-    next: std.atomic.Value(i64) = .init(Date.min_days),
+    next: std.atomic.Value(i64) = .init(Date.min_day_number),
     done: std.atomic.Value(u64) = .init(0),
     /// `maxInt(i64)` until something disagrees.
     disagreement: std.atomic.Value(i64) = .init(std.math.maxInt(i64)),
@@ -76,8 +76,8 @@ const Shared = struct {
 fn worker(shared: *Shared) void {
     while (shared.disagreement.load(.monotonic) == std.math.maxInt(i64)) {
         const start = shared.next.fetchAdd(chunk_len, .monotonic);
-        if (start > Date.max_days) return;
-        const end = @min(start + chunk_len - 1, Date.max_days);
+        if (start > Date.max_day_number) return;
+        const end = @min(start + chunk_len - 1, Date.max_day_number);
 
         if (firstDisagreement(@intCast(start), @intCast(end))) |day| {
             _ = shared.disagreement.fetchMin(day, .monotonic);
@@ -107,7 +107,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     defer threaded.deinit();
     const io = threaded.io();
 
-    const span: u64 = @intCast(@as(i64, Date.max_days) - Date.min_days + 1);
+    const span: u64 = @intCast(@as(i64, Date.max_day_number) - Date.min_day_number + 1);
     var shared: Shared = .{
         .chunks = std.math.divCeil(u64, span, chunk_len) catch unreachable,
         .io = io,
@@ -117,8 +117,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
     const tasks = std.Thread.getCpuCount() catch 1;
     std.debug.print("checking {d} day numbers, {d} to {d}, on {d} tasks\n", .{
         span,
-        Date.min_days,
-        Date.max_days,
+        Date.min_day_number,
+        Date.max_day_number,
         tasks,
     });
 

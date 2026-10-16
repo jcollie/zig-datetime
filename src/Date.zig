@@ -94,33 +94,33 @@ pub const DayNumber = std.math.IntFittingRange(
 /// `DayNumber` is sized for 366 days a year, which is more than a year
 /// actually has, so its own extremes name years a `Year` cannot. These
 /// are the real bounds, and what a saturating conversion saturates to.
-pub const min_days: DayNumber = (Date{
+pub const min_day_number: DayNumber = (Date{
     .year = std.math.minInt(Year),
     .month = .Jan,
     .day = 1,
 }).toDayNumber();
 
-pub const max_days: DayNumber = (Date{
+pub const max_day_number: DayNumber = (Date{
     .year = std.math.maxInt(Year),
     .month = .Dec,
     .day = 31,
 }).toDayNumber();
 
-test min_days {
+test min_day_number {
     // The bounds are dates, and round trip like any other.
     try std.testing.expectEqual(
         Date{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 },
-        fromDayNumber(min_days),
+        fromDayNumber(min_day_number),
     );
     try std.testing.expectEqual(
         Date{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31 },
-        fromDayNumber(max_days),
+        fromDayNumber(max_day_number),
     );
 
     // And they are inside what `DayNumber` can hold, with room to spare,
     // because it is sized for a longer year than there is.
-    try std.testing.expect(min_days > std.math.minInt(DayNumber));
-    try std.testing.expect(max_days < std.math.maxInt(DayNumber));
+    try std.testing.expect(min_day_number > std.math.minInt(DayNumber));
+    try std.testing.expect(max_day_number < std.math.maxInt(DayNumber));
 }
 
 /// The first and last instants that fall on a date a `Date` can hold, as
@@ -129,17 +129,17 @@ test min_days {
 /// Outside these an instant has no calendar date at all, so anything that
 /// converts one saturates rather than trapping. That keeps the conversion
 /// total, and makes the answer wrong in the same way the question was.
-pub const min_seconds: i64 = @as(i64, min_days) * std.time.s_per_day;
-pub const max_seconds: i64 = @as(i64, max_days) * std.time.s_per_day + (std.time.s_per_day - 1);
+pub const min_seconds: i64 = @as(i64, min_day_number) * std.time.s_per_day;
+pub const max_seconds: i64 = @as(i64, max_day_number) * std.time.s_per_day + (std.time.s_per_day - 1);
 
 test min_seconds {
     // The bounds are instants on the bounding dates.
-    try std.testing.expectEqual(min_days, daysFromSecondsSaturating(min_seconds));
-    try std.testing.expectEqual(max_days, daysFromSecondsSaturating(max_seconds));
+    try std.testing.expectEqual(min_day_number, daysFromSecondsSaturating(min_seconds));
+    try std.testing.expectEqual(max_day_number, daysFromSecondsSaturating(max_seconds));
 
     // And a second further out saturates rather than moving.
-    try std.testing.expectEqual(min_days, daysFromSecondsSaturating(min_seconds - 1));
-    try std.testing.expectEqual(max_days, daysFromSecondsSaturating(max_seconds + 1));
+    try std.testing.expectEqual(min_day_number, daysFromSecondsSaturating(min_seconds - 1));
+    try std.testing.expectEqual(max_day_number, daysFromSecondsSaturating(max_seconds + 1));
 }
 
 /// Returns the day number `seconds` seconds after the epoch falls in,
@@ -156,8 +156,8 @@ test min_seconds {
 /// which is wrong in the same way that the question was.
 pub fn daysFromSecondsSaturating(seconds: i64) DayNumber {
     const days = @divFloor(seconds, std.time.s_per_day);
-    if (days < min_days) return min_days;
-    if (days > max_days) return max_days;
+    if (days < min_day_number) return min_day_number;
+    if (days > max_day_number) return max_day_number;
     return @intCast(days);
 }
 
@@ -170,15 +170,15 @@ test daysFromSecondsSaturating {
 
     // Past the end of the calendar the answer stops moving rather than
     // wrapping or trapping, and what it stops at is a date.
-    try std.testing.expectEqual(max_days, daysFromSecondsSaturating(std.math.maxInt(i64)));
-    try std.testing.expectEqual(min_days, daysFromSecondsSaturating(std.math.minInt(i64)));
+    try std.testing.expectEqual(max_day_number, daysFromSecondsSaturating(std.math.maxInt(i64)));
+    try std.testing.expectEqual(min_day_number, daysFromSecondsSaturating(std.math.minInt(i64)));
     _ = fromDayNumber(daysFromSecondsSaturating(std.math.maxInt(i64)));
     _ = fromDayNumber(daysFromSecondsSaturating(std.math.minInt(i64)));
 }
 
 /// Returns the date that is `days` days after 1970-01-01; negative values
 /// give dates before the epoch. Asserts that `days` is in
-/// `[min_days, max_days]`.
+/// `[min_day_number, max_day_number]`.
 ///
 /// This is Ben Joffe's 64-bit algorithm. Like Hinnant's it works in
 /// March-based years, which put the leap day at the end of a year, but it
@@ -255,14 +255,14 @@ test daysFromSecondsSaturating {
 /// take, so the whole conversion is four multiplications and no division.
 ///
 /// Joffe gives the range as ±1.89 trillion years, from testing rather than
-/// proof; `tools/verify_days.zig` checks every day number from `min_days`
-/// to `max_days` against Hinnant's `civil_from_days` in `hinnant.zig`. On
+/// proof; `tools/verify_days.zig` checks every day number from `min_day_number`
+/// to `max_day_number` against Hinnant's `civil_from_days` in `hinnant.zig`. On
 /// 2026-10-16 all 1,568,704,592,610 of them agreed. The
 /// article also gives smaller constants for ARM, where large immediates
 /// are slow to load; this is the x86-64 form, which is correct everywhere
 /// and has not been measured on ARM.
 pub fn fromDayNumber(days: DayNumber) Date {
-    std.debug.assert(days >= min_days and days <= max_days);
+    std.debug.assert(days >= min_day_number and days <= max_day_number);
 
     const eras: u64 = 4726498270;
     const d_shift: u64 = 146097 * eras - 719469;
@@ -354,8 +354,8 @@ test yearAndFirstDay {
 
     // And so do the days at either end of the calendar.
     for (0..800) |i| {
-        try expectFirstDay(min_days + @as(DayNumber, @intCast(i)));
-        try expectFirstDay(max_days - @as(DayNumber, @intCast(i)));
+        try expectFirstDay(min_day_number + @as(DayNumber, @intCast(i)));
+        try expectFirstDay(max_day_number - @as(DayNumber, @intCast(i)));
     }
 }
 
@@ -399,8 +399,8 @@ fn expectHinnant(days: DayNumber) !void {
 
 test expectHinnant {
     try expectHinnant(0);
-    try expectHinnant(min_days);
-    try expectHinnant(max_days);
+    try expectHinnant(min_day_number);
+    try expectHinnant(max_day_number);
 }
 
 // Joffe's algorithms against Hinnant's, which are slower and easy to check
@@ -434,8 +434,8 @@ test "fromDayNumber and toDayNumber agree with Hinnant" {
 
     // A thousand years at each end.
     for (0..366_000) |i| {
-        try expectHinnant(min_days + @as(DayNumber, @intCast(i)));
-        try expectHinnant(max_days - @as(DayNumber, @intCast(i)));
+        try expectHinnant(min_day_number + @as(DayNumber, @intCast(i)));
+        try expectHinnant(max_day_number - @as(DayNumber, @intCast(i)));
     }
 }
 
@@ -1005,7 +1005,7 @@ pub fn fromWeek(
     else
         (Date{ .year = @intCast(week_year), .month = .Jan, .day = 1 }).toDayNumber();
 
-    const days = std.math.clamp(january_first + day_of_year - 1, min_days, max_days);
+    const days = std.math.clamp(january_first + day_of_year - 1, min_day_number, max_day_number);
     return fromDayNumber(@intCast(days));
 }
 

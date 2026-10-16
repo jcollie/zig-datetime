@@ -1581,7 +1581,7 @@ fn checkArithmetic(start: DateTime, duration: Duration, arithmetic: Duration.Ari
             @as(i256, (Date{ .year = year, .month = month, .day = 1 }).toDayNumber()) + (start.day - 1) + moved
         else
             @as(i256, (Date{ .year = year, .month = month, .day = @min(start.day, month.lastDay(year)) }).toDayNumber()) + moved;
-        if (days < Date.min_days or days > Date.max_days) break :blk null;
+        if (days < Date.min_day_number or days > Date.max_day_number) break :blk null;
         break :blk Date.fromDayNumber(@intCast(days));
     };
 
@@ -1715,7 +1715,7 @@ test "random calendar round trips" {
 test "fuzz Date day numbers against Hinnant" {
     const driver = struct {
         fn one(_: void, smith: *std.testing.Smith) anyerror!void {
-            try checkAgainstHinnant(smith.valueRangeAtMost(Date.DayNumber, Date.min_days, Date.max_days));
+            try checkAgainstHinnant(smith.valueRangeAtMost(Date.DayNumber, Date.min_day_number, Date.max_day_number));
         }
     };
     try std.testing.fuzz({}, driver.one, .{});
@@ -1726,9 +1726,9 @@ test "fuzz Date day numbers against Hinnant" {
 /// at one of the two ends.
 fn hinnantProperty(random: std.Random) !void {
     const days: Date.DayNumber = switch (random.uintLessThan(u8, 8)) {
-        0 => Date.min_days + random.intRangeAtMost(Date.DayNumber, 0, 146097),
-        1 => Date.max_days - random.intRangeAtMost(Date.DayNumber, 0, 146097),
-        2, 3 => random.intRangeAtMost(Date.DayNumber, Date.min_days, Date.max_days),
+        0 => Date.min_day_number + random.intRangeAtMost(Date.DayNumber, 0, 146097),
+        1 => Date.max_day_number - random.intRangeAtMost(Date.DayNumber, 0, 146097),
+        2, 3 => random.intRangeAtMost(Date.DayNumber, Date.min_day_number, Date.max_day_number),
         else => random.intRangeAtMost(Date.DayNumber, -4_000_000, 4_000_000),
     };
     try checkAgainstHinnant(days);

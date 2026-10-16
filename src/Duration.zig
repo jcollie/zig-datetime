@@ -297,7 +297,7 @@ pub fn addToDateCheckedWith(self: Duration, date: Date, arithmetic: Arithmetic) 
             break :blk @as(i128, first) + (date.day - 1) + self.days;
         },
     };
-    if (days < Date.min_days or days > Date.max_days) return error.OutOfRange;
+    if (days < Date.min_day_number or days > Date.max_day_number) return error.OutOfRange;
     return Date.fromDayNumber(@intCast(days));
 }
 
