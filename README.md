@@ -1621,6 +1621,10 @@ The documents this library is written against.
   11 December 2025, updated 18 December 2025,
   <https://www.benjoffe.com/fast-leap-year>. The survey and benchmarks of
   leap-year tests that `leap.is` was chosen from.
+- **[JOFFE-WEEKDAY]** Joffe, B., *A faster way to calculate the day of the
+  week*, 17 August 2026, <https://www.benjoffe.com/fast-day-of-week>. The
+  64-bit multiply-add-shift weekday that was measured against
+  `DayOfWeek.fromDaysSinceStartOfEra` and not adopted.
 - **[NERI-LEAP]** Neri, C., *libstdc++: Simplify year::is_leap()*, GCC
   commit 86a0df1a6c7f, 11 November 2023,
   <https://github.com/gcc-mirror/gcc/commit/86a0df1a6c7fe4a835620b868e76ea78d42d6620>.

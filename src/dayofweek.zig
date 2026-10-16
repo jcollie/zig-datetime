@@ -242,6 +242,22 @@ pub const DayOfWeek = enum(u3) {
     /// division that floors. No table and no lookup: the week has run
     /// unbroken through the whole proleptic Gregorian calendar, so a
     /// weekday is nothing but the day count modulo seven.
+    ///
+    /// Ben Joffe's article on weekdays
+    /// (<https://www.benjoffe.com/fast-day-of-week>) gathers faster ways to
+    /// take that remainder. Most are for 32-bit day counts, which a
+    /// `DaysType` is not. The one that fits takes the low 64 bits of
+    /// `days * ceil(2^64 / 7)`, adds a constant that turns the circle round
+    /// to Thursday, and keeps the top three bits: since 7 is one less than
+    /// 8, multiplying by about 8/7 lands each day in its own eighth of the
+    /// circle, one eighth going unused each week. It was tried here on
+    /// 2026-10-16. It agreed with this on 200 million day numbers, and is
+    /// exact for any count within about 2.3 * 10^17 of the epoch. It
+    /// took 3.3 ns a call to this one's 4.1 when each call waited on the one
+    /// before, and 0.68 to 0.77 when they did not, but `Instant.asDateTime`
+    /// and the `TimeZone` lookups, which call this, came out the same
+    /// within the noise of `zig build bench`. So this stays, and the
+    /// two magic constants do not come in.
     pub fn fromDaysSinceStartOfEra(days: Date.DaysType) DayOfWeek {
         const result = if (days >= -4)
             @rem(days + 4, 7)

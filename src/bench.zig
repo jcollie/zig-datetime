@@ -31,13 +31,13 @@ const table_len = 1024;
 fn report(name: []const u8, ns: u64) void {
     const per = @as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(N));
     const rate = 1e9 / per / 1e6;
-    std.debug.print("{s:<26} {d:>8.2} ns/op {d:>8.2} Mop/s\n", .{ name, per, rate });
+    std.debug.print("{s:<28} {d:>8.2} ns/op {d:>8.2} Mop/s\n", .{ name, per, rate });
 }
 
 /// Prints a line for a benchmark that could not be run, in place of its
 /// numbers, so that its absence is visible rather than silent.
 fn skip(name: []const u8, why: []const u8) void {
-    std.debug.print("{s:<26} {s}\n", .{ name, why });
+    std.debug.print("{s:<28} {s}\n", .{ name, why });
 }
 
 /// Runs every benchmark in turn and prints the results.
@@ -112,6 +112,24 @@ pub fn main(init: std.process.Init) !void {
         ns = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
         std.mem.doNotOptimizeAway(acc);
         report("leap.is (chained)", ns);
+    }
+
+    {
+        // The same two ways as `leap.is`, over the day numbers of the
+        // dates above.
+        var t0: std.Io.Timestamp = .now(io, .awake);
+        var acc: usize = 0;
+        for (0..N) |i| acc +%= datetime.DayOfWeek.fromDaysSinceStartOfEra(days[i & (table_len - 1)]).weekdayNumber();
+        var ns: u64 = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
+        std.mem.doNotOptimizeAway(acc);
+        report("DayOfWeek.fromDays", ns);
+
+        t0 = .now(io, .awake);
+        acc = 0;
+        for (0..N) |i| acc +%= datetime.DayOfWeek.fromDaysSinceStartOfEra(days[(i +% acc) & (table_len - 1)]).weekdayNumber();
+        ns = @intCast(t0.durationTo(.now(io, .awake)).nanoseconds);
+        std.mem.doNotOptimizeAway(acc);
+        report("DayOfWeek.fromDays (chained)", ns);
     }
 
     {
