@@ -56,6 +56,7 @@ const DayOfWeek = @import("dayofweek.zig").DayOfWeek;
 const Month = @import("month.zig").Month;
 const Year = @import("year.zig").Year;
 const cldrlocale = @import("cldrlocale.zig");
+const secondofday = @import("secondofday.zig");
 
 /// The locale data a pattern is written against; see `cldrlocale`.
 pub const Locale = cldrlocale.Locale;
@@ -1574,10 +1575,10 @@ fn writeIsoOffset(writer: *std.Io.Writer, offset: i32, shape: IsoShape) std.Io.W
         return;
     }
 
-    const magnitude: u32 = @abs(offset);
-    const hours = magnitude / 3600;
-    const minutes = magnitude % 3600 / 60;
-    const seconds = magnitude % 60;
+    const parts = secondofday.splitHours(@abs(offset));
+    const hours = parts.hours;
+    const minutes = parts.minute;
+    const seconds = parts.second;
 
     try writer.writeByte(if (offset < 0) '-' else '+');
     try writer.print("{d:0>2}", .{hours});
@@ -1738,10 +1739,10 @@ fn writeLocalizedGmt(
         if (offset < 0) locale.hour_format_negative else locale.hour_format_positive,
     );
 
-    const magnitude: u32 = @abs(offset);
-    const hours = magnitude / 3600;
-    const minutes = magnitude % 3600 / 60;
-    const seconds = magnitude % 60;
+    const parts = secondofday.splitHours(@abs(offset));
+    const hours = parts.hours;
+    const minutes = parts.minute;
+    const seconds = parts.second;
 
     // `gmtFormat` is the one place CLDR does use a placeholder rather than
     // a pattern, so the offset is written between the two halves of it.

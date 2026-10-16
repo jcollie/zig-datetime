@@ -51,20 +51,53 @@ pub const Clock = struct {
 /// from 11.9 ns to 11.6, about 3%, which is not enough to make every
 /// reader work the identity out.
 pub fn split(s: SecondOfDay) Clock {
-    const seconds: u32 = s;
-    const minutes = seconds / std.time.s_per_min;
-    const hours = seconds / std.time.s_per_hour;
-    return .{
-        .hour = @intCast(hours),
-        .minute = @intCast(minutes - hours * 60),
-        .second = @intCast(seconds - minutes * 60),
-    };
+    const parts = splitHours(s);
+    return .{ .hour = @intCast(parts.hours), .minute = parts.minute, .second = parts.second };
 }
 
 test split {
     try std.testing.expectEqual(Clock{ .hour = 0, .minute = 0, .second = 0 }, split(0));
     try std.testing.expectEqual(Clock{ .hour = 13, .minute = 4, .second = 5 }, split(13 * 3600 + 4 * 60 + 5));
     try std.testing.expectEqual(Clock{ .hour = 23, .minute = 59, .second = 59 }, split(std.time.s_per_day - 1));
+}
+
+/// A count of seconds split into whole hours, however many, and the
+/// minute and second into the last of them.
+pub const Hours = struct {
+    hours: u32,
+    minute: Minute,
+    second: Second,
+};
+
+/// Splits any count of seconds that fits a `u32` the way `split` splits a
+/// second of the day, with the two divisions taken straight from the count
+/// and the rest by subtraction, but with no limit on the hours.
+///
+/// It is for UTC offsets, which the formatters write as hours, minutes and
+/// seconds and which are not a second of the day: an offset is signed, so
+/// what is split is its magnitude, and the `i32` it is held in can be
+/// longer than a day even though no real offset is. The divisions are by
+/// constants and so are each a multiplication and a shift, exact for every
+/// `u32`.
+pub fn splitHours(seconds: u32) Hours {
+    const minutes = seconds / std.time.s_per_min;
+    const hours = seconds / std.time.s_per_hour;
+    return .{
+        .hours = hours,
+        .minute = @intCast(minutes - hours * 60),
+        .second = @intCast(seconds - minutes * 60),
+    };
+}
+
+test splitHours {
+    try std.testing.expectEqual(Hours{ .hours = 5, .minute = 45, .second = 0 }, splitHours(5 * 3600 + 45 * 60));
+    // Local mean time in Chicago, which is why an offset has seconds.
+    try std.testing.expectEqual(Hours{ .hours = 5, .minute = 50, .second = 36 }, splitHours(5 * 3600 + 50 * 60 + 36));
+    // Past a day the hours keep counting.
+    try std.testing.expectEqual(Hours{ .hours = 25, .minute = 0, .second = 0 }, splitHours(25 * 3600));
+    // As far as the magnitude of an `i32` goes, and beyond.
+    try std.testing.expectEqual(Hours{ .hours = 596523, .minute = 14, .second = 8 }, splitHours(1 << 31));
+    try std.testing.expectEqual(Hours{ .hours = 1193046, .minute = 28, .second = 15 }, splitHours(std.math.maxInt(u32)));
 }
 
 test "split agrees with the chain of divisions on every second of the day" {

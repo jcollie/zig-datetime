@@ -92,6 +92,7 @@ const Month = @import("month.zig").Month;
 const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const Second = @import("second.zig").Second;
 const Year = @import("year.zig").Year;
+const secondofday = @import("secondofday.zig");
 
 /// What `parse` can fail with.
 pub const ParseError = error{
@@ -1600,14 +1601,14 @@ pub fn writeDateTime(writer: *std.Io.Writer, datetime: DateTime) std.Io.Writer.E
 
     if (datetime.offset == 0) return writer.writeByte('Z');
 
-    const magnitude: u32 = @abs(datetime.offset);
+    const parts = secondofday.splitHours(@abs(datetime.offset));
     try writer.print("{c}{d:0>2}:{d:0>2}", .{
         @as(u8, if (datetime.offset < 0) '-' else '+'),
-        magnitude / std.time.s_per_hour,
-        magnitude % std.time.s_per_hour / std.time.s_per_min,
+        parts.hours,
+        parts.minute,
     });
-    if (magnitude % std.time.s_per_min != 0) {
-        try writer.print(":{d:0>2}", .{magnitude % std.time.s_per_min});
+    if (parts.second != 0) {
+        try writer.print(":{d:0>2}", .{parts.second});
     }
 }
 

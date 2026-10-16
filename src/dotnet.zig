@@ -54,6 +54,7 @@ const Month = @import("month.zig").Month;
 const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const Year = @import("year.zig").Year;
 const locale = @import("locale.zig");
+const secondofday = @import("secondofday.zig");
 
 /// What a culture contributes to a format string: the patterns the
 /// standard formats expand to, the separators `/` and `:` stand for, the
@@ -900,9 +901,9 @@ test trimmedDigits {
 /// offset has none.
 fn writeOffset(writer: *std.Io.Writer, offset: i32, count: usize) std.Io.Writer.Error!void {
     try writer.writeByte(if (offset < 0) '-' else '+');
-    const magnitude = @abs(offset);
-    const hours = magnitude / std.time.s_per_hour;
-    const minutes = magnitude % std.time.s_per_hour / std.time.s_per_min;
+    const parts = secondofday.splitHours(@abs(offset));
+    const hours = parts.hours;
+    const minutes = parts.minute;
 
     switch (count) {
         1 => try writer.print("{d}", .{hours}),

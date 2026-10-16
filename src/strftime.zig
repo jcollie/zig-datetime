@@ -67,6 +67,7 @@ const Month = @import("month.zig").Month;
 const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const Year = @import("year.zig").Year;
 const locale = @import("locale.zig");
+const secondofday = @import("secondofday.zig");
 
 /// Format strings worth having a name for, so that a caller reaching for
 /// a standard shape does not have to get the punctuation right twice.
@@ -766,10 +767,10 @@ const OffsetShape = struct {
 fn writeOffset(writer: *std.Io.Writer, offset: i32, shape: OffsetShape) !void {
     try writer.writeAll(if (offset < 0) "-" else "+");
 
-    const magnitude = @abs(offset);
-    const hours = magnitude / std.time.s_per_hour;
-    const minutes = magnitude % std.time.s_per_hour / std.time.s_per_min;
-    const seconds = magnitude % std.time.s_per_min;
+    const parts = secondofday.splitHours(@abs(offset));
+    const hours = parts.hours;
+    const minutes = parts.minute;
+    const seconds = parts.second;
 
     try writer.print("{d:0>2}", .{hours});
     if (shape.minimal and minutes == 0 and seconds == 0) return;

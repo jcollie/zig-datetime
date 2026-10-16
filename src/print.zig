@@ -6,6 +6,8 @@
 
 const std = @import("std");
 
+const secondofday = @import("secondofday.zig");
+
 const normal = [_][]const u8{
     "th",
     "st",
@@ -140,13 +142,13 @@ test "print ordinal normal" {
 pub fn offset(writer: anytype, seconds: i32, separator: enum { none, colon }) !void {
     try writer.writeAll(if (seconds < 0) "-" else "+");
 
-    const magnitude = @abs(seconds);
-    try writer.print("{d:0>2}", .{magnitude / std.time.s_per_hour});
+    const parts = secondofday.splitHours(@abs(seconds));
+    try writer.print("{d:0>2}", .{parts.hours});
     switch (separator) {
         .none => {},
         .colon => try writer.writeAll(":"),
     }
-    try writer.print("{d:0>2}", .{magnitude % std.time.s_per_hour / std.time.s_per_min});
+    try writer.print("{d:0>2}", .{parts.minute});
 }
 
 test offset {

@@ -35,6 +35,7 @@ const Month = @import("month.zig").Month;
 const Nanosecond = @import("nanosecond.zig").Nanosecond;
 const Year = @import("year.zig").Year;
 const read = @import("read.zig");
+const secondofday = @import("secondofday.zig");
 
 /// The layouts Go's `time` package names, spelled the same way so that
 /// code being moved across can keep using the name it knows.
@@ -465,16 +466,16 @@ const OffsetShape = struct {
 fn writeOffset(writer: *std.Io.Writer, offset: i32, shape: OffsetShape) !void {
     try writer.writeAll(if (offset < 0) "-" else "+");
 
-    const magnitude = @abs(offset);
-    try writer.print("{d:0>2}", .{magnitude / std.time.s_per_hour});
+    const parts = secondofday.splitHours(@abs(offset));
+    try writer.print("{d:0>2}", .{parts.hours});
     if (shape.hours_only) return;
 
     if (shape.colons) try writer.writeAll(":");
-    try writer.print("{d:0>2}", .{magnitude % std.time.s_per_hour / std.time.s_per_min});
+    try writer.print("{d:0>2}", .{parts.minute});
 
     if (shape.seconds) {
         if (shape.colons) try writer.writeAll(":");
-        try writer.print("{d:0>2}", .{magnitude % std.time.s_per_min});
+        try writer.print("{d:0>2}", .{parts.second});
     }
 }
 
