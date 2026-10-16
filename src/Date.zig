@@ -726,7 +726,7 @@ pub fn weekOfYear(
     january_day_in_first_week: i8,
 ) Week {
     const offset = firstWeekOffset(self.year, week_starts_on, january_day_in_first_week);
-    const day_of_year = @as(i32, self.month.daysBefore(self.year)) + self.day;
+    const day_of_year: i32 = self.dayOfYear();
     const week = @divFloor(day_of_year - offset - 1, 7) + 1;
 
     // The neighboring years are `WeekYear`s, which reach one year past
@@ -985,6 +985,35 @@ test isoWeek {
     const yearend = (Date{ .year = 2029, .month = .Dec, .day = 31 }).isoWeek();
     try std.testing.expectEqual(@as(Year, 2030), yearend.year);
     try std.testing.expectEqual(@as(u8, 1), yearend.week);
+}
+
+/// Returns the day of the year this date is, counting from 1: 1 through
+/// 365, or 366 in a leap year.
+///
+/// It is the days before the month in this year, which `Month.daysBefore`
+/// keeps in a table and corrects for the leap day from March on, plus the
+/// day of the month. `fromDayOfYear` is the inverse.
+pub fn dayOfYear(self: Date) u9 {
+    return self.month.daysBefore(self.year) + self.day;
+}
+
+test dayOfYear {
+    try std.testing.expectEqual(@as(u9, 1), (Date{ .year = 2024, .month = .Jan, .day = 1 }).dayOfYear());
+    try std.testing.expectEqual(@as(u9, 65), (Date{ .year = 2024, .month = .Mar, .day = 5 }).dayOfYear());
+
+    // 2024 is a leap year, so from March on it runs one day ahead of 2025,
+    // and its last day is the 366th.
+    try std.testing.expectEqual(@as(u9, 75), (Date{ .year = 2024, .month = .Mar, .day = 15 }).dayOfYear());
+    try std.testing.expectEqual(@as(u9, 74), (Date{ .year = 2025, .month = .Mar, .day = 15 }).dayOfYear());
+    try std.testing.expectEqual(@as(u9, 366), (Date{ .year = 2024, .month = .Dec, .day = 31 }).dayOfYear());
+    try std.testing.expectEqual(@as(u9, 365), (Date{ .year = 2023, .month = .Dec, .day = 31 }).dayOfYear());
+
+    // `fromDayOfYear` takes it back, at both ends of the calendar too.
+    for ([_]Date{
+        .{ .year = 2024, .month = .Feb, .day = 29 },
+        .{ .year = std.math.minInt(Year), .month = .Jan, .day = 1 },
+        .{ .year = std.math.maxInt(Year), .month = .Dec, .day = 31 },
+    }) |date| try std.testing.expectEqual(date, fromDayOfYear(date.year, date.dayOfYear()));
 }
 
 /// Returns the date `day_of_year` days into `year`, counting from 1.

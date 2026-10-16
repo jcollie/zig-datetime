@@ -548,7 +548,7 @@ fn writeConversion(
         .iso_year_short => try writeNumber(writer, @rem(value.isoWeek().year, 100), 2),
         .hour24 => try writeNumber(writer, value.hour, 2),
         .hour12 => try writeNumber(writer, twelve(value.hour), 2),
-        .day_of_year => try writeNumber(writer, value.dayOfThisYear(), 3),
+        .day_of_year => try writeNumber(writer, value.dayOfYear(), 3),
         .hour24_spaced => try writer.print("{d: >2}", .{value.hour}),
         .hour12_spaced => try writer.print("{d: >2}", .{twelve(value.hour)}),
         .minute => try writeNumber(writer, value.minute, 2),
@@ -556,7 +556,7 @@ fn writeConversion(
         .meridiem => try writer.writeAll(if (value.hour < 12) culture.am_designator else culture.pm_designator),
         .second => try writeNumber(writer, value.second, 2),
         .epoch_seconds => try writeEpochSeconds(writer, value),
-        .week => try writer.print("{d}", .{value.dayOfThisYear() / 7}),
+        .week => try writer.print("{d}", .{value.dayOfYear() / 7}),
         .iso_weekday => try writer.print("{d}", .{value.weekday.isoWeekdayNumber()}),
         .iso_week => try writeNumber(writer, value.isoWeek().week, 2),
         .weekday_number => try writer.print("{d}", .{value.weekday.weekdayNumber()}),
@@ -873,11 +873,11 @@ const UState = struct {
         try agrees(i32, self.short_year, @rem(value.year, 100));
         try agrees(u8, self.month, value.month.monthNumber());
         try agrees(u8, self.day, value.day);
-        try agrees(u16, self.day_of_year, value.dayOfThisYear());
+        try agrees(u16, self.day_of_year, value.dayOfYear());
         try agrees(i32, self.iso_year, @intCast(iso.year));
         try agrees(i32, self.iso_short_year, @intCast(@rem(iso.year, 100)));
         try agrees(u8, self.iso_week, iso.week);
-        try agrees(u8, self.week, @intCast(value.dayOfThisYear() / 7));
+        try agrees(u8, self.week, @intCast(value.dayOfYear() / 7));
         try agrees(DayOfWeek, self.weekday, value.weekday);
         try agrees(u8, self.hour, value.hour);
         try agrees(u8, self.hour12, twelve(value.hour));

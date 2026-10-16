@@ -1661,8 +1661,7 @@ test "fuzz the calendar round trips" {
             try std.testing.expectEqual(date, Date.fromDayNumber(date.toDayNumber()));
 
             // And its day of the year and back again.
-            const day_of_year = @as(i32, date.month.daysBefore(date.year)) + date.day;
-            try std.testing.expectEqual(date, Date.fromDayOfYear(date.year, day_of_year));
+            try std.testing.expectEqual(date, Date.fromDayOfYear(date.year, date.dayOfYear()));
 
             // And its week and weekday and back again, under either rule.
             const iso = date.isoWeek();
@@ -1691,8 +1690,7 @@ fn calendarProperty(random: std.Random) !void {
 fn checkCalendar(date: Date) !void {
     try std.testing.expectEqual(date, Date.fromDayNumber(date.toDayNumber()));
 
-    const day_of_year = @as(i32, date.month.daysBefore(date.year)) + date.day;
-    try std.testing.expectEqual(date, Date.fromDayOfYear(date.year, day_of_year));
+    try std.testing.expectEqual(date, Date.fromDayOfYear(date.year, date.dayOfYear()));
 
     const iso = date.isoWeek();
     try std.testing.expect(iso.week >= 1 and iso.week <= 53);

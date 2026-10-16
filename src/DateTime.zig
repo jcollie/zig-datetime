@@ -455,9 +455,9 @@ fn writeTag(
                     .Do => try in.writeOrdinal(writer, self.day, .Do),
                     .DD => try writer.print("{:0>2}", .{self.day}),
 
-                    .DDD => try writer.print("{}", .{self.dayOfThisYear()}),
-                    .DDDo => try in.writeOrdinal(writer, self.dayOfThisYear(), .DDDo),
-                    .DDDD => try writer.print("{:0>3}", .{self.dayOfThisYear()}),
+                    .DDD => try writer.print("{}", .{self.dayOfYear()}),
+                    .DDDo => try in.writeOrdinal(writer, self.dayOfYear(), .DDDo),
+                    .DDDD => try writer.print("{:0>3}", .{self.dayOfYear()}),
 
                     .d => try writer.print("{}", .{self.weekday.weekdayNumber()}),
                     .do => try in.writeOrdinal(writer, self.weekday.weekdayNumber(), .do),
@@ -2237,19 +2237,14 @@ test isoWeek {
     try std.testing.expectEqual(@as(u8, 11), march.isoWeek().week);
 }
 
-/// Returns the 1-based day of the year (1-366).
-pub fn dayOfThisYear(self: DateTime) u9 {
-    return self.month.daysBefore(self.year) + self.day;
+/// Returns the day of the year this is, counting from 1; see
+/// `Date.dayOfYear`.
+pub fn dayOfYear(self: DateTime) u9 {
+    return self.asDate().dayOfYear();
 }
 
-test dayOfThisYear {
-    try std.testing.expectEqual(@as(u9, 1), (DateTime{ .year = 2024, .month = .Jan, .day = 1 }).dayOfThisYear());
-
-    // 2024 is a leap year, so from March on it runs one day ahead of 2025.
-    try std.testing.expectEqual(@as(u9, 75), (DateTime{ .year = 2024, .month = .Mar, .day = 15 }).dayOfThisYear());
-    try std.testing.expectEqual(@as(u9, 74), (DateTime{ .year = 2025, .month = .Mar, .day = 15 }).dayOfThisYear());
-
-    try std.testing.expectEqual(@as(u9, 366), (DateTime{ .year = 2024, .month = .Dec, .day = 31 }).dayOfThisYear());
+test dayOfYear {
+    try std.testing.expectEqual(@as(u9, 75), (DateTime{ .year = 2024, .month = .Mar, .day = 15, .hour = 23 }).dayOfYear());
 }
 
 /// Returns the same point in time expressed in UTC, that is with the

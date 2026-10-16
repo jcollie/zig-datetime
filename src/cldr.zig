@@ -1045,7 +1045,7 @@ fn writeField(
         // ----- Day -----
 
         'd' => try writeNumber(writer, locale, value.day, count),
-        'D' => try writeNumber(writer, locale, dayOfYear(date), count),
+        'D' => try writeNumber(writer, locale, date.dayOfYear(), count),
 
         // Which Tuesday of the month this is, counting from one. Not a
         // week number: the 1st through the 7th are always the first
@@ -1307,20 +1307,6 @@ test eraYear {
     // Astronomical zero is the first year before the common era.
     try std.testing.expectEqual(@as(u64, 1), eraYear(0));
     try std.testing.expectEqual(@as(u64, 2), eraYear(-1));
-}
-
-/// The day of the year, 1 through 365 or 366.
-fn dayOfYear(date: Date) u16 {
-    return @as(u16, date.month.daysBefore(date.year)) + date.day;
-}
-
-test dayOfYear {
-    try std.testing.expectEqual(@as(u16, 1), dayOfYear(.{ .year = 2024, .month = .Jan, .day = 1 }));
-    try std.testing.expectEqual(@as(u16, 65), dayOfYear(.{ .year = 2024, .month = .Mar, .day = 5 }));
-
-    // 2024 was a leap year, so its last day is the 366th.
-    try std.testing.expectEqual(@as(u16, 366), dayOfYear(.{ .year = 2024, .month = .Dec, .day = 31 }));
-    try std.testing.expectEqual(@as(u16, 365), dayOfYear(.{ .year = 2023, .month = .Dec, .day = 31 }));
 }
 
 /// Which day of the locale's week this is, counting from one.

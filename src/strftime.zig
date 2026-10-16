@@ -575,7 +575,7 @@ fn writeConversion(
 
         .century => try into.print("{d}", .{@divFloor(value.year, 100)}),
         .day, .day_spaced => try into.print("{d}", .{value.day}),
-        .day_of_year => try into.print("{d}", .{value.dayOfThisYear()}),
+        .day_of_year => try into.print("{d}", .{value.dayOfYear()}),
         .hour24, .hour24_spaced => try into.print("{d}", .{value.hour}),
         .hour12, .hour12_spaced => try into.print("{d}", .{twelve(value.hour)}),
         .month => try into.print("{d}", .{value.month.monthNumber()}),
@@ -726,7 +726,7 @@ test twelve {
 /// first Sunday or Monday. A date written with `%Y-%W` and read back
 /// under a week-numbering rule would land in the wrong year.
 fn weekFrom(value: DateTime, starts_on: DayOfWeek) u8 {
-    const day_of_year: i16 = @as(i16, value.dayOfThisYear()) - 1;
+    const day_of_year: i16 = @as(i16, value.dayOfYear()) - 1;
     const weekday: i16 = @mod(
         @as(i16, value.weekday.weekdayNumber()) - @as(i16, starts_on.weekdayNumber()),
         7,

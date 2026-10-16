@@ -324,8 +324,8 @@ pub fn format(
             .under_day => try writer.print("{d: >2}", .{value.day}),
             .zero_day => try writer.print("{d:0>2}", .{value.day}),
 
-            .under_year_day => try writer.print("{d: >3}", .{value.dayOfThisYear()}),
-            .zero_year_day => try writer.print("{d:0>3}", .{value.dayOfThisYear()}),
+            .under_year_day => try writer.print("{d: >3}", .{value.dayOfYear()}),
+            .zero_year_day => try writer.print("{d:0>3}", .{value.dayOfYear()}),
 
             .hour => try writer.print("{d:0>2}", .{value.hour}),
             .hour12 => try writer.print("{d}", .{twelve(value.hour)}),
