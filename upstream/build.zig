@@ -19,8 +19,8 @@
 //!     zig build test          every oracle
 //!
 //! An oracle checks this library's answers against the implementation they
-//! were modeled on -- moment.js, Go's `time`, ICU, the C library, .NET and
-//! PowerShell -- rather than against what somebody remembered of it.
+//! were modeled on -- moment.js, Go's `time`, ICU, the C library, .NET,
+//! PowerShell and git -- rather than against what somebody remembered of it.
 
 const std = @import("std");
 
@@ -323,6 +323,32 @@ pub fn build(b: *std.Build) void {
     );
     strftime_step.dependOn(&run_strftime.step);
     if (host.result.os.tag != .windows) test_step.dependOn(&run_strftime.step);
+
+    // -- git -----------------------------------------------------------------
+    //
+    // git is in the dev shell, and its date parsing is defined by what it
+    // does rather than by a document, so it is asked directly: the oracle
+    // runs it once per zone and time for the approximate parser and once
+    // per question for the strict one. The repository it needs for
+    // `HEAD@{...}` is made fresh in a directory of the build's own.
+    const git_oracle = b.addExecutable(.{
+        .name = "oracle-git",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/oracle_git.zig"),
+            .target = host,
+            .imports = &.{.{ .name = "datetime", .module = plain }},
+        }),
+    });
+
+    const run_git = b.addRunArtifact(git_oracle);
+    _ = run_git.addOutputDirectoryArg("repository");
+    run_git.stdio = .inherit;
+    // git and the zone database can change under an unchanged corpus.
+    run_git.has_side_effects = true;
+
+    const git_step = b.step("oracle-git", "Check the git date parsers against git");
+    git_step.dependOn(&run_git.step);
+    if (host.result.os.tag != .windows) test_step.dependOn(&run_git.step);
 
     // -- .NET and PowerShell -------------------------------------------------
     //

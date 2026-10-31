@@ -103,6 +103,9 @@ pub const dotnet = @import("dotnet.zig");
 /// Formatting and parsing the way PowerShell's `Get-Date` does: `-Format`,
 /// which is .NET's vocabulary plus four names of its own, and `-UFormat`.
 pub const powershell = @import("powershell.zig");
+/// The dates git reads: the strict form of `GIT_COMMITTER_DATE`, and the
+/// approximate one of `git log --since` and `ref@{date}`.
+pub const gitdate = @import("gitdate.zig");
 /// A timezone, and the lookups that apply it to an instant.
 pub const TimeZone = @import("TimeZone.zig");
 /// Where timezone data comes from: the system's copy or an embedded one.

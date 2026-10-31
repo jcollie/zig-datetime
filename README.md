@@ -164,17 +164,26 @@ const zone = switch (datetime.tzdb.system.resolveTz(init.environ_map.get("TZ")))
     // TZ=America/Chicago, TZ=:America/Chicago, TZ=Etc/GMT+5
     .name => |name| datetime.tzdb.system.load(init.io, init.gpa, directory, name) catch |err| switch (err) {
         // Not a zone after all, so it must have been a rule. See below.
-        error.FileNotFound => return parseAsRule(name),
+        error.FileNotFound => try datetime.TimeZone.fromRule(name),
         else => return err,
     },
 
     // TZ=CST6CDT,M3.2.0,M11.1.0 — a rule, with no file behind it.
-    .rule => |rule| return parseAsRule(rule),
+    .rule => |rule| try datetime.TimeZone.fromRule(rule),
 
     // TZ="" is UTC.
-    .utc => ...,
+    .utc => datetime.TimeZone.utc,
 };
 ```
+
+`TimeZone.fromRule` builds a zone from a POSIX rule alone. It borrows the
+text, so the rule has to outlive the zone, and it allocates nothing, so
+there is nothing to free. A rule with daylight saving time has to spell
+out when it starts and ends, as `EST5EDT,M3.2.0,M11.1.0` does; one that
+does not, like `EST5EDT` on its own, is `error.MissingRules` rather than a
+guess at somebody's local convention. glibc reads a `TZ` it can make
+nothing of as UTC, and a caller that wants to do the same can fall back to
+`TimeZone.utc` on any error.
 
 That `.name` case really does need the fallback, because a rule and a zone
 name cannot always be told apart by looking at them. `EST5EDT`, `MST7MDT`,
@@ -985,6 +994,77 @@ that this reads. The doc comments cite the clause behind each rule, and
 | `R0`, `R-1` | not defined | refused |
 | Repeat rules `/F2W` (Part 2, 13) | Part 2 | left as trailing text |
 
+### git's date formats
+
+`gitdate` reads dates the way git does. There are two parsers, because
+git has two. `strict` is what `GIT_COMMITTER_DATE` and `git commit
+--date` accept: git's own `<timestamp> <offset>`, RFC 2822, ISO 8601 and
+a good deal of leniency around them. `approximate` is what git calls
+*approxidate*, the one behind `git log --since` and `--until` and
+`ref@{date}`: `yesterday`, `2 weeks ago`, `noon last monday`, `tea`.
+
+```zig
+const zone = try datetime.TimeZone.fromRule("EST5EDT,M3.2.0/2,M11.1.0/2");
+
+const commit = try datetime.gitdate.strict("Tue, 1 Sep 2026 12:00:00 -0700", &zone);
+// commit.timestamp == 1788289200, commit.offset == -7 * 3600
+
+const since = datetime.gitdate.approximate("2 weeks ago", .{ .now = now, .zone = &zone });
+// since.timestamp is two weeks before `now`; since.failed is false
+```
+
+A strict date without an offset is local time in the zone given, and
+`Exact.offset` says which offset was used. A local time the zone skips or
+repeats is resolved as glibc's `mktime` resolves it, since that is what
+git calls.
+
+The approximate parser tries the text as a strict date first. Failing
+that, it never fails outright: when nothing in the text meant anything to
+it, the answer is the current time and `Approximate.failed` is set. git
+makes that distinction itself, quietly reading `--since=nonsense` as now
+while reporting `ref@{nonsense}` as an unknown revision, so a caller
+standing in for git needs it too.
+
+git documents these formats by example. What they do with anything else
+is defined only by what git does, so that is what this follows, oddities
+included: `10/05` read in September is the 10th of May, because the 5th
+of October would be too far in the future; `tea` is 17:00 yesterday until
+five in the afternoon; `last 5` is the 1st of May; and `Jan 2026 12:00`,
+with no day at all, is a strict date meaning the 30th of December 2025.
+The module documentation and the doc comments on `approximate` and
+`strict` set out the rules in full. git is licensed GPL-2.0-only, and
+none of this comes from its source: every rule was found by asking git
+and comparing the answers.
+
+#### Compatibility, checked
+
+`zig build oracle-git` asks git itself. `git rev-parse --since=TEXT`
+prints the approximate parser's answer, `git var GIT_COMMITTER_IDENT` with
+`GIT_COMMITTER_DATE` set prints the strict parser's, and `git rev-parse
+HEAD@{TEXT}` shows whether the approximate parser understood anything.
+`GIT_TEST_DATE_NOW` pins git's current time and `TZ` its zone, so a corpus
+of a few hundred texts is checked at six instants either side of daylight
+saving changes in both hemispheres, in eleven zones: UTC, New York,
+Berlin, Sydney, Kolkata, Chatham, São Paulo, three bare POSIX rules and an
+empty `TZ`.
+
+```
+27270 comparisons against git version 2.55.0, no divergence
+```
+
+Each approximate question gets a git process of its own. Within one
+process, glibc's `mktime` starts each conversion from the offset the last
+one found, so a local time that happens twice can come out differently
+depending on what git was asked before. A fresh process is what a single
+call here corresponds to.
+
+Two things this does not follow. A number big enough to overflow git's
+own arithmetic, such as a timestamp past 2099 or a count of a hundred
+million Fridays, comes out wherever git's wraparound puts it, and here it
+saturates instead. And `TZ` itself is the caller's to interpret:
+`TimeZone.fromRule` builds a zone from a bare POSIX rule, and glibc's
+habit of treating a `TZ` it cannot use as UTC is `TimeZone.utc`.
+
 ### Durations
 
 `iso8601.parseDuration` reads the other half of the syntax, and
@@ -1376,12 +1456,13 @@ zig build oracle-locale            # the embedded locales against moment.js
 zig build oracle-cldr              # the CLDR patterns against ICU
 zig build oracle-strftime          # the strftime conversions against the C library
 zig build oracle-powershell        # the .NET format strings and Get-Date against .NET and PowerShell
+zig build oracle-git               # the git date parsers against git
 zig build bench                    # always ReleaseFast, whatever -Doptimize says
 zig build verify-days              # every day number and date, Joffe against Hinnant
 ```
 
 Every oracle is part of `zig build test`, so an ordinary run needs `node`,
-`go`, ICU and `pwsh`, and fetches moment and CLDR the first time.
+`go`, ICU, `pwsh` and `git`, and fetches moment and CLDR the first time.
 
 CI runs them without fetching anything. `build.zig.zon.nix`, generated by
 `zon2nix` from both manifests, is a Nix expression for every package either
@@ -1633,6 +1714,18 @@ The documents this library is written against.
   paths for `o` and `r`, which `dotnet` follows where the documentation is
   silent, and through `zig build oracle-powershell` the behavior it is
   checked against.
+- **[GIT-COMMIT]** "git-commit", *Git Documentation*,
+  <https://git-scm.com/docs/git-commit#_date_formats>. Its DATE FORMATS
+  section names the forms `gitdate.strict` reads: git's internal format,
+  RFC 2822 and ISO 8601.
+- **[GITREVISIONS]** "gitrevisions", *Git Documentation*,
+  <https://git-scm.com/docs/gitrevisions>. `ref@{date}`, with
+  `yesterday` and `1 month 2 weeks 3 days 1 hour 1 second ago` as the
+  examples of what `gitdate.approximate` reads.
+- **[GIT-LOG]** "git-log", *Git Documentation*,
+  <https://git-scm.com/docs/git-log>. `--since`, `--after`, `--until` and
+  `--before`, the other options that read an approximate date, and through
+  `zig build oracle-git` the behavior `gitdate` is checked against.
 - **[TZDB]** Internet Assigned Numbers Authority, *Time Zone Database*,
   <https://www.iana.org/time-zones>. The zone data itself, and `zic`, the
   reference compiler `-Dembed-tzdata` builds and runs.

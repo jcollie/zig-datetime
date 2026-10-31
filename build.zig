@@ -36,6 +36,9 @@
 //! `Get-Date` itself. PowerShell comes from the dev shell, and the oracle
 //! prints the version it ran against and the .NET under it.
 //!
+//! `zig build oracle-git` does the same for `gitdate`, against git itself,
+//! which is in the dev shell; it asks one question per git process.
+//!
 //! `zig build oracle-parse` does the same for parsing. `DateTime.Mode` has
 //! the same two settings moment's strict flag chooses between, and each is
 //! held to the matching mode of moment. It carries a short list of known
@@ -485,7 +488,7 @@ pub fn build(b: *std.Build) void {
     // divergence from any of the four is a regression rather than a known
     // gap.
     const run_oracles = shellOut(b, "test", upstream_system);
-    const oracles_step = b.step("oracles", "Check this library against moment, Go, ICU, libc and .NET, in upstream/");
+    const oracles_step = b.step("oracles", "Check this library against moment, Go, ICU, libc, .NET and git, in upstream/");
     oracles_step.dependOn(&run_oracles.step);
     test_step.dependOn(&run_oracles.step);
 
@@ -499,6 +502,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "oracle-cldr", .help = "Check the CLDR patterns against ICU, in upstream/" },
         .{ .name = "oracle-strftime", .help = "Check the strftime conversions against the C library, in upstream/" },
         .{ .name = "oracle-powershell", .help = "Check the .NET and PowerShell format strings against .NET and Get-Date, in upstream/" },
+        .{ .name = "oracle-git", .help = "Check the git date parsers against git, in upstream/" },
     }) |each| {
         b.step(each.name, each.help).dependOn(&shellOut(b, each.name, upstream_system).step);
     }

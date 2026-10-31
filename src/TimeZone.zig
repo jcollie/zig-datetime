@@ -83,6 +83,71 @@ test fromOwnedBytes {
     try testing.expectEqualStrings("America/Chicago", zone.name);
 }
 
+/// Builds a zone from a POSIX rule alone, such as
+/// "CET-1CEST,M3.5.0,M10.5.0/3" or "<+0330>-3:30", with no TZif file
+/// behind it. This is the zone a `TZ` variable describes when it holds a
+/// rule rather than a name; see `tzdb.system.resolveTz`.
+///
+/// The zone is a TZif file with no transitions whose footer is `rule`:
+/// every lookup falls past the (absent) last transition, which is where
+/// the footer governs, so the rule answers for every instant. The zone
+/// borrows `rule` as its name and its designations, so `rule` must
+/// outlive it, and there is nothing to `deinit`.
+///
+/// A rule with daylight saving time must spell out its switch dates, as
+/// in "EST5EDT,M3.2.0,M11.1.0"; one without them is refused with
+/// `error.MissingRules` rather than given somebody's local convention.
+/// glibc treats a `TZ` it cannot use at all as UTC, and `utc` is that
+/// zone for a caller that wants to do the same.
+pub fn fromRule(rule: []const u8) posixtz.ParseError!TimeZone {
+    return .{
+        .name = rule,
+        .bytes = "",
+        .owned = false,
+        .data = .{
+            .version = .v2,
+            .time_size = 8,
+            .transition_times = "",
+            .transition_types = "",
+            .type_records = "",
+            .designations = "",
+            .footer = rule,
+        },
+        .rule = try posixtz.parse(rule),
+    };
+}
+
+test fromRule {
+    const zone = try fromRule("CET-1CEST,M3.5.0,M10.5.0/3");
+
+    // Midwinter and midsummer 2026, either side of the switches.
+    try testing.expectEqualStrings("CET", zone.typeAt(1768478400).designation);
+    try testing.expectEqual(@as(i32, 2 * std.time.s_per_hour), zone.offsetAt(1784109600));
+
+    // Spring forward on 2026-03-29 skips 02:00 through 03:00 local.
+    const skipped = zone.resolve(.{ .year = 2026, .month = .Mar, .day = 29, .hour = 2, .minute = 30 });
+    try testing.expectEqual(@as(i32, std.time.s_per_hour), skipped.gap.before);
+
+    // A zone with no daylight saving time at all, and a numeric
+    // designation.
+    const tehran = try fromRule("<+0330>-3:30");
+    try testing.expectEqual(@as(i32, 210 * std.time.s_per_min), tehran.offsetAt(0));
+    try testing.expectEqualStrings("+0330", tehran.typeAt(0).designation);
+
+    // A rule that is not a rule.
+    try testing.expectError(error.MissingRules, fromRule("EST5EDT"));
+}
+
+/// Coordinated Universal Time, as a zone: what POSIX says an empty `TZ`
+/// means, and what glibc falls back to for a `TZ` it cannot use.
+pub const utc: TimeZone = fromRule("UTC0") catch unreachable;
+
+test utc {
+    try testing.expectEqual(@as(i32, 0), utc.offsetAt(0));
+    try testing.expectEqual(@as(i32, 0), utc.offsetAt(1790000000));
+    try testing.expectEqualStrings("UTC", utc.typeAt(0).designation);
+}
+
 /// Parses `bytes` into a zone. The footer is parsed here rather than on
 /// demand so that a malformed rule is reported when the zone is built,
 /// not later at some lookup that happens to fall past the transitions.
