@@ -146,6 +146,16 @@ pub fn main(init: std.process.Init) !void {
                 try strftime.format(value, current, &writer);
                 const formatted = writer.buffered();
 
+                // The runtime formatter walks the same scanner and field
+                // writer, so it has to agree with the comptime one
+                // exactly; anything else is a bug in one of them.
+                var again: [256]u8 = undefined;
+                const runtime = try strftime.bufFormatRuntime(&again, value, current, .{});
+                if (!std.mem.eql(u8, formatted, runtime)) {
+                    std.debug.print("oracle: \"{s}\" is \"{s}\" at comptime and \"{s}\" at run time\n", .{ current, formatted, runtime });
+                    std.process.exit(1);
+                }
+
                 // The record separator would otherwise be ambiguous, and
                 // `%n` and `%t` write both characters on purpose.
                 if (std.mem.findAny(u8, current, "\t\n") == null and
@@ -182,5 +192,69 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
+    try writeExhaustive(out);
     try out.flush();
+}
+
+/// Every flag, width and modifier on every letter, and on a few that are
+/// not conversions at all, formatted at run time with unknown conversions
+/// copied through. That is the mode meant to answer the way glibc does
+/// for whatever a user types, so the whole space of short conversions is
+/// put to it rather than a list of the ones someone thought of.
+const exhaustive_letters = "aAbBcCdDeFgGhHIjklmMnNpPrRsStTuUVwWxXyYzZ%qQfiJKLvE:!";
+const exhaustive_decorations = [_][]const u8{
+    "",    "-",   "_",   "0",   "^",   "#",    "^#",   "#^",   "_^",
+    "1",   "3",   "5",   "-5",  "_5",  "05",   "^5",   "#5",   "12",
+    "-12", "_12", "012", "^12", "#12", "0-12", "-012", "_012", "^#12",
+};
+const exhaustive_modifiers = [_][]const u8{ "", "E", "O", ":", "::", "E:", ":E" };
+
+/// Format strings that end inside a conversion, which glibc writes as
+/// they are and which the copying mode has to as well.
+const unfinished = [_][]const u8{ "%", "x%", "x%-", "x%5", "x%_3", "x%E", "x%O", "x%^", "x%:", "x%5::" };
+
+fn writeExhaustive(out: *Io.Writer) !void {
+    var format_buffer: [32]u8 = undefined;
+    var line: [512]u8 = undefined;
+
+    // Two instants are enough here: one with every field single-digit
+    // and one with every field wide, in the zones that differ.
+    for ([_]i64{ 1704240429000, 1710513005123 }) |at| {
+        for (zones) |zone| {
+            const seconds = zone.minutes * 60;
+            const shifted: Instant = .{
+                .timestamp = Instant.fromMilliTimestamp(at).timestamp +
+                    @as(i128, seconds) * std.time.ns_per_s,
+            };
+            var value = shifted.asDateTime();
+            value.offset = seconds;
+            value.designation = .from(zone.name);
+
+            for (exhaustive_decorations) |decoration| {
+                for (exhaustive_modifiers) |modifier| {
+                    for (exhaustive_letters) |letter| {
+                        const current = try std.fmt.bufPrint(&format_buffer, "%{s}{s}{c}", .{ decoration, modifier, letter });
+                        try writeRuntime(out, &line, value, at, zone.minutes, zone.name, current);
+                    }
+                }
+            }
+            for (unfinished) |current| {
+                try writeRuntime(out, &line, value, at, zone.minutes, zone.name, current);
+            }
+        }
+    }
+}
+
+fn writeRuntime(
+    out: *Io.Writer,
+    line: []u8,
+    value: DateTime,
+    at: i64,
+    minutes: i32,
+    name: []const u8,
+    current: []const u8,
+) !void {
+    const formatted = try strftime.bufFormatRuntime(line, value, current, .{ .unknown = .copy });
+    if (std.mem.findAny(u8, formatted, "\t\n") != null) return;
+    try out.print("F\t{d}\t{d}\t{s}\t{s}\t{s}\n", .{ at, minutes, name, current, formatted });
 }

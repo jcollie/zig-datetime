@@ -23,11 +23,20 @@
 //! written this way, and translating one by hand is how a date ends up
 //! wrong.
 //!
-//! The format string is comptime, so it is taken apart while this is
-//! compiled and what is left at runtime is a straight line of writes or
-//! reads. A conversion the module does not know is a compile error rather
-//! than text copied through, which is what the C library does with one:
-//! a `%Q` that silently writes itself is a typo nobody finds.
+//! `format` and `parse` take the format string at comptime, so it is
+//! taken apart while this is compiled and what is left at runtime is a
+//! straight line of writes or reads. A conversion the module does not know
+//! is a compile error rather than text copied through, which is what the
+//! C library does with one: a `%Q` that silently writes itself is a typo
+//! nobody finds.
+//!
+//! `formatRuntime` takes a format string that was not known until the
+//! program ran -- a user's `--date=format:`, a line of a configuration
+//! file -- and either refuses an unknown conversion with an error or, if
+//! asked, copies it through the way glibc does. Both walk the same
+//! `Scanner` and the same field writer, so they cannot drift apart, and
+//! `writeChunk` is that field writer for a caller walking a `Scanner` of
+//! its own. `bufFormat` and `bufFormatRuntime` write into a slice.
 //!
 //! glibc is the specification, in its `C` locale, and
 //! `tools/oracle_strftime.c` checks it: both sides format the same corpus,
@@ -48,6 +57,11 @@
 //!   rather than `strftime(3)`'s, and glibc's `strftime` writes them out
 //!   as text. Without them a nanosecond and an RFC 3339 offset could not
 //!   be written at all.
+//!
+//! Everything else follows glibc, including where glibc is odd. The oracle
+//! puts every flag, every few widths and both modifiers to every letter,
+//! and so `%1d` is still two digits, `%-5d` pads with spaces, `%Ed` is
+//! not a conversion, and `%7z` counts its width twice.
 //!
 //! Reading, glibc's `strptime` is followed as far as it goes and then
 //! four things are kept that it throws away or refuses: `%G` with `%V`
@@ -167,167 +181,322 @@ pub const Field = struct {
     width: u8 = 0,
 };
 
-/// A format string is a run of these: text to copy through, or a
-/// conversion to fill in.
+/// A conversion this library does not know, kept so that it can be
+/// written out as text the way the C library writes one.
+///
+/// Only a `Scanner` told `.unknown = .copy` yields these; the default
+/// refuses the format string instead.
+pub const Unknown = struct {
+    /// The conversion as it was written, from its `%` through the byte
+    /// that made it unknown, or through the end of the format string when
+    /// that came first.
+    text: []const u8,
+    /// Whether a `0` flag was the last of the padding flags, which pads
+    /// with zeros rather than spaces. A `-` pads with spaces here, as it
+    /// does in glibc: there is no field of digits for it to unpad.
+    zero: bool = false,
+    /// Whether a `^` flag was written, which upper-cases the text.
+    upper: bool = false,
+    /// The minimum width, as for `Field.width`.
+    width: u8 = 0,
+};
+
+/// A format string is a run of these: text to copy through, a conversion
+/// to fill in, or a conversion this library does not know.
 pub const Chunk = union(enum) {
     literal: []const u8,
     conversion: Field,
+    unknown: Unknown,
 };
 
-/// The longest a single conversion writes before padding is applied.
-/// `%c` in a language with long names is the widest thing here, and a
-/// field that overran would be a `Writer` failure rather than a silent
-/// truncation.
-const max_field = 256;
+/// What can be wrong with a format string.
+pub const FormatError = error{
+    /// The format string ended inside a conversion: a `%` with no letter
+    /// after it, or with only flags, a width or a modifier.
+    UnfinishedConversion,
+    /// A letter that names no conversion, a modifier on a conversion that
+    /// does not take that modifier, or colons before anything but `z`.
+    UnknownConversion,
+    /// A minimum field width wider than 255.
+    WidthTooLarge,
+};
 
-/// Splits `format_string` into chunks, which is the whole of understanding
-/// a strftime format.
+/// What a `Scanner` does with a conversion it does not know.
+pub const UnknownPolicy = enum {
+    /// Return `error.UnknownConversion` or `error.UnfinishedConversion`.
+    refuse,
+    /// Yield a `Chunk.unknown`, which the formatter writes as the text of
+    /// the conversion, padded and upper-cased as its flags ask. That is
+    /// what glibc's `strftime` does, so a format string a user typed comes
+    /// out the way their C library would have written it.
+    copy,
+};
+
+/// Which modifier, if any, came between the width and the letter.
+const Modifier = enum { none, E, O };
+
+/// Walks a format string a chunk at a time.
 ///
-/// A conversion is `%`, then any number of the flags `-_0^#` with the last
-/// of each kind winning, then an optional minimum field width, then an
-/// optional `E` or `O` modifier, then the conversion letter. The `%:z`
-/// family is the one exception to that shape, and the colons come last
-/// because `date(1)` puts them there.
+/// Written as a cursor rather than as a function returning a list so that
+/// the same code serves every entry point: `tokenize` runs it at comptime
+/// to build a list for `format` to unroll, and `formatRuntime` runs it as
+/// it writes. A caller with conversions of its own to handle -- `git log
+/// --date=format:` writes `%s` and `%z` itself, say -- can run it too,
+/// writing those chunks itself and passing the rest to `writeChunk`.
+/// `format[start..index]`, with `start` the `index` before a call to
+/// `next`, is the text the returned chunk was read from.
+///
+/// A conversion is `%`, then any number of the flags `-_0^#`, then an
+/// optional minimum field width, then an optional `E` or `O` modifier,
+/// then the conversion letter. Of `-`, `_` and `0` the last one written
+/// wins; `^` and `#` are independent, and when both are written `#` wins
+/// for `%p` and `%Z` and `^` for everything else, which is glibc's
+/// arithmetic. The `%:z` family is the one exception to that shape, and
+/// the colons come last because `date(1)` puts them there.
+///
+/// `E` and `O` ask a locale for an alternative representation: era-based
+/// years, and the locale's own digits. No locale here has either, and
+/// POSIX says the plain conversion is used when the locale has no
+/// alternative, so they are read and dropped -- but only on the
+/// conversions glibc accepts them on. glibc copies `%Ed` through as text,
+/// and so this treats it as unknown.
+pub const Scanner = struct {
+    format: []const u8,
+    index: usize = 0,
+    unknown: UnknownPolicy = .refuse,
+
+    /// Returns the next chunk, or null at the end of the format string.
+    pub fn next(self: *Scanner) FormatError!?Chunk {
+        const format_string = self.format;
+        const start = self.index;
+        if (start >= format_string.len) return null;
+
+        if (format_string[start] != '%') {
+            const end = std.mem.findScalarPos(u8, format_string, start, '%') orelse format_string.len;
+            self.index = end;
+            return .{ .literal = format_string[start..end] };
+        }
+
+        var field: Field = .{ .which = .percent };
+        var upper = false;
+        var opposite = false;
+        var j = start + 1;
+
+        // The flags, in any order and as many as are written. glibc lets
+        // the last padding flag win rather than refusing a contradiction,
+        // so `%_0d` pads with zeros.
+        flags: while (j < format_string.len) : (j += 1) {
+            switch (format_string[j]) {
+                '-' => field.pad = .none,
+                '_' => field.pad = .space,
+                '0' => field.pad = .zero,
+                '^' => upper = true,
+                '#' => opposite = true,
+                else => break :flags,
+            }
+        }
+
+        // The width. The leading `0` of `%09d` has already been taken as
+        // a flag above, which is what makes that mean a zero-padded width
+        // of nine rather than a width of ninety.
+        var width: usize = 0;
+        while (j < format_string.len and std.ascii.isDigit(format_string[j])) : (j += 1) {
+            width = width * 10 + (format_string[j] - '0');
+            if (width > std.math.maxInt(u8)) return error.WidthTooLarge;
+        }
+        field.width = @intCast(width);
+
+        var modifier: Modifier = .none;
+        if (j < format_string.len) switch (format_string[j]) {
+            'E' => {
+                modifier = .E;
+                j += 1;
+            },
+            'O' => {
+                modifier = .O;
+                j += 1;
+            },
+            else => {},
+        };
+
+        const first_colon = j;
+        var colons: usize = 0;
+        while (j < format_string.len and format_string[j] == ':') : (j += 1) colons += 1;
+
+        // glibc has no `%:z`, so to it the first colon is the letter that
+        // made the conversion unknown, and what follows is text. Copying
+        // the same span is what keeps `%5:q` padded the way glibc pads it.
+        const unknown_end = if (colons > 0) first_colon + 1 else @min(j + 1, format_string.len);
+        // `#` upper-cases `%Eb` and `%Eh`, which glibc refuses and copies
+        // through, because it has already decided what `#` means for the
+        // month name before it looks at the modifier.
+        const month_name = j < format_string.len and
+            (format_string[j] == 'b' or format_string[j] == 'h');
+        const unknown: Unknown = .{
+            .text = format_string[start..unknown_end],
+            .zero = field.pad == .zero,
+            .upper = upper or (opposite and modifier == .E and month_name),
+            .width = field.width,
+        };
+
+        if (j >= format_string.len and colons == 0) {
+            if (self.unknown == .refuse) return error.UnfinishedConversion;
+            self.index = format_string.len;
+            return .{ .unknown = unknown };
+        }
+
+        const letter = if (j < format_string.len) format_string[j] else 0;
+        const known = conversionOf(letter, colons);
+        if (known == null or !modifierAllowed(modifier, letter) or (colons > 0 and modifier != .none)) {
+            if (self.unknown == .refuse) return if (j >= format_string.len)
+                error.UnfinishedConversion
+            else
+                error.UnknownConversion;
+            self.index = unknown_end;
+            return .{ .unknown = unknown };
+        }
+        self.index = j + 1;
+        const which = known.?;
+
+        field.which = which;
+        field.case = if (upper and opposite)
+            (if (oppositeOf(which) == .lower) .opposite else .upper)
+        else if (opposite)
+            .opposite
+        else if (upper)
+            .upper
+        else
+            .none;
+        return .{ .conversion = field };
+    }
+};
+
+test Scanner {
+    var scanner: Scanner = .{ .format = "at %-5H!" };
+    try std.testing.expectEqualStrings("at ", (try scanner.next()).?.literal);
+    const hour = (try scanner.next()).?.conversion;
+    try std.testing.expectEqual(Conversion.hour24, hour.which);
+    try std.testing.expectEqual(Pad.none, hour.pad);
+    try std.testing.expectEqual(@as(u8, 5), hour.width);
+    try std.testing.expectEqualStrings("!", (try scanner.next()).?.literal);
+    try std.testing.expectEqual(@as(?Chunk, null), try scanner.next());
+
+    // Refused by default, the way `tokenize` refuses them at compile
+    // time.
+    var refusing: Scanner = .{ .format = "%Q" };
+    try std.testing.expectError(error.UnknownConversion, refusing.next());
+    var unfinished: Scanner = .{ .format = "100%" };
+    _ = try unfinished.next();
+    try std.testing.expectError(error.UnfinishedConversion, unfinished.next());
+
+    // Copied, the way glibc copies them: the text of the conversion,
+    // with its flags and width kept for the writer to apply.
+    var copying: Scanner = .{ .format = "%^5q%Ed", .unknown = .copy };
+    const q = (try copying.next()).?.unknown;
+    try std.testing.expectEqualStrings("%^5q", q.text);
+    try std.testing.expect(q.upper);
+    try std.testing.expectEqual(@as(u8, 5), q.width);
+    // `E` is not something `%d` takes.
+    try std.testing.expectEqualStrings("%Ed", (try copying.next()).?.unknown.text);
+}
+
+/// The conversion `letter` names after `colons` colons, or null when it
+/// names none.
+fn conversionOf(letter: u8, colons: usize) ?Conversion {
+    if (colons > 0) return if (letter != 'z') null else switch (colons) {
+        1 => .offset_colon,
+        2 => .offset_colon_seconds,
+        3 => .offset_minimal,
+        else => null,
+    };
+    return switch (letter) {
+        'a' => .weekday_short,
+        'A' => .weekday_long,
+        'b', 'h' => .month_short,
+        'B' => .month_long,
+        'c' => .date_and_time,
+        'C' => .century,
+        'd' => .day,
+        'D', 'x' => .date_slashes,
+        'e' => .day_spaced,
+        'F' => .date_dashes,
+        'g' => .iso_year_short,
+        'G' => .iso_year,
+        'H' => .hour24,
+        'I' => .hour12,
+        'j' => .day_of_year,
+        'k' => .hour24_spaced,
+        'l' => .hour12_spaced,
+        'm' => .month,
+        'M' => .minute,
+        'n' => .newline,
+        'N' => .nanosecond,
+        'p' => .meridiem_upper,
+        'P' => .meridiem_lower,
+        'r' => .time12,
+        'R' => .hour_minute,
+        's' => .epoch_seconds,
+        'S' => .second,
+        't' => .tab,
+        'T', 'X' => .time24,
+        'u' => .iso_weekday,
+        'U' => .week_from_sunday,
+        'V' => .iso_week,
+        'w' => .weekday_number,
+        'W' => .week_from_monday,
+        'y' => .year_short,
+        'Y' => .year,
+        'z' => .offset,
+        'Z' => .zone,
+        '%' => .percent,
+        else => null,
+    };
+}
+
+/// Whether glibc accepts `modifier` on the conversion `letter` names.
+///
+/// Found by asking glibc about every letter, since the C standard lists
+/// fewer than glibc takes and glibc is the specification here. It is the
+/// letter rather than the conversion that decides: `%Ex` is accepted and
+/// `%ED`, the same conversion, is not.
+fn modifierAllowed(modifier: Modifier, letter: u8) bool {
+    const letters = switch (modifier) {
+        .none => return true,
+        .E => "cCnpPrRstTuxXyYzZ%",
+        .O => "bBCdegGhHIjklmMnpPrRsStTuUVwWyzZ%",
+    };
+    return std.mem.findScalar(u8, letters, letter) != null;
+}
+
+/// Splits `format_string` into chunks at compile time, and refuses one
+/// that is not a format string.
 ///
 /// Anything that is not a conversion this module knows is a compile error,
 /// naming what was found. That is deliberately not what the C library
 /// does, which copies an unknown conversion through as text: a `%P`
-/// misremembered as `%p`, or a `%N` used where the library has none, is a
-/// bug that should be found while the program is compiled rather than read
-/// out of its output later.
+/// misremembered as `%p`, or a `%Q` that is a typo, is a bug that should
+/// be found while the program is compiled rather than read out of its
+/// output later. `formatRuntime` can be told to copy instead, for a format
+/// string a user typed.
 pub fn tokenize(comptime format_string: []const u8) []const Chunk {
     comptime {
         @setEvalBranchQuota(100000);
 
         var chunks: []const Chunk = &.{};
-        var literal_start: usize = 0;
-        var i: usize = 0;
-
-        while (i < format_string.len) {
-            if (format_string[i] != '%') {
-                i += 1;
-                continue;
-            }
-
-            var field: Field = .{ .which = .percent };
-            var j = i + 1;
-
-            // The flags, in any order and as many as are written. glibc
-            // lets the last of each kind win rather than refusing a
-            // contradiction, so `%_0d` pads with zeros.
-            flags: while (j < format_string.len) : (j += 1) {
-                switch (format_string[j]) {
-                    '-' => field.pad = .none,
-                    '_' => field.pad = .space,
-                    '0' => field.pad = .zero,
-                    '^' => field.case = .upper,
-                    '#' => field.case = .opposite,
-                    else => break :flags,
-                }
-            }
-
-            // The width. Note that the leading `0` of `%09d` has already
-            // been taken as a flag above, which is what makes that mean a
-            // zero-padded width of nine rather than a width of ninety.
-            var width: usize = 0;
-            var width_digits: usize = 0;
-            while (j < format_string.len and std.ascii.isDigit(format_string[j])) : (j += 1) {
-                width = width * 10 + (format_string[j] - '0');
-                width_digits += 1;
-                if (width > std.math.maxInt(u8)) @compileError(
-                    "strftime: field width in '" ++ format_string ++ "' is wider than 255",
-                );
-            }
-            if (width_digits > 0) field.width = width;
-
-            // `E` and `O` ask the locale for an alternative
-            // representation: era-based years, and the locale's own
-            // digits. No locale here has either, and POSIX says the
-            // unmodified conversion is used when the locale has no
-            // alternative, so they are read and dropped.
-            if (j < format_string.len and (format_string[j] == 'E' or format_string[j] == 'O')) j += 1;
-
-            var colons: usize = 0;
-            while (j < format_string.len and format_string[j] == ':') : (j += 1) colons += 1;
-
-            if (j >= format_string.len) @compileError(
-                "strftime: '" ++ format_string ++ "' ends in the middle of a conversion",
-            );
-
-            field.which = switch (format_string[j]) {
-                'a' => .weekday_short,
-                'A' => .weekday_long,
-                'b', 'h' => .month_short,
-                'B' => .month_long,
-                'c' => .date_and_time,
-                'C' => .century,
-                'd' => .day,
-                'D', 'x' => .date_slashes,
-                'e' => .day_spaced,
-                'F' => .date_dashes,
-                'g' => .iso_year_short,
-                'G' => .iso_year,
-                'H' => .hour24,
-                'I' => .hour12,
-                'j' => .day_of_year,
-                'k' => .hour24_spaced,
-                'l' => .hour12_spaced,
-                'm' => .month,
-                'M' => .minute,
-                'n' => .newline,
-                'N' => .nanosecond,
-                'p' => .meridiem_upper,
-                'P' => .meridiem_lower,
-                'r' => .time12,
-                'R' => .hour_minute,
-                's' => .epoch_seconds,
-                'S' => .second,
-                't' => .tab,
-                'T', 'X' => .time24,
-                'u' => .iso_weekday,
-                'U' => .week_from_sunday,
-                'V' => .iso_week,
-                'w' => .weekday_number,
-                'W' => .week_from_monday,
-                'y' => .year_short,
-                'Y' => .year,
-                'z' => switch (colons) {
-                    0 => .offset,
-                    1 => .offset_colon,
-                    2 => .offset_colon_seconds,
-                    3 => .offset_minimal,
-                    else => @compileError(
-                        "strftime: '" ++ format_string ++ "' writes more than three colons before %z",
-                    ),
-                },
-                'Z' => .zone,
-                '%' => .percent,
-                else => @compileError(
-                    "strftime: '%" ++ [_]u8{format_string[j]} ++ "' in '" ++ format_string ++
-                        "' is not a conversion this library knows",
-                ),
-            };
-
-            if (colons > 0 and field.which != .offset_colon and
-                field.which != .offset_colon_seconds and field.which != .offset_minimal)
-            {
-                @compileError(
-                    "strftime: only %z takes colons, not '%" ++ [_]u8{format_string[j]} ++ "'",
-                );
-            }
-
-            if (literal_start < i) chunks = chunks ++ &[_]Chunk{.{ .literal = format_string[literal_start..i] }};
-            chunks = chunks ++ &[_]Chunk{.{ .conversion = field }};
-
-            j += 1;
-            literal_start = j;
-            i = j;
+        var scanner: Scanner = .{ .format = format_string };
+        while (true) {
+            const before = scanner.index;
+            const chunk = scanner.next() catch |err| @compileError(switch (err) {
+                error.UnfinishedConversion => "strftime: '" ++ format_string ++
+                    "' ends in the middle of a conversion",
+                error.UnknownConversion => "strftime: the conversion at the start of '" ++
+                    format_string[before..] ++ "' in '" ++ format_string ++
+                    "' is not one this library knows",
+                error.WidthTooLarge => "strftime: field width in '" ++ format_string ++
+                    "' is wider than 255",
+            }) orelse break;
+            chunks = chunks ++ &[_]Chunk{chunk};
         }
-
-        if (literal_start < format_string.len) {
-            chunks = chunks ++ &[_]Chunk{.{ .literal = format_string[literal_start..] }};
-        }
-
         return chunks;
     }
 }
@@ -361,6 +530,12 @@ test tokenize {
     try std.testing.expectEqualStrings("hello", plain[0].literal);
 }
 
+/// The longest a single conversion writes before padding is applied.
+/// `%c` in a language with long names is the widest thing here, and a
+/// field that overran would be a `Writer` failure rather than a silent
+/// truncation.
+const max_field = 256;
+
 /// What a conversion expands to when it is a shorthand for several
 /// others, or null when it stands for a value of its own.
 ///
@@ -368,7 +543,7 @@ test tokenize {
 /// nothing has set `LC_TIME`. A locale passed to `formatWith` changes the
 /// names inside them but not the arrangement, because a `Locale` here is
 /// moment.js's and carries no `d_t_fmt` to put in their place.
-fn expansion(comptime which: Conversion) ?[]const u8 {
+fn expansion(which: Conversion) ?[]const u8 {
     return switch (which) {
         .date_and_time => "%a %b %e %H:%M:%S %Y",
         .date_slashes => "%m/%d/%y",
@@ -376,6 +551,16 @@ fn expansion(comptime which: Conversion) ?[]const u8 {
         .time12 => "%I:%M:%S %p",
         .hour_minute => "%H:%M",
         .time24 => "%H:%M:%S",
+        else => null,
+    };
+}
+
+/// The chunks of `expansion(which)`, taken apart while this is compiled,
+/// so that a format string read at run time expands without scanning
+/// these again.
+fn expansionChunks(which: Conversion) ?[]const Chunk {
+    return switch (which) {
+        inline .date_and_time, .date_slashes, .date_dashes, .time12, .hour_minute, .time24 => |composite| comptime tokenize(expansion(composite).?),
         else => null,
     };
 }
@@ -393,15 +578,21 @@ const Shape = struct {
 /// no default width, so year 5 is `5` rather than `0005`. That is glibc's
 /// behavior rather than an oversight here: a width given explicitly
 /// still applies, so `%4Y` is `0005`.
-fn shapeOf(comptime which: Conversion) Shape {
+fn shapeOf(which: Conversion) Shape {
     return switch (which) {
         .day, .hour24, .hour12, .month, .minute, .second, .year_short, .iso_year_short, .week_from_sunday, .week_from_monday, .iso_week => .{ .width = 2, .pad = '0' },
         .day_spaced, .hour24_spaced, .hour12_spaced => .{ .width = 2, .pad = ' ' },
         .day_of_year => .{ .width = 3, .pad = '0' },
         .iso_weekday, .weekday_number => .{ .width = 1, .pad = '0' },
         // A name widened to a column is padded with spaces, because a
-        // zero in front of a word is not a word.
+        // zero in front of a word is not a word. The same goes for the
+        // composite conversions, which begin with a word or a digit
+        // already padded, and for the three that are text.
         .weekday_short, .weekday_long, .month_short, .month_long, .meridiem_upper, .meridiem_lower, .zone => .{ .width = 0, .pad = ' ' },
+        .date_and_time, .date_slashes, .date_dashes, .time12, .hour_minute, .time24 => .{ .width = 0, .pad = ' ' },
+        .newline, .tab, .percent => .{ .width = 0, .pad = ' ' },
+        // glibc pads a count of seconds with spaces, unlike the year.
+        .epoch_seconds => .{ .width = 0, .pad = ' ' },
         else => .{ .width = 0, .pad = '0' },
     };
 }
@@ -411,7 +602,7 @@ const Transform = enum { none, upper, lower };
 
 /// Which case the `#` flag asks for, which is the opposite of the case
 /// the conversion writes by itself.
-fn oppositeOf(comptime which: Conversion) Transform {
+fn oppositeOf(which: Conversion) Transform {
     return switch (which) {
         .weekday_short, .weekday_long, .month_short, .month_long => .upper,
         .meridiem_upper, .zone => .lower,
@@ -426,7 +617,7 @@ fn oppositeOf(comptime which: Conversion) Transform {
 /// composite conversions take no case from a flag either, with `%c` the
 /// single exception; both of those are glibc's behavior, checked by the
 /// oracle.
-fn transformOf(comptime field: Field) Transform {
+fn transformOf(field: Field) Transform {
     if (field.which == .meridiem_lower) return .none;
     if (expansion(field.which) != null and field.which != .date_and_time) return .none;
 
@@ -441,6 +632,8 @@ fn transformOf(comptime field: Field) Transform {
 /// `C` locale's names.
 ///
 /// Flushes `writer` before returning, as `DateTime.format` does.
+/// `bufFormat` writes into a slice instead, and `writeChunk` writes
+/// without flushing.
 ///
 /// ```zig
 /// try strftime.format(value, "%Y-%m-%dT%H:%M:%S%:z", writer);
@@ -484,6 +677,10 @@ test format {
     try std.testing.expectEqualStrings(" 3", try bufFormat(&buffer, value, "%_m"));
     try std.testing.expectEqualStrings("MARCH", try bufFormat(&buffer, value, "%^B"));
     try std.testing.expectEqualStrings("pm", try bufFormat(&buffer, value, "%#p"));
+
+    // A width written beside `-` still pads, with spaces, as glibc does:
+    // the flag drops the field's own padding and not the one asked for.
+    try std.testing.expectEqualStrings("    3", try bufFormat(&buffer, value, "%-5m"));
 }
 
 /// Writes `value` under `format_string`, taking the month names, day
@@ -523,6 +720,33 @@ test formatWith {
     try std.testing.expectEqualStrings("Friday 15 March 2024", writer.buffered());
 }
 
+/// Writes `value` under `format_string` into `buffer`, and returns the
+/// part of `buffer` that was written.
+///
+/// Returns `error.WriteFailed` when `buffer` is too small for the result.
+/// glibc's `strftime` refuses the same way, returning zero rather than
+/// writing part of a date.
+///
+/// ```zig
+/// var buffer: [64]u8 = undefined;
+/// const text = try strftime.bufFormat(&buffer, value, "%F %T");
+/// ```
+pub fn bufFormat(buffer: []u8, value: DateTime, comptime format_string: []const u8) std.Io.Writer.Error![]u8 {
+    var writer = std.Io.Writer.fixed(buffer);
+    try writeFormat(value, format_string, locale.en, &writer);
+    return writer.buffered();
+}
+
+test bufFormat {
+    const value: DateTime = .{ .year = 2024, .month = .Mar, .day = 15 };
+
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("2024-03-15", try bufFormat(&buffer, value, "%F"));
+
+    var small: [4]u8 = undefined;
+    try std.testing.expectError(error.WriteFailed, bufFormat(&small, value, "%F"));
+}
+
 /// Formats into `writer` without flushing it, which is what the composite
 /// conversions and the public entry points are both built out of.
 fn writeFormat(
@@ -530,13 +754,129 @@ fn writeFormat(
     comptime format_string: []const u8,
     in: locale.Locale,
     writer: *std.Io.Writer,
-) !void {
+) std.Io.Writer.Error!void {
     const chunks = comptime tokenize(format_string);
+    inline for (chunks) |chunk| try writeChunk(value, chunk, in, writer);
+}
 
-    inline for (chunks) |chunk| switch (chunk) {
+/// What `formatRuntime` takes beside the format string.
+pub const RuntimeOptions = struct {
+    /// Where the month names, day names and meridiem come from.
+    in: locale.Locale = locale.en,
+    /// What to do with a conversion this library does not know: refuse
+    /// the format string, or copy the conversion through as text the way
+    /// glibc does.
+    unknown: UnknownPolicy = .refuse,
+};
+
+/// Writes `value` under a format string that was not known until now: one
+/// read from a configuration file, or typed by a user.
+///
+/// The whole format string is checked before anything is written, so a
+/// refused one leaves `writer` as it was. With `.unknown = .copy` nothing
+/// is refused but a width wider than 255, and a conversion this library
+/// does not know comes out as its own text, padded and cased as its flags
+/// ask, which is what glibc's `strftime` writes for one.
+///
+/// Unlike `format`, this does not flush `writer`. A caller writing a date
+/// into a line of other output decides when that line goes out.
+///
+/// ```zig
+/// try strftime.formatRuntime(value, user_format, .{ .unknown = .copy }, writer);
+/// ```
+pub fn formatRuntime(
+    value: DateTime,
+    format_string: []const u8,
+    options: RuntimeOptions,
+    writer: *std.Io.Writer,
+) (FormatError || std.Io.Writer.Error)!void {
+    var checking: Scanner = .{ .format = format_string, .unknown = options.unknown };
+    while (try checking.next()) |_| {}
+
+    var scanner: Scanner = .{ .format = format_string, .unknown = options.unknown };
+    while (scanner.next() catch unreachable) |chunk| try writeChunk(value, chunk, options.in, writer);
+}
+
+test formatRuntime {
+    var value: DateTime = .{ .year = 2024, .month = .Mar, .day = 5, .hour = 14 };
+    value.updateDayOfWeek();
+
+    var buffer: [64]u8 = undefined;
+    var written = std.Io.Writer.fixed(&buffer);
+    try formatRuntime(value, "%a %_5d|%-H", .{}, &written);
+    try std.testing.expectEqualStrings("Tue     5|14", written.buffered());
+
+    // The same mistakes `format` refuses to compile come back as errors,
+    // and nothing is written before they are found.
+    var refused = std.Io.Writer.fixed(&buffer);
+    try std.testing.expectError(error.UnknownConversion, formatRuntime(value, "%Y %Q", .{}, &refused));
+    try std.testing.expectEqual(@as(usize, 0), refused.buffered().len);
+
+    // Or they are copied through, the way glibc copies them.
+    var copied = std.Io.Writer.fixed(&buffer);
+    try formatRuntime(value, "%Y %5Q %Ed 100%", .{ .unknown = .copy }, &copied);
+    try std.testing.expectEqualStrings("2024   %5Q %Ed 100%", copied.buffered());
+}
+
+/// `formatRuntime` into `buffer`, returning the part of `buffer` that was
+/// written. A buffer too small for the result is `error.WriteFailed`.
+pub fn bufFormatRuntime(
+    buffer: []u8,
+    value: DateTime,
+    format_string: []const u8,
+    options: RuntimeOptions,
+) (FormatError || std.Io.Writer.Error)![]u8 {
+    var writer = std.Io.Writer.fixed(buffer);
+    try formatRuntime(value, format_string, options, &writer);
+    return writer.buffered();
+}
+
+test bufFormatRuntime {
+    const value: DateTime = .{ .year = 2024, .month = .Mar, .day = 15 };
+    var buffer: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("2024-03-15", try bufFormatRuntime(&buffer, value, "%F", .{}));
+}
+
+/// Writes one chunk of a format string, without flushing `writer`.
+///
+/// The piece every formatter here is built from, public for a caller
+/// that walks a `Scanner` itself so as to write some conversions its own
+/// way and leave the rest to this.
+pub fn writeChunk(
+    value: DateTime,
+    chunk: Chunk,
+    in: locale.Locale,
+    writer: *std.Io.Writer,
+) std.Io.Writer.Error!void {
+    switch (chunk) {
         .literal => |text| try writer.writeAll(text),
         .conversion => |field| try writeConversion(value, field, in, writer),
+        .unknown => |unknown| try emit(
+            writer,
+            unknown.text,
+            unknown.width,
+            if (unknown.zero) '0' else ' ',
+            if (unknown.upper) .upper else .none,
+            false,
+        ),
+    }
+}
+
+test writeChunk {
+    const value: DateTime = .{ .year = 2024, .month = .Mar, .day = 15 };
+
+    // Handling `%s` in a format string by hand and the rest here.
+    var buffer: [64]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    var scanner: Scanner = .{ .format = "%F %s" };
+    while (try scanner.next()) |chunk| switch (chunk) {
+        .conversion => |field| if (field.which == .epoch_seconds)
+            try writer.writeAll("(seconds)")
+        else
+            try writeChunk(value, chunk, locale.en, &writer),
+        else => try writeChunk(value, chunk, locale.en, &writer),
     };
+    try std.testing.expectEqualStrings("2024-03-15 (seconds)", writer.buffered());
 }
 
 /// Writes one conversion, padded and cased the way its flags asked for.
@@ -546,20 +886,18 @@ fn writeFormat(
 /// the whole field and neither can be applied until its length is known.
 fn writeConversion(
     value: DateTime,
-    comptime field: Field,
+    field: Field,
     in: locale.Locale,
     writer: *std.Io.Writer,
-) !void {
-    // The three that are pure text, and have no width or case to speak of.
-    switch (field.which) {
-        .newline => return writer.writeAll("\n"),
-        .tab => return writer.writeAll("\t"),
-        .percent => return writer.writeAll("%"),
-        // A fraction's width is a number of digits rather than a minimum,
-        // because that is what `date(1)` means by `%3N`, so it does its
-        // own writing.
-        .nanosecond => return writeFraction(writer, value.nanosecond, if (field.width == 0) 9 else field.width),
-        else => {},
+) std.Io.Writer.Error!void {
+    // A fraction's width is a number of digits rather than a minimum,
+    // because that is what `date(1)` means by `%3N`, so it does its own
+    // writing.
+    if (field.which == .nanosecond) {
+        return writeFraction(writer, value.nanosecond, if (field.width == 0) 9 else field.width);
+    }
+    if (field.which == .offset and (field.width != 0 or field.pad != .default)) {
+        return writePaddedOffset(writer, value.offset, field);
     }
 
     var buffer: [max_field]u8 = undefined;
@@ -569,6 +907,10 @@ fn writeConversion(
     const date = value.asDate();
 
     switch (field.which) {
+        .newline => try into.writeAll("\n"),
+        .tab => try into.writeAll("\t"),
+        .percent => try into.writeAll("%"),
+
         .weekday_short => try into.writeAll(in.weekdayName(value.weekday, .ddd)),
         .weekday_long => try into.writeAll(in.weekdayName(value.weekday, .dddd)),
         .month_short => try into.writeAll(in.monthName(value.month, .MMM, false)),
@@ -620,52 +962,105 @@ fn writeConversion(
         // reading was made.
         .zone => try into.writeAll(value.designation.slice()),
 
-        .date_and_time, .date_slashes, .date_dashes, .time12, .hour_minute, .time24 => try writeFormat(
-            value,
-            comptime expansion(field.which).?,
-            in,
-            into,
-        ),
+        .date_and_time, .date_slashes, .date_dashes, .time12, .hour_minute, .time24 => {
+            for (expansionChunks(field.which).?) |chunk| try writeChunk(value, chunk, in, into);
+        },
 
-        .newline, .tab, .percent, .nanosecond => unreachable,
+        .nanosecond => unreachable,
     }
 
-    const shape = comptime shapeOf(field.which);
-    const width: usize = comptime if (field.pad == .none)
-        0
-    else if (expansion(field.which) != null)
-        // glibc pads no composite conversion, whatever width is asked
-        // for, so neither does this.
-        0
-    else if (field.width != 0)
+    // `-` drops the field's own padding, but a width written beside it
+    // still pads, with spaces: glibc writes `%-5d` of the 3rd as `    3`.
+    // Any other width can widen a field and never narrow it, so `%1d` is
+    // still two digits.
+    const shape = shapeOf(field.which);
+    const width: usize = if (field.pad == .none)
         field.width
     else
-        shape.width;
-    const pad: u8 = comptime switch (field.pad) {
+        @max(field.width, shape.width);
+    const pad: u8 = switch (field.pad) {
         .default => shape.pad,
-        .none => ' ',
-        .space => ' ',
+        .none, .space => ' ',
         .zero => '0',
     };
 
-    try emit(writer, field_writer.buffered(), width, pad, comptime transformOf(field));
+    try emit(writer, field_writer.buffered(), width, pad, transformOf(field), isNumber(field.which));
+}
+
+/// Whether `which` writes a number, whose sign a zero pad goes after.
+/// `%Z` can begin with a sign too, `+0545` for a zone with no name, and
+/// glibc pads that in front like any other text.
+fn isNumber(which: Conversion) bool {
+    return switch (which) {
+        .century, .year, .iso_year, .epoch_seconds => true,
+        else => false,
+    };
+}
+
+/// Writes `%z` under a flag or a width, the way glibc does.
+///
+/// glibc writes `%z` as a sign followed by the hours and minutes read as
+/// one number, `-0500` being -500 written four digits wide, and applies a
+/// flag or width to that number. It also pads in front of the sign, by one
+/// less than the width, so the width counts twice: `%7z` at -5 hours is
+/// six spaces, then `-0000500`. That is a quirk rather than a design, and
+/// it is followed anyway because a format string written for glibc should
+/// come out the way glibc wrote it; nobody writes `%7z` on purpose.
+///
+/// Precisely, with `W` the width: in front, `W - 1` zeros under the `0`
+/// flag and spaces otherwise; then the sign; then the number, which `-`
+/// pads with spaces to `W` and the other flags pad to at least four,
+/// `_` with spaces and the rest with zeros. Seconds of the offset are
+/// dropped, as they are from a plain `%z`.
+fn writePaddedOffset(writer: *std.Io.Writer, offset: i32, field: Field) std.Io.Writer.Error!void {
+    const parts = secondofday.splitHours(@abs(offset));
+    const number = @as(u32, parts.hours) * 100 + parts.minute;
+    const width: usize = field.width;
+
+    if (width > 1) try writer.splatByteAll(if (field.pad == .zero) '0' else ' ', width - 1);
+    try writer.writeByte(if (offset < 0) '-' else '+');
+
+    var digits: [16]u8 = undefined;
+    const text = std.fmt.bufPrint(&digits, "{d}", .{number}) catch unreachable;
+    const columns: usize = if (field.pad == .none) width else @max(width, 4);
+    if (text.len < columns) try writer.splatByteAll(if (field.pad == .zero or field.pad == .default) '0' else ' ', columns - text.len);
+    try writer.writeAll(text);
+}
+
+test writePaddedOffset {
+    var buffer: [32]u8 = undefined;
+    const minus_five = -5 * std.time.s_per_hour;
+
+    var plain = std.Io.Writer.fixed(&buffer);
+    try writePaddedOffset(&plain, minus_five, .{ .which = .offset, .pad = .none });
+    try std.testing.expectEqualStrings("-500", plain.buffered());
+
+    var spaced = std.Io.Writer.fixed(&buffer);
+    try writePaddedOffset(&spaced, minus_five, .{ .which = .offset, .pad = .space });
+    try std.testing.expectEqualStrings("- 500", spaced.buffered());
+
+    // The width counts twice, once in front of the sign and once after.
+    var wide = std.Io.Writer.fixed(&buffer);
+    try writePaddedOffset(&wide, minus_five, .{ .which = .offset, .width = 7 });
+    try std.testing.expectEqualStrings("      -0000500", wide.buffered());
 }
 
 /// Writes `bytes` padded out to `width` and cased as `transform` says.
 ///
-/// A zero pad goes after the sign rather than before it, so a year of -1
-/// at a width of six is `-00001` and not `00000-1`. A space pad goes
-/// before it, which is what lines a column up.
+/// When `bytes` is a number, a zero pad goes after the sign rather than
+/// before it, so a year of -1 at a width of six is `-00001` and not
+/// `00000-1`. A space pad goes before it, which is what lines a column up.
 fn emit(
     writer: *std.Io.Writer,
     bytes: []const u8,
-    comptime width: usize,
-    comptime pad: u8,
-    comptime transform: Transform,
-) !void {
+    width: usize,
+    pad: u8,
+    transform: Transform,
+    number: bool,
+) std.Io.Writer.Error!void {
     var rest = bytes;
 
-    if (pad == '0' and rest.len > 0 and (rest[0] == '-' or rest[0] == '+')) {
+    if (number and pad == '0' and rest.len > 0 and (rest[0] == '-' or rest[0] == '+')) {
         try writer.writeByte(rest[0]);
         rest = rest[1..];
     }
@@ -683,22 +1078,22 @@ test emit {
     var buffer: [16]u8 = undefined;
 
     var padded = std.Io.Writer.fixed(&buffer);
-    try emit(&padded, "5", 3, '0', .none);
+    try emit(&padded, "5", 3, '0', .none, true);
     try std.testing.expectEqualStrings("005", padded.buffered());
 
     // The sign keeps its place in front of the zeros.
     var negative = std.Io.Writer.fixed(&buffer);
-    try emit(&negative, "-1", 6, '0', .none);
+    try emit(&negative, "-1", 6, '0', .none, true);
     try std.testing.expectEqualStrings("-00001", negative.buffered());
 
     // A value wider than the width is written in full: a width is a
     // minimum and not a truncation.
     var wide = std.Io.Writer.fixed(&buffer);
-    try emit(&wide, "2024", 2, '0', .none);
+    try emit(&wide, "2024", 2, '0', .none, true);
     try std.testing.expectEqualStrings("2024", wide.buffered());
 
     var shouted = std.Io.Writer.fixed(&buffer);
-    try emit(&shouted, "Mar", 0, ' ', .upper);
+    try emit(&shouted, "Mar", 0, ' ', .upper, false);
     try std.testing.expectEqualStrings("MAR", shouted.buffered());
 }
 
@@ -842,13 +1237,6 @@ test writeFraction {
     var truncated = std.Io.Writer.fixed(&buffer);
     try writeFraction(&truncated, 1_500_000, 3);
     try std.testing.expectEqualStrings("001", truncated.buffered());
-}
-
-/// Formats into `buffer` and returns what was written, for the tests.
-fn bufFormat(buffer: []u8, value: DateTime, comptime format_string: []const u8) ![]const u8 {
-    var writer = std.Io.Writer.fixed(buffer);
-    try format(value, format_string, &writer);
-    return writer.buffered();
 }
 
 /// What a format string can fail to read.
@@ -1107,6 +1495,8 @@ fn readFormat(
     inline for (chunks) |chunk| switch (chunk) {
         .literal => |text| try readLiteral(rest, text),
         .conversion => |field| try readConversion(field, rest, state, options),
+        // `tokenize` refuses rather than copying, so there are none.
+        .unknown => comptime unreachable,
     };
 }
 

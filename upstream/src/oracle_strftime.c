@@ -124,7 +124,31 @@ static int decorated(const char *format) {
     return 0;
 }
 
+// Whether `format` uses one of date(1)'s conversions, %N or the %:z
+// family, which this library writes and glibc's strftime copies through
+// as text.
+static int uses_date_extension(const char *format) {
+    for (const char *at = format; *at != '\0'; at++) {
+        if (*at != '%') continue;
+        at++;
+        while (*at != '\0' && strchr("-_0^#", *at) != NULL) at++;
+        while (*at >= '0' && *at <= '9') at++;
+        // Neither takes a modifier, so `%EN` is unknown to both sides.
+        if (*at == 'E' || *at == 'O') continue;
+        if (*at == '\0') break;
+        if (*at == 'N') return 1;
+        if (*at == ':') {
+            while (*at == ':') at++;
+            if (*at == 'z') return 1;
+            if (*at == '\0') break;
+        }
+    }
+    return 0;
+}
+
 static const char *known_format_divergence(const char *format, long minutes) {
+    if (uses_date_extension(format))
+        return "%N and %:z: date(1)'s conversions, which glibc's strftime copies as text";
     if (has_conversion(format, 's') && minutes != 0)
         return "%s: glibc ignores tm_gmtoff and reads the fields against TZ";
     return NULL;
