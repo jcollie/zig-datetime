@@ -1376,6 +1376,61 @@ test "mutate posixtz.parse" {
     try overMutations(posixtzProperty, &posixtz_seeds);
 }
 
+/// Whatever `parseLenient` makes of a value has to answer for any instant
+/// the way `parse`'s result does, though its names may be empty.
+fn posixtzLenientProperty(text: []const u8) !void {
+    const rule = posixtz.parseLenient(text);
+
+    for ([_]i64{
+        0,
+        -1,
+        1710513005,
+        -2208988800,
+        std.math.minInt(i32),
+        std.math.maxInt(i32),
+        Date.min_seconds + 2 * 366 * std.time.s_per_day,
+        Date.max_seconds - 2 * 366 * std.time.s_per_day,
+    }) |at| {
+        const span = rule.spanAt(at);
+        try std.testing.expect(span.start <= at);
+        try std.testing.expect(span.end > at);
+        try std.testing.expectEqual(span.local_type, rule.typeAt(at));
+        // The next span starts where this one ends, exactly, which is
+        // what lets `TimeZone.resolve` walk from one to the next.
+        if (span.end < Date.max_seconds and span.end > Date.min_seconds) {
+            try std.testing.expectEqual(span.end, rule.spanAt(span.end).start);
+        }
+    }
+
+    for ([_]i64{
+        std.math.minInt(i64),
+        std.math.maxInt(i64),
+        Date.min_seconds,
+        Date.max_seconds,
+    }) |at| {
+        _ = rule.spanAt(at);
+    }
+}
+
+const posixtz_lenient_seeds = posixtz_seeds ++ [_][]const u8{
+    "ABC-25",                                                "XYZ3:75",                 "XYZ3,junk",
+    "EST5:-1",                                               "ABC5DEF,M4.1.9,M10.1.0",  "ABC5DEF,M4.1.0/500",
+    "ABC5DEF,M4.1.0/-x,M10.1.0",                             "ABC5DEF,M 4.1.0/3M1.1.0", "EST99999999999DEF,J1/-65535",
+    "ABC5DEF,M4.1.65535/2147483647,M12.5.65535/-2147483648",
+};
+
+test "posixtz.parseLenient over the seeds" {
+    try overSeeds(posixtzLenientProperty, &posixtz_lenient_seeds);
+}
+
+test "fuzz posixtz.parseLenient" {
+    try overFuzzer(posixtzLenientProperty);
+}
+
+test "mutate posixtz.parseLenient" {
+    try overMutations(posixtzLenientProperty, &posixtz_lenient_seeds);
+}
+
 // TZif files -----------------------------------------------------------
 
 /// The one that reads a binary format rather than text, and the one most

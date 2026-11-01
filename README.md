@@ -181,9 +181,33 @@ text, so the rule has to outlive the zone, and it allocates nothing, so
 there is nothing to free. A rule with daylight saving time has to spell
 out when it starts and ends, as `EST5EDT,M3.2.0,M11.1.0` does; one that
 does not, like `EST5EDT` on its own, is `error.MissingRules` rather than a
-guess at somebody's local convention. glibc reads a `TZ` it can make
-nothing of as UTC, and a caller that wants to do the same can fall back to
-`TimeZone.utc` on any error.
+guess at somebody's local convention.
+
+`TimeZone.fromRuleLenient` reads a value the way glibc does instead, and
+refuses nothing. A program that wants its times to agree with every other
+program on the machine wants this one, since glibc is what they all ask:
+
+```zig
+.rule => |rule| datetime.TimeZone.fromRuleLenient(rule),
+```
+
+glibc reads as far as it can and keeps what it found. `ABC-25` is a day
+ahead of UTC, because hours past 24 are 24; `XYZ3:75` is three hours and
+fifty-nine minutes behind; `EST5EDT` switches on the second Sunday of March
+and the first of November; and `XYZ3,junk` has a daylight saving time with
+no name and an offset of zero, which starts three hours into every year.
+It evaluates rules its own way too, a UTC year at a time, and before 1970
+it makes no switches at all. `posixtz.parseLenient` documents each rule of
+that reading, and `zig build oracle-tz` holds it to glibc's answers for
+twelve thousand values, each set in a process of its own with nothing
+under `TZDIR`, so that glibc has to read every one as a rule.
+
+Two things are left out. A month of 0 or past 12 in an `Mm.w.d` rule is one
+glibc answers by reading past the end of its own table, which is nothing
+to copy. And glibc reads a `posixrules` file, when one is installed, for a
+value with no switch dates. tzdata no longer installs one by default, and
+glibc's use of it goes wrong past the file's last transition, so the
+dates here are always the ones glibc uses without it.
 
 That `.name` case really does need the fallback, because a rule and a zone
 name cannot always be told apart by looking at them. `EST5EDT`, `MST7MDT`,
@@ -681,8 +705,9 @@ turn up beside it: `%P`, `%k`, `%l`, `%s`, `%e`, `%C`, `%D`, `%F`, `%G`,
 `%g`, `%h`, `%r`, `%R`, `%T`, `%u` and `%V`. Between the `%` and the
 letter go the GNU flags — `-` for no padding, `_` for spaces, `0` for
 zeros, `^` for upper case and `#` for the opposite case — then a minimum
-field width, then the `E` or `O` modifier, which is read and dropped
-because no locale here has an alternative representation to offer:
+field width, then the `E` or `O` modifier. A modifier is read and dropped,
+because no locale here has an alternative representation to offer, but
+only on the conversions glibc takes it on; `%Ed` is not a conversion:
 
 ```zig
 try datetime.strftime.format(value, "%A, %-d %B %Y", writer);   // Friday, 5 January 2024
@@ -701,6 +726,23 @@ where the C library would copy it through as text. That is the one place
 a comptime format string earns its keep: `%Q` is a typo, and a typo that
 prints itself is one nobody finds.
 
+A format string that arrives at run time — a user's `--date=format:`, a
+line of a configuration file — goes through `formatRuntime`. It returns
+the same mistakes as errors, having written nothing, or with `.unknown =
+.copy` it copies an unknown conversion through padded and cased the way
+glibc does. `bufFormat` and `bufFormatRuntime` write into a slice, and
+`format` is the only one of the four that flushes its writer:
+
+```zig
+try datetime.strftime.formatRuntime(value, user_format, .{ .unknown = .copy }, writer);
+const text = try datetime.strftime.bufFormatRuntime(&buffer, value, "%F %T", .{});
+```
+
+Both read the format string with the same `Scanner` and write it with the
+same field writer, so the two cannot disagree. A caller with conversions
+of its own can walk a `Scanner` itself and hand everything else to
+`writeChunk`.
+
 Parsing is `strptime`'s shape rather than `strftime`'s: whitespace in the
 format matches any run of it including none, a numeric field takes one
 digit as readily as two, names are matched without regard to case, and
@@ -710,14 +752,18 @@ it read in `Result.str`; `parseAll` requires the whole input.
 #### Compatibility, checked
 
 glibc's `C` locale is the specification and `zig build oracle-strftime`
-diffs against it: every conversion on its own, every flag and width over
-the conversions they say anything about, the shapes callers write, and
-each one read straight back. The oracle is C, compiled by Zig and linked
+diffs against it: every conversion on its own, the shapes callers write,
+each one read straight back, and then every flag, a run of widths and
+both modifiers on every letter, through `formatRuntime` with unknown
+conversions copied. glibc is followed where it is odd as well: a width
+never narrows a field, so `%1d` is still two digits; `-` with a width pads
+with spaces; and `%z` under a width counts it twice, so `%7z` is six
+spaces and then `-0000500`. The oracle is C, compiled by Zig and linked
 against whatever libc the host has, so it needs nothing added to the dev
 shell.
 
 ```
-12496 comparisons against glibc 2.42, no divergence beyond 626 known and documented
+91416 comparisons against glibc 2.44, no divergence beyond 1760 known and documented
 ```
 
 Those are the deliberate differences, and the oracle carries the same
@@ -731,6 +777,8 @@ list so that anything else fails. Writing:
   in so many words. glibc falls back to the running process's zone name,
   which would be a claim about where a reading was made that nothing here
   can support.
+- **`%N` and the `%:z` family are conversions**, where glibc copies them
+  through as text, even when `formatRuntime` is copying unknown ones.
 
 Reading, glibc's `strptime` is followed as far as it goes and then four
 things are kept that it throws away or refuses: `%G` with `%V` resolves
@@ -1062,8 +1110,9 @@ Two things this does not follow. A number big enough to overflow git's
 own arithmetic, such as a timestamp past 2099 or a count of a hundred
 million Fridays, comes out wherever git's wraparound puts it, and here it
 saturates instead. And `TZ` itself is the caller's to interpret:
-`TimeZone.fromRule` builds a zone from a bare POSIX rule, and glibc's
-habit of treating a `TZ` it cannot use as UTC is `TimeZone.utc`.
+`TimeZone.fromRule` builds a zone from a bare POSIX rule, and
+`TimeZone.fromRuleLenient` reads one the way glibc does, which is the way
+git does.
 
 ### Durations
 
@@ -1457,6 +1506,7 @@ zig build oracle-cldr              # the CLDR patterns against ICU
 zig build oracle-strftime          # the strftime conversions against the C library
 zig build oracle-powershell        # the .NET format strings and Get-Date against .NET and PowerShell
 zig build oracle-git               # the git date parsers against git
+zig build oracle-tz                # the lenient TZ reader against glibc
 zig build bench                    # always ReleaseFast, whatever -Doptimize says
 zig build verify-days              # every day number and date, Joffe against Hinnant
 ```
@@ -1505,9 +1555,11 @@ narrows the embedded table, which is the quick way to iterate on one locale.
 The C++ in `upstream/src/oracle_cldr.cpp` is compiled by Zig rather than by
 a toolchain of its own, so the dev shell needs ICU and `pkg-config` and
 nothing more. The C in `upstream/src/oracle_strftime.c` is compiled the same
-way and needs nothing at all beyond a libc, which is also why that one
-step is the only oracle that does not join `zig build test` on Windows:
-`strptime`, `tm_gmtoff` and `tm_zone` are not there to compare against.
+way and needs nothing at all beyond a libc, which is also why that step
+does not join `zig build test` on Windows: `strptime`, `tm_gmtoff` and
+`tm_zone` are not there to compare against. `upstream/src/oracle_tz.c` is
+compiled the same way too, and joins `test` only on Linux, because what it
+models is glibc's reading of `TZ`.
 
 `src/fuzz.zig` holds a property per parser: nothing crashes on input
 nobody chose, whatever comes back holds together, and anything with an

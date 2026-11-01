@@ -324,6 +324,44 @@ pub fn build(b: *std.Build) void {
     strftime_step.dependOn(&run_strftime.step);
     if (host.result.os.tag != .windows) test_step.dependOn(&run_strftime.step);
 
+    // `TZ` as glibc reads it. Each value is set in a child process of its
+    // own, and `TZDIR` points at an empty directory so that glibc has no
+    // file to find and has to read the value as a rule.
+    const tz_dump = b.addExecutable(.{
+        .name = "oracle-tz-dump",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/oracle_tz_dump.zig"),
+            .target = host,
+            .imports = &.{.{ .name = "datetime", .module = plain }},
+        }),
+    });
+
+    const tz_oracle_module = b.createModule(.{
+        .target = host,
+        .optimize = .ReleaseFast,
+        .link_libc = true,
+    });
+    tz_oracle_module.addCSourceFile(.{
+        .file = b.path("src/oracle_tz.c"),
+        .language = .c,
+        .flags = &.{"-std=c11"},
+    });
+
+    const tz_oracle = b.addExecutable(.{
+        .name = "oracle-tz",
+        .root_module = tz_oracle_module,
+    });
+
+    const run_tz_dump = b.addRunArtifact(tz_dump);
+    const run_tz = b.addRunArtifact(tz_oracle);
+    run_tz.addFileArg(run_tz_dump.captureStdOut(.{ .basename = "tz.tsv" }));
+    run_tz.addDirectoryArg(b.addWriteFiles().getDirectory());
+    run_tz.stdio = .inherit;
+
+    const tz_step = b.step("oracle-tz", "Check the lenient TZ reader against the C library");
+    tz_step.dependOn(&run_tz.step);
+    if (host.result.os.tag == .linux) test_step.dependOn(&run_tz.step);
+
     // -- git -----------------------------------------------------------------
     //
     // git is in the dev shell, and its date parsing is defined by what it

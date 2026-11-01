@@ -97,8 +97,8 @@ test fromOwnedBytes {
 /// A rule with daylight saving time must spell out its switch dates, as
 /// in "EST5EDT,M3.2.0,M11.1.0"; one without them is refused with
 /// `error.MissingRules` rather than given somebody's local convention.
-/// glibc treats a `TZ` it cannot use at all as UTC, and `utc` is that
-/// zone for a caller that wants to do the same.
+/// `fromRuleLenient` reads a value the way glibc does instead, refusing
+/// nothing.
 pub fn fromRule(rule: []const u8) posixtz.ParseError!TimeZone {
     return .{
         .name = rule,
@@ -136,6 +136,45 @@ test fromRule {
 
     // A rule that is not a rule.
     try testing.expectError(error.MissingRules, fromRule("EST5EDT"));
+}
+
+/// Builds a zone from a `TZ` value the way glibc reads one, which never
+/// refuses it: "ABC-25" is a day ahead of UTC, "EST5EDT" switches on the
+/// United States' dates, and "XYZ3,junk" has a daylight saving time with
+/// no name. `posixtz.parseLenient` says what it makes of each kind of
+/// value `fromRule` refuses, and an oracle holds it to glibc's answers.
+///
+/// glibc looks for a file of that name under `TZDIR` before it reads a
+/// value as a rule, so a caller doing the same tries `tzdb` first and
+/// comes here when that finds nothing. Borrows `rule` as `fromRule` does.
+pub fn fromRuleLenient(rule: []const u8) TimeZone {
+    return .{
+        .name = rule,
+        .bytes = "",
+        .owned = false,
+        .data = .{
+            .version = .v2,
+            .time_size = 8,
+            .transition_times = "",
+            .transition_types = "",
+            .type_records = "",
+            .designations = "",
+            .footer = rule,
+        },
+        .rule = posixtz.parseLenient(rule),
+    };
+}
+
+test fromRuleLenient {
+    // A day ahead, where `fromRule` refuses an offset past 24 hours.
+    const ahead = fromRuleLenient("ABC-25");
+    try testing.expectEqual(@as(i32, 24 * std.time.s_per_hour), ahead.offsetAt(0));
+
+    // Daylight saving time with no rules is the United States' rules:
+    // 2024-07-01 is in it and 2024-01-01 is not.
+    const eastern = fromRuleLenient("EST5EDT");
+    try testing.expectEqualStrings("EDT", eastern.typeAt(1719792000).designation);
+    try testing.expectEqualStrings("EST", eastern.typeAt(1704067200).designation);
 }
 
 /// Coordinated Universal Time, as a zone: what POSIX says an empty `TZ`

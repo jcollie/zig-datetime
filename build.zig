@@ -39,6 +39,9 @@
 //! `zig build oracle-git` does the same for `gitdate`, against git itself,
 //! which is in the dev shell; it asks one question per git process.
 //!
+//! `zig build oracle-tz` holds `posixtz.parseLenient` to glibc's own reading
+//! of `TZ`, one value per child process, on Linux.
+//!
 //! `zig build oracle-parse` does the same for parsing. `DateTime.Mode` has
 //! the same two settings moment's strict flag chooses between, and each is
 //! held to the matching mode of moment. It carries a short list of known
@@ -503,6 +506,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "oracle-strftime", .help = "Check the strftime conversions against the C library, in upstream/" },
         .{ .name = "oracle-powershell", .help = "Check the .NET and PowerShell format strings against .NET and Get-Date, in upstream/" },
         .{ .name = "oracle-git", .help = "Check the git date parsers against git, in upstream/" },
+        .{ .name = "oracle-tz", .help = "Check the lenient TZ reader against the C library, in upstream/" },
     }) |each| {
         b.step(each.name, each.help).dependOn(&shellOut(b, each.name, upstream_system).step);
     }

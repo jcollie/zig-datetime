@@ -51,6 +51,17 @@ pub const Rule = union(enum) {
         week: u8,
         weekday: DayOfWeek,
     },
+    /// `Mm.w.d` with a day of the week past 6, which only `parseLenient`
+    /// makes. glibc counts such a day on from the first of the month as
+    /// though the week went on, so `M4.1.9` is the first day at least two
+    /// days past the month's first Sunday.
+    month_week_long_day: struct {
+        month: Month,
+        /// 1-5, as for `month_week_day`.
+        week: u8,
+        /// 7 and up.
+        weekday: u16,
+    },
 
     /// Returns the day this rule picks out in `year`, as a day number
     /// counted from the epoch.
@@ -78,6 +89,19 @@ pub const Rule = union(enum) {
                 while (day > last) day -= 7;
 
                 return first_of_month + day - 1;
+            },
+            .month_week_long_day => |spec| {
+                // glibc's arithmetic: days from the first of the month to
+                // the wanted weekday, which for a weekday past 6 is never
+                // negative, then a week at a time while another whole week
+                // still fits in the month.
+                const first_of_month = january_first + spec.month.daysBefore(year);
+                const first_weekday = @backingInt(DayOfWeek.fromDayNumber(first_of_month));
+                var day: i32 = @as(i32, spec.weekday) - first_weekday;
+                const length: i32 = spec.month.lastDay(year);
+                var week: u8 = 1;
+                while (week < spec.week and day + 7 < length) : (week += 1) day += 7;
+                return first_of_month + day;
             },
             .julian_no_leap, .julian => {
                 const leap = Month.Feb.lastDay(year) == 29;
@@ -171,6 +195,22 @@ pub const Dst = struct {
     end: Transition,
 };
 
+/// How a `Posix` decides which of its switches answer for an instant.
+pub const Evaluation = enum {
+    /// Every switch of the year the instant falls in, counted in local
+    /// standard time, and of the years either side, so a switch a rule
+    /// pushes past the end of its own year still happens. This is what
+    /// POSIX means, and what `parse` gives.
+    posix,
+    /// Only the two switches of the year the instant falls in, counted in
+    /// UTC: daylight saving time when the instant is between them, or,
+    /// when the end comes first, when it is not. This is what glibc's
+    /// `localtime` does, and what `parseLenient` gives. The two agree for
+    /// every rule tzdata writes and part only when a switch lands outside
+    /// its own year, which a `TZ` somebody typed can make happen.
+    glibc,
+};
+
 /// A parsed POSIX `TZ` string.
 ///
 /// This is a rule rather than a table: it describes every year the same
@@ -182,6 +222,9 @@ pub const Posix = struct {
     std_offset: i32,
     /// Null when the zone has no daylight saving time, as in `<-03>3`.
     dst: ?Dst,
+    /// Which switches answer for an instant. `parse` gives `.posix` and
+    /// `parseLenient` gives `.glibc`.
+    evaluation: Evaluation = .posix,
 
     /// A stretch of time over which one local time type applies. The
     /// same shape as `tzif.Tzif.Span`, so that a caller can treat a
@@ -216,6 +259,8 @@ pub const Posix = struct {
     /// than converting again, and every switch is worked out as an offset
     /// from that one day number.
     pub fn spanAt(self: Posix, timestamp: i64) Span {
+        if (self.evaluation == .glibc) return self.spanAtGlibc(timestamp);
+
         const dst = self.dst orelse return .{
             .local_type = self.localType(false),
             .start = std.math.minInt(i64),
@@ -346,6 +391,118 @@ pub const Posix = struct {
             .start = start,
             .end = end,
         };
+    }
+
+    /// `spanAt` under `Evaluation.glibc`.
+    ///
+    /// Inside one UTC year the type can change only at that year's two
+    /// switches, so the span is cut from the year by whichever of them
+    /// actually change it. It is not joined to the years either side even
+    /// when they carry the same type across the new year, because a rule
+    /// whose type never changes would join years forever, and any bound on
+    /// the joining makes the span depend on where it was asked from. So
+    /// under this evaluation a span ends at every new year, UTC, and the
+    /// next one may carry the same type: a transition that changes nothing,
+    /// which `TimeZone.resolve` and every other caller already take in
+    /// their stride.
+    fn spanAtGlibc(self: Posix, timestamp: i64) Span {
+        if (self.dst == null) return .{
+            .local_type = self.localType(false),
+            .start = std.math.minInt(i64),
+            .end = std.math.maxInt(i64),
+        };
+
+        const year = GlibcYear.of(self, timestamp);
+        var span: Span = .{
+            .local_type = self.localType(year.inDst(timestamp)),
+            .start = year.opens,
+            .end = year.closes,
+        };
+        for (year.switches) |at| {
+            if (at <= year.opens or at >= year.closes) continue;
+            if (year.inDst(at - 1) == year.inDst(at)) continue;
+            if (at <= timestamp) span.start = @max(span.start, at) else span.end = @min(span.end, at);
+        }
+        return span;
+    }
+
+    /// One UTC year and its two switches, which is all glibc looks at.
+    const GlibcYear = struct {
+        opens: i64,
+        closes: i64,
+        start: i64,
+        end: i64,
+        switches: [2]i64,
+
+        fn of(rule: Posix, timestamp: i64) GlibcYear {
+            const dst = rule.dst.?;
+            const placed = Date.yearAndFirstDay(Date.dayNumberFromSecondsSaturating(timestamp));
+            const first = placed.january_first;
+
+            // glibc counts a year's switches from the first of January
+            // only for years from 1970 on. Every earlier year has them
+            // counted from 1970's first of January instead -- its own
+            // weekdays and leap day, placed at the epoch -- so none of
+            // them ever happens in the year it belongs to and the same
+            // type answers for all of it, unless a switch lands in the
+            // last hours of 1969.
+            const base: Date.DayNumber = if (placed.year < 1970) 0 else first;
+            const start = glibcSwitch(dst.start, placed.year, rule.std_offset, first, base);
+            const end = glibcSwitch(dst.end, placed.year, dst.offset, first, base);
+            return .{
+                .opens = @as(i64, first) *| std.time.s_per_day,
+                .closes = (@as(i64, first) +| yearLength(placed.year)) *| std.time.s_per_day,
+                .start = start,
+                .end = end,
+                .switches = .{ start, end },
+            };
+        }
+
+        fn glibcSwitch(
+            transition: Transition,
+            year: Year,
+            offset_before: i32,
+            first: Date.DayNumber,
+            base: Date.DayNumber,
+        ) i64 {
+            const day = base + (transition.rule.dayNumber(year, first) - first);
+            return @as(i64, day) * std.time.s_per_day + transition.time - offset_before;
+        }
+
+        fn inDst(self: GlibcYear, timestamp: i64) bool {
+            if (self.start > self.end) return timestamp < self.end or timestamp >= self.start;
+            return timestamp >= self.start and timestamp < self.end;
+        }
+    };
+
+    test spanAtGlibc {
+        // Switches at midnight on New Year's Day, which is what glibc
+        // makes of `XYZ3,junk`: standard time from midnight UTC until the
+        // three hours to local midnight are up, and daylight saving time
+        // from there to the next new year.
+        const rule = parseLenient("XYZ3,junk");
+        const morning = rule.spanAt(1704067200 + 3600);
+        try testing.expect(!morning.local_type.is_dst);
+        try testing.expectEqual(@as(i64, 1704067200), morning.start);
+        try testing.expectEqual(@as(i64, 1704067200 + 3 * 3600), morning.end);
+
+        const summer = rule.spanAt(1720000000);
+        try testing.expect(summer.local_type.is_dst);
+        try testing.expectEqual(@as(i64, 1704067200 + 3 * 3600), summer.start);
+        try testing.expectEqual(@as(i64, 1735689600), summer.end);
+
+        // A rule tzdata would write answers as `parse`'s does from 1970
+        // on, though its spans stop at each new year. Before 1970 glibc
+        // counts every year's switches from the epoch and so never makes
+        // them.
+        const strict = try parse("CET-1CEST,M3.5.0,M10.5.0/3");
+        const lenient = parseLenient("CET-1CEST,M3.5.0,M10.5.0/3");
+        const summer_2024 = 1720000000;
+        try testing.expectEqual(strict.spanAt(summer_2024), lenient.spanAt(summer_2024));
+        for ([_]i64{ 315532800, 1711846800, 1729990800, 1735689600 }) |at| {
+            try testing.expectEqual(strict.typeAt(at), lenient.typeAt(at));
+        }
+        try testing.expectEqual(@as(i64, 1735689600), lenient.spanAt(1735689600 - 1).end);
     }
 
     /// What `spanAt` means, written the slow and obvious way: the switches
@@ -557,6 +714,414 @@ pub fn parse(text: []const u8) ParseError!Posix {
         },
     };
 }
+
+/// Reads a `TZ` value the way glibc does, which is to say never refusing
+/// it. The returned value borrows the designations out of `text`, which
+/// must outlive it.
+///
+/// `parse` refuses anything POSIX does not allow. glibc reads as far as
+/// it can and keeps what it found, so `ABC-25` is a zone a day ahead of
+/// UTC, `XYZ3:75` is three hours and fifty-nine minutes behind, and
+/// `XYZ3,junk` has a daylight saving time with no name and an offset of
+/// zero. A program that takes `TZ` from a user and wants to read it the
+/// way the C library under every other program on the machine reads it
+/// wants this. What it does was found by asking glibc, and
+/// `upstream/src/oracle_tz.c` asks it again about every value in its
+/// corpus:
+///
+/// - An empty value is UTC. glibc names it after the file `Universal`,
+///   which tzdata calls `UTC`, and with no such file to read it is called
+///   `Universal`; the name here is that one.
+/// - A name that is not a name -- fewer than three letters, or an
+///   unclosed `<` -- leaves a zone at UTC with no name at all.
+/// - An offset that is not one leaves the name at UTC with no daylight
+///   saving time. Hours above 24 are 24, and minutes and seconds above 59
+///   are 59, where `parse` refuses them.
+/// - Anything at all after the standard offset means daylight saving
+///   time. If it is not a name, that time has no name and an offset of
+///   zero, and unless a comma follows and rules after it, both switches
+///   are at midnight on the first of January.
+/// - With no rules, the switches are the United States' since 2007,
+///   `M3.2.0,M11.1.0`, which is glibc's when it finds no `posixrules`
+///   file. glibc reads that file when there is one, and this does not:
+///   tzdata no longer installs it by default, and glibc's use of it is
+///   wrong past the file's last transition.
+/// - A rule that stops making sense stops the reading: what it had read
+///   is kept, its time is midnight, and a rule not reached is midnight
+///   on the first of January. Text after a rule that is not a comma or a
+///   `/` stops it the same way. After a `/` and a time, though, the
+///   second rule is read from wherever the time stopped, comma or no
+///   comma. A week past 5 is the last one, a week of 0 is the first,
+///   and a weekday past 6 counts on past the end of the week, so `M4.1.9`
+///   is the first day at least two days past the month's first Sunday.
+/// - A switch time is not limited, so `M3.2.0/500` is three weeks after
+///   the second Sunday of March.
+///
+/// The result is evaluated as glibc evaluates it, too, which is not
+/// quite how `parse`'s result is: see `Evaluation.glibc`.
+///
+/// Not modeled: a month of 0 or past 12 in an `Mm.w.d` rule, which glibc
+/// answers by reading past the end of its own table of month lengths.
+/// One here is read as `J0`, the day before the first of January. That
+/// is what glibc was seen to answer for months past 12 from 1970 on, but
+/// not before 1970, and not for month 0. And a value that starts with
+/// `:`, or that names a file under `TZDIR`, is a file to glibc rather
+/// than a rule; `tzdb` is the place to look for one first.
+pub fn parseLenient(text: []const u8) Posix {
+    if (text.len == 0) return .{
+        .std_designation = "Universal",
+        .std_offset = 0,
+        .dst = null,
+        .evaluation = .glibc,
+    };
+
+    var cursor: Lenient = .{ .text = text };
+
+    var result: Posix = .{
+        .std_designation = "",
+        .std_offset = 0,
+        .dst = null,
+        .evaluation = .glibc,
+    };
+
+    result.std_designation = cursor.designation() orelse return .{
+        .std_designation = "",
+        .std_offset = 0,
+        .dst = null,
+        .evaluation = .glibc,
+    };
+    result.std_offset = -(cursor.offset() orelse return result);
+    if (cursor.done()) return result;
+
+    // From here on there is daylight saving time, whatever follows.
+    const midnight: Transition = .{ .rule = .{ .julian = 0 }, .time = 0 };
+    result.dst = .{
+        .designation = "",
+        .offset = 0,
+        .start = midnight,
+        .end = midnight,
+    };
+    const dst = &result.dst.?;
+
+    if (cursor.designation()) |name| {
+        dst.designation = name;
+        dst.offset = result.std_offset + std.time.s_per_hour;
+        if (!cursor.done() and cursor.peek() != ',') {
+            if (cursor.offset()) |offset| dst.offset = -offset;
+        }
+    }
+
+    if (cursor.done()) {
+        dst.start = default_start;
+        dst.end = default_end;
+        return result;
+    }
+    if (cursor.peek() != ',') return result;
+    cursor.index += 1;
+
+    if (cursor.done()) {
+        dst.start = default_start;
+        dst.end = default_end;
+        return result;
+    }
+    if (!cursor.transition(&dst.start)) return result;
+
+    // After a `/` and a time the comma is optional to glibc, which reads
+    // the second rule from wherever the first one stopped.
+    if (!cursor.done() and cursor.peek() == ',') cursor.index += 1;
+    if (cursor.done()) {
+        dst.end = default_end;
+        return result;
+    }
+    _ = cursor.transition(&dst.end);
+    return result;
+}
+
+/// The switches glibc uses for a `TZ` that names a daylight saving time
+/// and gives no rules: the second Sunday of March and the first Sunday of
+/// November, at two in the morning.
+const default_start: Transition = .{
+    .rule = .{ .month_week_day = .{ .month = .Mar, .week = 2, .weekday = .Sun } },
+};
+const default_end: Transition = .{
+    .rule = .{ .month_week_day = .{ .month = .Nov, .week = 1, .weekday = .Sun } },
+};
+
+test parseLenient {
+    // An offset past 24 hours is 24 hours.
+    const ahead = parseLenient("ABC-25");
+    try testing.expectEqualStrings("ABC", ahead.std_designation);
+    try testing.expectEqual(@as(i32, 24 * std.time.s_per_hour), ahead.std_offset);
+    try testing.expectEqual(@as(?Dst, null), ahead.dst);
+
+    // Minutes past 59 are 59.
+    const behind = parseLenient("XYZ3:75");
+    try testing.expectEqual(@as(i32, -(3 * std.time.s_per_hour + 59 * std.time.s_per_min)), behind.std_offset);
+
+    // Something after the offset that is not a name is a daylight saving
+    // time with no name, no offset, and switches at midnight on New
+    // Year's Day.
+    const junk = parseLenient("XYZ3,junk");
+    try testing.expectEqualStrings("", junk.dst.?.designation);
+    try testing.expectEqual(@as(i32, 0), junk.dst.?.offset);
+    try testing.expectEqual(@as(i32, 0), junk.dst.?.start.time);
+
+    // No rules at all is the United States' rules.
+    const eastern = parseLenient("EST5EDT");
+    try testing.expectEqual(Month.Nov, eastern.dst.?.end.rule.month_week_day.month);
+
+    // A name that is not one leaves nothing behind it, and an empty value
+    // is UTC.
+    try testing.expectEqualStrings("", parseLenient("AB5").std_designation);
+    try testing.expectEqualStrings("Universal", parseLenient("").std_designation);
+
+    // What `parse` accepts reads the same here.
+    const strict = try parse("CET-1CEST,M3.5.0,M10.5.0/3");
+    const lenient = parseLenient("CET-1CEST,M3.5.0,M10.5.0/3");
+    try testing.expectEqual(strict.std_offset, lenient.std_offset);
+    try testing.expectEqual(strict.dst.?.end, lenient.dst.?.end);
+}
+
+/// The cursor `parseLenient` reads with. Each reader answers null where
+/// `Cursor`'s would return an error, having moved past whatever glibc
+/// moves past before giving up.
+const Lenient = struct {
+    text: []const u8,
+    index: usize = 0,
+    /// The sign `sign` read last, which a time with no digits after it
+    /// still applies.
+    last_sign: i64 = 1,
+
+    fn done(self: Lenient) bool {
+        return self.index >= self.text.len;
+    }
+
+    fn peek(self: Lenient) u8 {
+        return self.text[self.index];
+    }
+
+    /// A name: three or more letters, or three or more of anything but
+    /// `>` between angle brackets.
+    fn designation(self: *Lenient) ?[]const u8 {
+        if (self.done()) return null;
+        if (self.peek() == '<') {
+            const start = self.index + 1;
+            const close = std.mem.findScalarPos(u8, self.text, start, '>') orelse return null;
+            const name = self.text[start..close];
+            for (name) |char| switch (char) {
+                'a'...'z', 'A'...'Z', '0'...'9', '+', '-' => {},
+                else => return null,
+            };
+            if (name.len < 3) return null;
+            self.index = close + 1;
+            return name;
+        }
+        const start = self.index;
+        while (!self.done() and std.ascii.isAlphabetic(self.peek())) self.index += 1;
+        if (self.index - start < 3) {
+            self.index = start;
+            return null;
+        }
+        return self.text[start..self.index];
+    }
+
+    /// `[+|-]hh[:mm[:ss]]`, west-positive as POSIX writes it, with the
+    /// hours capped at 24 and the minutes and seconds at 59. The sign is
+    /// consumed even when no digits follow it.
+    fn offset(self: *Lenient) ?i32 {
+        const parts = self.clock(true) orelse return null;
+        const seconds = @as(i64, @min(parts.hours, 24)) * std.time.s_per_hour +
+            @as(i64, @min(parts.minutes, 59)) * std.time.s_per_min + @min(parts.seconds, 59);
+        return @intCast(parts.direction * seconds);
+    }
+
+    /// The time of a switch, which has no cap on any of its parts. When
+    /// no hours follow, the time is the default two in the morning, with
+    /// any sign that was written: `/-x` is two hours before midnight.
+    fn time(self: *Lenient) i32 {
+        const parts = self.clock(false) orelse return @intCast(self.last_sign * 2 * std.time.s_per_hour);
+        const seconds = @as(i64, parts.hours) * std.time.s_per_hour +
+            @as(i64, parts.minutes) * std.time.s_per_min + parts.seconds;
+        return @intCast(std.math.clamp(parts.direction * seconds, std.math.minInt(i32), std.math.maxInt(i32)));
+    }
+
+    /// The parts of an offset or a switch time, read the way glibc reads
+    /// them: a sign of the offset's own, and then the hours, minutes and
+    /// seconds as `sscanf` reads `%hu:%hu:%hu`. That is why `5:-1` is five
+    /// hours and 59 minutes: `%hu` takes a sign of its own and wraps a
+    /// negative number round to a large one, which the cap then brings
+    /// down. An offset has to begin with a sign or a digit, where a time
+    /// may begin with whitespace, which `%hu` steps over.
+    fn clock(self: *Lenient, strict_start: bool) ?Clock {
+        if (self.done()) return null;
+        if (strict_start) switch (self.peek()) {
+            '+', '-', '0'...'9' => {},
+            else => return null,
+        };
+        const direction = self.sign();
+        const hours = self.scanned() orelse return null;
+        var result: Clock = .{
+            .direction = direction,
+            .hours = hours,
+        };
+        if (self.colonScanned()) |minutes| {
+            result.minutes = minutes;
+            if (self.colonScanned()) |seconds| result.seconds = seconds;
+        }
+        return result;
+    }
+
+    const Clock = struct { direction: i64, hours: u16, minutes: u16 = 0, seconds: u16 = 0 };
+
+    fn sign(self: *Lenient) i64 {
+        self.last_sign = 1;
+        if (self.done()) return 1;
+        switch (self.peek()) {
+            '+' => self.index += 1,
+            '-' => {
+                self.index += 1;
+                self.last_sign = -1;
+            },
+            else => {},
+        }
+        return self.last_sign;
+    }
+
+    /// A colon and then a number as `%hu` reads one, or null and nothing
+    /// consumed.
+    fn colonScanned(self: *Lenient) ?u16 {
+        if (self.done() or self.peek() != ':') return null;
+        const before = self.index;
+        self.index += 1;
+        return self.scanned() orelse {
+            self.index = before;
+            return null;
+        };
+    }
+
+    /// A number as `sscanf`'s `%hu` reads one: whitespace, then an
+    /// optional sign, then digits, the value taken modulo 65536 and a
+    /// minus sign wrapping it round. Null and nothing consumed when there
+    /// are no digits.
+    fn scanned(self: *Lenient) ?u16 {
+        const before = self.index;
+        while (!self.done() and isCSpace(self.peek())) self.index += 1;
+        var negative = false;
+        if (!self.done() and (self.peek() == '+' or self.peek() == '-')) {
+            negative = self.peek() == '-';
+            self.index += 1;
+        }
+        const start = self.index;
+        var value: u64 = 0;
+        var saturated = false;
+        while (!self.done() and std.ascii.isDigit(self.peek())) : (self.index += 1) {
+            const next = @mulWithOverflow(value, 10);
+            const sum = @addWithOverflow(next[0], self.peek() - '0');
+            if (next[1] != 0 or sum[1] != 0) saturated = true;
+            value = sum[0];
+        }
+        if (self.index == start) {
+            self.index = before;
+            return null;
+        }
+        // `strtoul` answers the largest value it has for a number too big
+        // for it, before the sign is applied.
+        if (saturated) value = std.math.maxInt(u64);
+        if (negative) value = 0 -% value;
+        return @truncate(value);
+    }
+
+    fn isCSpace(char: u8) bool {
+        return switch (char) {
+            ' ', '\t', '\n', 0x0b, 0x0c, '\r' => true,
+            else => false,
+        };
+    }
+
+    /// A run of digits, saturating rather than overflowing.
+    fn number(self: *Lenient) ?i64 {
+        const start = self.index;
+        var value: i64 = 0;
+        while (!self.done() and std.ascii.isDigit(self.peek())) : (self.index += 1) {
+            value = @min(value *| 10 +| (self.peek() - '0'), 1_000_000_000);
+        }
+        if (self.index == start) return null;
+        return value;
+    }
+
+    /// Reads a `rule[/time]` into `into`, which holds midnight on the
+    /// first of January to start with. Answers whether the reading can go
+    /// on. It cannot when the rule was not one -- a letter that starts
+    /// none, or a number missing or out of range -- nor when the rule is
+    /// followed by anything but a comma, a `/` or the end, nor when the
+    /// value ends at the `/`. In each of those the time stays midnight.
+    ///
+    /// Otherwise a `/` and a time is that time, and a `/` and something
+    /// else, or no `/`, is the default, two in the morning. After a `/`
+    /// the reading goes on from wherever the time stopped, so glibc reads
+    /// a second rule there with or without a comma before it.
+    fn transition(self: *Lenient, into: *Transition) bool {
+        switch (self.peek()) {
+            'J' => {
+                self.index += 1;
+                into.rule = .{ .julian_no_leap = 0 };
+                const day = self.number() orelse return false;
+                if (day < 1 or day > 365) return false;
+                into.rule = .{ .julian_no_leap = @intCast(day) };
+            },
+            '0'...'9' => {
+                const day = self.number().?;
+                if (day > 365) return false;
+                into.rule = .{ .julian = @intCast(day) };
+            },
+            'M' => {
+                self.index += 1;
+                var parts: [3]i64 = .{ 0, 0, 0 };
+                var count: usize = 0;
+                while (count < 3) : (count += 1) {
+                    if (count > 0) {
+                        if (self.done() or self.peek() != '.') break;
+                        self.index += 1;
+                    }
+                    parts[count] = self.scanned() orelse break;
+                }
+                into.rule = monthWeekDay(parts[0], parts[1], parts[2]);
+                if (count < 3 or parts[0] < 1 or parts[0] > 12 or
+                    parts[1] < 1 or parts[1] > 5 or parts[2] > 6) return false;
+            },
+            else => return false,
+        }
+
+        if (!self.done() and self.peek() == '/') {
+            self.index += 1;
+            if (self.done()) return false;
+            into.time = self.time();
+            return true;
+        }
+        if (self.done() or self.peek() == ',') {
+            into.time = 2 * std.time.s_per_hour;
+            return true;
+        }
+        return false;
+    }
+
+    /// An `Mm.w.d` rule from numbers that may be out of range, the way
+    /// glibc reads them. See `parseLenient` for what is and is not
+    /// modeled.
+    fn monthWeekDay(month: i64, week: i64, weekday: i64) Rule {
+        if (month < 1 or month > 12) return .{ .julian_no_leap = 0 };
+        if (weekday > 6) return .{ .month_week_long_day = .{
+            .month = std.enums.fromInt(Month, month).?,
+            .week = @intCast(std.math.clamp(week, 1, 5)),
+            .weekday = @intCast(@min(weekday, std.math.maxInt(u16))),
+        } };
+        return .{ .month_week_day = .{
+            .month = std.enums.fromInt(Month, month).?,
+            .week = @intCast(std.math.clamp(week, 1, 5)),
+            .weekday = std.enums.fromInt(DayOfWeek, weekday).?,
+        } };
+    }
+};
 
 /// How many days `year` has, which is how the rule evaluation steps from
 /// one year's first of January to its neighbor's without converting one.
