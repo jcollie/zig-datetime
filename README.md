@@ -250,7 +250,7 @@ reference implementation produces.
 | `-Dembed-tzdata` | off | Compile the database into the binary |
 | `-Dtzdata-packing=slim\|fat` | `slim` | `slim` leans on each zone's POSIX rule for repeating years (~347 KB); `fat` writes every transition out (~702 KB) |
 | `-Dtzdata-from=@0` | keep all | Drop transitions before this point; `@0` keeps 1970 onwards (~255 KB) |
-| `-Dembed-locales` | off | Compile moment.js's 137 locales into the library; see [Locales](#locales) |
+| `-Dembed-locales` | off | Compile moment.js's 139 locales into the library; see [Locales](#locales) |
 
 Without `-Dembed-tzdata` nothing is fetched and no C is compiled, so an
 ordinary build stays fast and offline. `tzdb.embedded.available` tells you
@@ -392,7 +392,7 @@ escaping and its corners, and a day-by-day sweep from 2015 to 2032 read at
 five offsets including a quarter-hour one.
 
 ```
-796200 comparisons against moment 2.30.1, no divergence
+796200 comparisons against moment 2.31.0, no divergence
 ```
 
 `zig build oracle-parse` does the same for parsing, in both modes, holding
@@ -496,14 +496,14 @@ names and the `L` strings have no default.
 diffs it against moment in the same locale:
 
 ```
-97818 comparisons across the locales of moment 2.30.1
-10067 known and documented
+99246 comparisons across the locales of moment 2.31.0
+10645 known and documented
 no divergence beyond those
 ```
 
 The documented ones are three, and each is a limit rather than a bug:
 
-- **Twenty-three locales rewrite the digits after formatting**, and some
+- **Twenty-four locales rewrite the digits after formatting**, and some
   the separators too — moment calls it `postformat`, and Arabic, Hindi and
   Bengali among others use it. This library writes ASCII digits. The
   oracle proves the difference is confined to that by running moment's own

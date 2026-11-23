@@ -4,10 +4,7 @@
   fetchgit,
   fetchurl,
   fetchzip,
-  runCommandLocal,
-  # nixpkgs has no Zig 0.17 yet, so until it does this has to be passed in:
-  # `zig_0_17 = zig-overlay.packages.${system}."master-2026-10-01"`, which is
-  # the 0.17.0 release, for instance.
+  runCommand,
   zig_0_17,
   zstd,
   name ? "zig-packages",
@@ -57,10 +54,10 @@ let
       url = "https://registry.npmjs.org/cldr-numbers-full/-/cldr-numbers-full-48.2.0.tgz";
       hash = "sha256-IGIIw+O0uSBPC4bCDHsY4ehM9DDMx/xLWDOFnjqanYw=";
     };
-    "N-V-__8AAHNhQgCiWfjOCo_LQgx55jnHBr2Z61ZAqPU9n5Uo" = fetchzip {
+    "N-V-__8AAGmeRABc64eTJVlatGh_UaxMFu0tUGWK2w0Nt593" = fetchzip {
       name = "moment";
-      url = "https://registry.npmjs.org/moment/-/moment-2.30.1.tgz";
-      hash = "sha256-CNEFi+IlQ10llFjRfaZWcuv+LZEJzpjz6b0xBfKYxg4=";
+      url = "https://registry.npmjs.org/moment/-/moment-2.31.0.tgz";
+      hash = "sha256-vu4AYzOP4pWlNO0UIvPBQ/CJ/XZg1q4j3tm1ky5uQ/o=";
     };
     "N-V-__8AAIOpDwArTWlivKjXIyxeLWkhCG3-bxprFW6tb094" = fetchurl {
       url = "https://data.iana.org/time-zones/releases/tzcode2026f.tar.gz";
@@ -70,16 +67,20 @@ let
       url = "https://data.iana.org/time-zones/releases/tzdata2026f.tar.gz";
       hash = "sha256-AbSpHOxRZ+1IwR6Kt48gSM6teM6UsMr8rQroxaMETT0=";
     };
-    "win32-42.0.39-preview-mX5pFc794wMcrMyFgsO1c4csBdowhpiqqwIyN_xjqI5z" = fetchzip {
+    "win32-42.0.39-preview-mX5pFbT94wOrQ1prMoIqaoW_wWazM7T14XVLnrvyafKS" = fetchzip {
       name = "zigwin32";
-      url = "https://github.com/marlersoft/zigwin32/archive/fb2645891520f3e99931db17a7eba04057e87e89.tar.gz";
-      hash = "sha256-AHrMKAYCceE1V5PQHzdPnYljIzEQbDyyLvRVzRKGTn0=";
+      url = "https://github.com/marlersoft/zigwin32/archive/e7573f0fe81d730bd54dd29af369fa393b372b76.tar.gz";
+      hash = "sha256-6AzDmyMrWNwUBlJW4hBgquRM9KsGSWFdnB9YzZwFwvU=";
     };
   };
 
-  # The packages whose own manifest declares a dependency by `.path`, which
-  # Zig 0.16.0 cannot build through `zig build --system`. Listed here too so
-  # that every version's expression offers the same things; see the README.
+  # The packages whose own manifest declares a dependency by `.path`. Zig
+  # 0.17.0 cannot build these through `zig build --system`: it roots the system
+  # package directory at its absolute store path, so a `.path` dependency
+  # inside one of these resolves to an absolute path, which it refuses with
+  # "expected path relative to build root; found absolute path". A package
+  # that wants `--system` copies each of these into its build root and passes
+  # `--fork=` with a relative path; see the README.
   pathDependencyPackages = [
   ];
 in
@@ -94,7 +95,13 @@ in
 # what the directory walk calls a file, so symlinked headers are skipped
 # without a word. Building them all in one derivation gives real files from
 # the start, without a second copy of everything.
-runCommandLocal name
+#
+# `runCommand` and not `runCommandLocal`: the result is worth taking from a
+# binary cache. Building it locally means first fetching a whole Zig, and
+# under 0.17 compiling its fetch build runner too, which is minutes on a small
+# CI machine; `runCommandLocal` forbids substituting it, so every job that
+# wants the packages builds them again even when a cache already holds them.
+runCommand name
   {
     nativeBuildInputs = [ zig_0_17 ];
     passthru = { inherit pathDependencyPackages; };
@@ -135,9 +142,11 @@ runCommandLocal name
     export -f unpack
 
     # Several at a time: `zig fetch` spends most of a package on one core.
+    # `-r` because otherwise xargs runs `unpack` once, with no arguments, when
+    # there are no packages at all, and the build fails.
     cores="''${NIX_BUILD_CORES:-0}"
     if [ "$cores" -le 0 ]; then cores="$(nproc)"; fi
-    xargs -P "$cores" -n 2 bash -c 'unpack "$@"' unpack <<'EOF'
+    xargs -r -P "$cores" -n 2 bash -c 'unpack "$@"' unpack <<'EOF'
     ${lib.concatStrings (lib.mapAttrsToList (hash: src: "${hash} ${src}\n") packages)}
     EOF
   ''

@@ -20,8 +20,8 @@
         // moment is the specification being tested against and a different
         // release would silently move the target.
         .moment = .{
-            .url = "https://registry.npmjs.org/moment/-/moment-2.30.1.tgz",
-            .hash = "N-V-__8AAHNhQgCiWfjOCo_LQgx55jnHBr2Z61ZAqPU9n5Uo",
+            .url = "https://registry.npmjs.org/moment/-/moment-2.31.0.tgz",
+            .hash = "N-V-__8AAGmeRABc64eTJVlatGh_UaxMFu0tUGWK2w0Nt593",
             .lazy = true,
         },
         // The Unicode CLDR, in the JSON distribution the Unicode Consortium
