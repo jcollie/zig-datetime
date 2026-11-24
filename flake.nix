@@ -105,8 +105,13 @@
               # silently looks for a library called `libicu-i18n` that
               # does not exist. `icu.dev` carries the headers and the
               # `.pc` files, `icu` the library itself.
-              pkgs.icu.dev
-              pkgs.icu
+              #
+              # Named by version, because the oracle compares against the
+              # ICU that ships the CLDR release pinned in
+              # upstream/build.zig.zon, CLDR 49 being ICU 79, and nixpkgs'
+              # unversioned `icu` can lag a release behind.
+              pkgs.icu79.dev
+              pkgs.icu79
               pkgs.pkg-config
               # And again for the .NET format strings and PowerShell's
               # Get-Date: `pwsh` runs the cmdlet itself, and the .NET under

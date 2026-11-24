@@ -637,7 +637,7 @@ is what the locale's own patterns are. Both walk the same field writer.
 
 #### Locales
 
-`-Dembed-cldr` compiles in CLDR's own seven hundred and sixty-six
+`-Dembed-cldr` compiles in CLDR's own six hundred and fifty-seven
 locales, and `cldr.byName` finds one by tag. Without it there is only
 `en`, and nothing is fetched:
 
@@ -657,6 +657,10 @@ distribution by `upstream/src/gen_cldr.js`. The table it writes,
 so `-Dembed-cldr` compiles a file that is already here and fetches nothing,
 and `-Dcldr-locales` narrows what that build compiles rather than what was
 generated — an entry no locale is built from costs a binary nothing.
+"Every locale CLDR ships" means every locale in CLDR's production data,
+which holds only locales at Basic coverage or better [CLDR49]. CLDR keeps
+the locales below that apart, as data it does not recommend for general use
+and expects to remove, so they are not here.
 `zig build gen-cldr` regenerates the table when CLDR makes a release. It carries
 what CLDR has and moment has no notion of: era names, quarter names, the
 narrow width, the difference between the name inside a date and the name
@@ -678,9 +682,9 @@ from: fifty-six skeletons chosen for the matching rules, with and without
 written with each side's pattern compared.
 
 ```
-1177266 comparisons against ICU 78.3
-124 locales CLDR ships and ICU 78.3 does not, unchecked
-185 known and documented
+1177266 comparisons against ICU 79.1
+15 locales CLDR ships and ICU 79.1 does not, unchecked
+177 known and documented
 no divergence beyond those
 ```
 
@@ -712,18 +716,16 @@ rather than a bug:
   oracle's corpus stops at the millisecond. The same choice, for the same
   reason, as the moment sequences make.
 
-- **Five locales are excused**, and the oracle counts them. Hawaiian
+- **Four locales are excused**, and the oracle counts them. Hawaiian
   writes the month of its short date in lowercase Roman numerals, which
   CLDR expresses by hanging a numbering system on one field of a pattern;
   a numbering system here is ten digits and `romanlow` is an algorithm.
   French as written in Mali has a joining pattern that CLDR's JSON and
   ICU inherit differently, and they disagree about a comma. The other
-  three are skeletons: Kurdish in Latin script as written in Iraq, where
-  `j` is the one clock this library and ICU read differently; Toki Pona,
-  whose long date is longer than the fifty tokens ICU reads of a pattern;
-  and Australian English, where two patterns are equally near a long
-  month with a weekday and ICU breaks the tie by an order of inheritance
-  that CLDR's resolved data no longer holds.
+  two are skeletons: Kurdish in Latin script as written in Iraq, where
+  `j` is the one clock this library and ICU read differently; and Toki
+  Pona, whose long date is longer than the fifty tokens ICU reads of a
+  pattern.
 
 Beyond that, `z` and its neighbors take UTS #35's documented fallback:
 given no zone to name, the localized GMT format, so `z` is `GMT-5` and
@@ -1783,13 +1785,16 @@ The documents this library is written against.
 - **[CLDR]** Unicode Consortium, *Unicode CLDR Project*,
   <https://cldr.unicode.org/>. The locale data `-Dembed-cldr` compiles in,
   and `windowsZones.xml`, which `src/windowszones.zig` is generated from.
+- **[CLDR49]** Unicode Consortium, *CLDR 49 Release Note*, 22 October 2026,
+  <https://cldr.unicode.org/downloads/cldr-49>. Under "Migration": from this
+  release, the production data leaves out locales below Basic coverage.
 - **[ICU]** Unicode Consortium, "Formatting Dates and Times", *ICU
   Documentation*,
   <https://unicode-org.github.io/icu/userguide/format_parse/datetime/>. The
   reference implementation of UTS #35, and what `zig build oracle-cldr`
   diffs against.
-- **[ICU-DTPG]** Unicode Consortium, `dtptngen.cpp`, ICU4C 78.3,
-  <https://github.com/unicode-org/icu/blob/release-78.3/icu4c/source/i18n/dtptngen.cpp>.
+- **[ICU-DTPG]** Unicode Consortium, `dtptngen.cpp`, ICU4C 79.1,
+  <https://github.com/unicode-org/icu/blob/release-79.1/icu4c/source/i18n/dtptngen.cpp>.
   ICU's `DateTimePatternGenerator`, which `src/skeleton.zig` ports: the
   table of the locale's patterns, the distance between a skeleton and a
   pattern, and the rules for adjusting the widths of the one chosen.

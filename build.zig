@@ -69,8 +69,8 @@ const tz_release = "2026f";
 /// the generated file and reported as `tzdb.windows.cldr_version`. The file
 /// to feed `zig build windowszones` is:
 ///
-///   https://raw.githubusercontent.com/unicode-org/cldr/release-48-2/common/supplemental/windowsZones.xml
-const cldr_release = "release-48-2";
+///   https://raw.githubusercontent.com/unicode-org/cldr/release-49/common/supplemental/windowsZones.xml
+const cldr_release = "release-49";
 
 /// How zic should pack the embedded data.
 const Packing = enum { slim, fat };
@@ -409,7 +409,7 @@ pub fn build(b: *std.Build) void {
     // reproducible:
     //
     //     curl -O https://raw.githubusercontent.com/unicode-org/cldr/\
-    //         release-48-2/common/supplemental/windowsZones.xml
+    //         release-49/common/supplemental/windowsZones.xml
     //     zig build windowszones -Dwindowszones-xml=windowsZones.xml
     //
     // Then update `cldr_release` above to match what was downloaded.

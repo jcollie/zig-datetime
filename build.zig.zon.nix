@@ -39,20 +39,20 @@ let
 
   # Every package, by the hash Zig knows it by, as Nix fetches it.
   packages = {
-    "N-V-__8AAJ77GgCr4jV_q5d8vuaUZIWMrHbXUMYV7il4sgLB" = fetchzip {
+    "N-V-__8AAILYNQD4kL2E2hqrJ1h2FbwM0fnSlI-7zBwMevxn" = fetchzip {
       name = "cldr_core";
-      url = "https://registry.npmjs.org/cldr-core/-/cldr-core-48.2.0.tgz";
-      hash = "sha256-/Urq1yBk5CcWkNomGijIxyQR/9AqDHV7K2NqSMKah54=";
+      url = "https://registry.npmjs.org/cldr-core/-/cldr-core-49.0.0.tgz";
+      hash = "sha256-Lpx53K1HDmwxGUoTYdX5d1eiP5rW8TsKXxYD+sGmCEs=";
     };
-    "N-V-__8AAGszqAU24FLBIkgdecxizqeniOtXvaJyJNhnerSV" = fetchzip {
+    "N-V-__8AAJ90OgUNPX1VM8Liw8V38VPsQOhantYPA5Y98dZH" = fetchzip {
       name = "cldr_dates";
-      url = "https://registry.npmjs.org/cldr-dates-full/-/cldr-dates-full-48.2.0.tgz";
-      hash = "sha256-Fjwt7v5Y6sbBO2MJP1Zo3UfYk6VOWSLDDGPLFuSRtmY=";
+      url = "https://registry.npmjs.org/cldr-dates-full/-/cldr-dates-full-49.0.0.tgz";
+      hash = "sha256-iWlgIeiA2Z+dg25DH9uJZS13yipWGRseMFGTgW5tLWQ=";
     };
-    "N-V-__8AAP5iTQJ7vhRS_dLVKhpakujqxJsIbu89VYJgXryk" = fetchzip {
+    "N-V-__8AAGP0OALJBJRQDwByYTt8ByM1lunMVUxlNqas7MGB" = fetchzip {
       name = "cldr_numbers";
-      url = "https://registry.npmjs.org/cldr-numbers-full/-/cldr-numbers-full-48.2.0.tgz";
-      hash = "sha256-IGIIw+O0uSBPC4bCDHsY4ehM9DDMx/xLWDOFnjqanYw=";
+      url = "https://registry.npmjs.org/cldr-numbers-full/-/cldr-numbers-full-49.0.0.tgz";
+      hash = "sha256-OXZIu+aAWhizucGZi50gc2a57I45fDP2Ig5LYffGo4A=";
     };
     "N-V-__8AAGmeRABc64eTJVlatGh_UaxMFu0tUGWK2w0Nt593" = fetchzip {
       name = "moment";

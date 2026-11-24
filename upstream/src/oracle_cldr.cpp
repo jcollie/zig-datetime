@@ -130,16 +130,6 @@ std::string excuseSkeleton(const std::string &tag, const std::string &skeleton) 
   if (tag == "tok" && skeleton.find("MMMM") != std::string::npos)
     return "ICU stops reading a pattern after fifty tokens";
 
-  // Two of Australian English's patterns are equally near a long month
-  // with an abbreviated weekday: `MMMEd`, a month too short, and
-  // `MMMMEEEEd`, a weekday too long. ICU settles a tie by the order it read
-  // the keys in, which is the locale's own keys and then each parent's in
-  // turn, and en-AU has the second of these itself and inherits the first
-  // from en-001. CLDR's JSON distribution has already merged the parents
-  // in, so the order that would settle it is not in the data.
-  if (tag == "en-AU" && skeleton.rfind("MMMMEd", 0) == 0)
-    return "a tie ICU settles by inheritance order, which resolved data does not keep";
-
   // The date and the time are joined by the pattern the S records
   // already excuse.
   if (tag == "fr-ML") return excuse(tag, true);

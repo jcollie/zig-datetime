@@ -12,7 +12,7 @@
 //! library can load.
 
 /// The CLDR release this table was generated from.
-pub const cldr_version = "release-48-2";
+pub const cldr_version = "release-49";
 
 /// The Windows zone list CLDR mapped, as the file records it.
 pub const other_version = "7e11800";
@@ -36,6 +36,7 @@ pub const entries = [_]Entry{
     .{ .windows = "AUS Eastern Standard Time", .iana = "Australia/Sydney" },
     .{ .windows = "Afghanistan Standard Time", .iana = "Asia/Kabul" },
     .{ .windows = "Alaskan Standard Time", .iana = "America/Anchorage" },
+    .{ .windows = "Alberta Standard Time", .iana = "America/Edmonton" },
     .{ .windows = "Aleutian Standard Time", .iana = "America/Adak" },
     .{ .windows = "Altai Standard Time", .iana = "Asia/Barnaul" },
     .{ .windows = "Arab Standard Time", .iana = "Asia/Riyadh" },
@@ -51,6 +52,7 @@ pub const entries = [_]Entry{
     .{ .windows = "Bangladesh Standard Time", .iana = "Asia/Dhaka" },
     .{ .windows = "Belarus Standard Time", .iana = "Europe/Minsk" },
     .{ .windows = "Bougainville Standard Time", .iana = "Pacific/Bougainville" },
+    .{ .windows = "British Columbia Standard Time", .iana = "America/Vancouver" },
     .{ .windows = "Canada Central Standard Time", .iana = "America/Regina" },
     .{ .windows = "Cape Verde Standard Time", .iana = "Atlantic/Cape_Verde" },
     .{ .windows = "Caucasus Standard Time", .iana = "Asia/Yerevan" },
@@ -96,6 +98,7 @@ pub const entries = [_]Entry{
     .{ .windows = "Lord Howe Standard Time", .iana = "Australia/Lord_Howe" },
     .{ .windows = "Magadan Standard Time", .iana = "Asia/Magadan" },
     .{ .windows = "Magallanes Standard Time", .iana = "America/Punta_Arenas" },
+    .{ .windows = "Manitoba Standard Time", .iana = "America/Winnipeg" },
     .{ .windows = "Marquesas Standard Time", .iana = "Pacific/Marquesas" },
     .{ .windows = "Mauritius Standard Time", .iana = "Indian/Mauritius" },
     .{ .windows = "Middle East Standard Time", .iana = "Asia/Beirut" },

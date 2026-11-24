@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! Turning a skeleton into a pattern: ICU's `DateTimePatternGenerator`,
-//! ported from ICU 78.3's `getBestPattern`.
+//! ported from ICU 79.1's `getBestPattern`.
 //!
 //! A skeleton names the fields wanted and how wide, `yMMMd` or `Hmm`, and
 //! says nothing about their order or what goes between them. A locale's
@@ -230,6 +230,7 @@ const rows = [_]Row{
     .{ .letter = 'e', .kind = .weekday, .type = shorter - delta, .min = 6 },
 
     .{ .letter = 'd', .kind = .day, .type = numeric, .min = 1 },
+    .{ .letter = 'd', .kind = .day, .type = short, .min = 3 },
     .{ .letter = 'g', .kind = .day, .type = numeric + delta, .min = 1 },
 
     .{ .letter = 'D', .kind = .day_of_year, .type = numeric, .min = 1 },
@@ -600,6 +601,25 @@ const Raw = struct {
 /// first is a matter of where it sits in the table, so each candidate here
 /// carries the position ICU would give it, and the comparison uses that
 /// rather than the order the candidates happen to be looked at in.
+/// A candidate whose skeleton spells a numeric year with exactly two
+/// letters may carry literal text that only reads right beside a two-digit
+/// year (English `MMM d, ’yy`), so ICU 79 lets it answer only a request
+/// that also asks for two. A non-numeric year on either side is not
+/// checked.
+fn yearLengthCompatible(request: *const Skeleton, trial: *const Skeleton) bool {
+    const slot = @backingInt(Kind.year);
+    if (request.types[slot] <= 0 or trial.types[slot] <= 0) return true;
+    return trial.counts[slot] != 2 or request.counts[slot] == 2;
+}
+
+test yearLengthCompatible {
+    const two: Skeleton = .read("yyMMMd");
+    const any: Skeleton = .read("yMMMd");
+    try std.testing.expect(!yearLengthCompatible(&any, &two));
+    try std.testing.expect(yearLengthCompatible(&two, &two));
+    try std.testing.expect(yearLengthCompatible(&two, &any));
+}
+
 fn bestRaw(request: *const Skeleton, include: Mask, locale: Locale, derived: *const [derived_count]Derived) Raw {
     var best: ?Raw = null;
     var best_order: u64 = std.math.maxInt(u64);
@@ -663,6 +683,7 @@ fn bestRaw(request: *const Skeleton, include: Mask, locale: Locale, derived: *co
         // Two keys with the same types and different spellings would make
         // ICU replace the first with the second; CLDR has no such pairs,
         // so both are kept here.
+        if (!yearLengthCompatible(request, &skeleton)) continue;
         consider(&best, &best_order, .{
             .pattern = available.pattern,
             .specified = skeleton,
@@ -672,6 +693,7 @@ fn bestRaw(request: *const Skeleton, include: Mask, locale: Locale, derived: *co
 
     for (derived, replaced_by, 0..) |*entry, by, slot| {
         if (!entry.live) continue;
+        if (!yearLengthCompatible(request, &entry.skeleton)) continue;
         consider(&best, &best_order, .{
             .pattern = if (by) |index| formats[index].pattern else entry.pattern,
             .specified = if (by != null) entry.skeleton else null,
@@ -1039,7 +1061,7 @@ fn compose(
 
 // ----- Tests -----
 
-/// English with a handful of CLDR 48's availableFormats, enough to reach
+/// English with a handful of CLDR 49's availableFormats, enough to reach
 /// each rule above. The real table has eighty-odd entries.
 fn testEnglish() Locale {
     var locale = cldrlocale.en;
@@ -1054,6 +1076,7 @@ fn testEnglish() Locale {
         .{ .skeleton = "yMMMd", .pattern = "MMM d, y" },
         .{ .skeleton = "yMMMEd", .pattern = "EEE, MMM d, y" },
         .{ .skeleton = "yMd", .pattern = "M/d/y" },
+        .{ .skeleton = "yyMMMd", .pattern = "MMM d, ’yy" },
     };
     return locale;
 }
@@ -1089,6 +1112,14 @@ test bestPattern {
     try expectPattern("MMM d, y, h:mm a", "yMMMdjm", en, .{});
 }
 
+test "a two-digit year's pattern answers only a two-digit request" {
+    const en = testEnglish();
+    // `yyMMMd` is nearer a four-digit year than `yMMMd` is, but its
+    // apostrophe only reads right before two digits.
+    try expectPattern("MMM d, yyyy", "yyyyMMMd", en, .{});
+    try expectPattern("MMM d, ’yy", "yyMMMd", en, .{});
+}
+
 test "the decimal separator is the locale's" {
     var de = testEnglish();
     de.decimal = ",";
@@ -1101,7 +1132,7 @@ test "the hour's width follows the request only where ICU's does" {
     // with `Hmm` lands on the short time's entry, whose skeleton was read
     // off the pattern, and so takes the request's one digit; asking with
     // `Hm` lands on the key, which already says one digit and so keeps
-    // the locale's two. Both are what ICU 78.3 answers.
+    // the locale's two. Both are what ICU 79.1 answers.
     var gb = cldrlocale.en;
     var times = cldrlocale.en.time_formats.*;
     times[@backingInt(Length.short)] = "HH:mm";

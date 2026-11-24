@@ -31,22 +31,22 @@
         // system in cldr-core, and which numbering system a locale writes its
         // numbers in is in cldr-numbers-full.
         //
-        // Pinned to release 48, which is the release ICU 78 ships, so that
+        // Pinned to release 49, which is the release ICU 79 ships, so that
         // the oracle is comparing this library against an ICU that holds the
         // same data rather than a later or earlier one.
         .cldr_core = .{
-            .url = "https://registry.npmjs.org/cldr-core/-/cldr-core-48.2.0.tgz",
-            .hash = "N-V-__8AAJ77GgCr4jV_q5d8vuaUZIWMrHbXUMYV7il4sgLB",
+            .url = "https://registry.npmjs.org/cldr-core/-/cldr-core-49.0.0.tgz",
+            .hash = "N-V-__8AAILYNQD4kL2E2hqrJ1h2FbwM0fnSlI-7zBwMevxn",
             .lazy = true,
         },
         .cldr_dates = .{
-            .url = "https://registry.npmjs.org/cldr-dates-full/-/cldr-dates-full-48.2.0.tgz",
-            .hash = "N-V-__8AAGszqAU24FLBIkgdecxizqeniOtXvaJyJNhnerSV",
+            .url = "https://registry.npmjs.org/cldr-dates-full/-/cldr-dates-full-49.0.0.tgz",
+            .hash = "N-V-__8AAJ90OgUNPX1VM8Liw8V38VPsQOhantYPA5Y98dZH",
             .lazy = true,
         },
         .cldr_numbers = .{
-            .url = "https://registry.npmjs.org/cldr-numbers-full/-/cldr-numbers-full-48.2.0.tgz",
-            .hash = "N-V-__8AAP5iTQJ7vhRS_dLVKhpakujqxJsIbu89VYJgXryk",
+            .url = "https://registry.npmjs.org/cldr-numbers-full/-/cldr-numbers-full-49.0.0.tgz",
+            .hash = "N-V-__8AAGP0OALJBJRQDwByYTt8ByM1lunMVUxlNqas7MGB",
             .lazy = true,
         },
     },
