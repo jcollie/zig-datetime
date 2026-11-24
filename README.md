@@ -12,8 +12,8 @@ main by `.forgejo/workflows/test.yaml`.
 
 ## Where this lives
 
-The repository is hosted on Forgejo, which is where the issues, the
-continuous integration and the published documentation are:
+The repository is hosted on Forgejo, which is where the continuous
+integration and the published documentation are:
 
 ```sh
 git clone https://git.jcollie.dev/jeff/zig-datetime.git
@@ -58,6 +58,13 @@ The Radicle copy is public, named `zig-datetime`, and its default branch is
 same history.
 
 [radicle]: https://radicle.xyz
+
+## Reporting issues and contributing
+
+Report issues and open pull requests on the Tangled mirror,
+<https://tangled.org/jcollie.dev/zig-datetime>.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers building, testing, the oracles and
+the conventions a change is held to.
 
 ## Adding it to a project
 
