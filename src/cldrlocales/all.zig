@@ -54,6 +54,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "aa-DJ",
@@ -99,6 +100,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "aa-ER",
@@ -144,6 +146,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ab",
@@ -189,6 +192,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "af",
@@ -244,6 +248,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "af-NA",
@@ -299,6 +304,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "agq",
@@ -344,6 +350,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ak",
@@ -397,6 +404,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "am",
@@ -453,6 +461,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "an",
@@ -498,6 +507,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ann",
@@ -543,6 +553,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "apc",
@@ -588,6 +599,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ar",
@@ -645,6 +657,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ar-AE",
@@ -702,6 +715,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ar-BH",
@@ -759,6 +773,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-DJ",
@@ -816,6 +831,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-DZ",
@@ -873,6 +889,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ar-EG",
@@ -930,6 +947,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-EH",
@@ -987,6 +1005,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ar-ER",
@@ -1044,6 +1063,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-IL",
@@ -1101,6 +1121,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-IQ",
@@ -1162,6 +1183,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-JO",
@@ -1219,6 +1241,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-KM",
@@ -1276,6 +1299,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-KW",
@@ -1333,6 +1357,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-LB",
@@ -1390,6 +1415,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-LY",
@@ -1447,6 +1473,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ar-MA",
@@ -1504,6 +1531,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ar-MR",
@@ -1561,6 +1589,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-OM",
@@ -1618,6 +1647,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-PS",
@@ -1675,6 +1705,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-QA",
@@ -1732,6 +1763,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-SA",
@@ -1789,6 +1821,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-SD",
@@ -1846,6 +1879,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-SO",
@@ -1903,6 +1937,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-SS",
@@ -1960,6 +1995,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-SY",
@@ -2017,6 +2053,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-TD",
@@ -2074,6 +2111,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ar-TN",
@@ -2131,6 +2169,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ar-YE",
@@ -2188,6 +2227,7 @@ pub const entries = .{
             .{ 11, 60, 180, 0 },
         },
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "arn",
@@ -2233,6 +2273,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "as",
@@ -2278,6 +2319,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯" },
+        .decimal = ".",
     },
     .{
         .tag = "asa",
@@ -2323,6 +2365,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ast",
@@ -2376,6 +2419,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "az",
@@ -2439,6 +2483,7 @@ pub const entries = .{
             .{ 11, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "az-Arab",
@@ -2493,6 +2538,7 @@ pub const entries = .{
             .{ 11, 0, 240, 0 },
         },
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "az-Arab-IQ",
@@ -2547,6 +2593,7 @@ pub const entries = .{
             .{ 11, 0, 240, 0 },
         },
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "az-Arab-TR",
@@ -2601,6 +2648,7 @@ pub const entries = .{
             .{ 11, 0, 240, 0 },
         },
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "az-Cyrl",
@@ -2663,6 +2711,7 @@ pub const entries = .{
             .{ 11, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "az-Latn",
@@ -2726,6 +2775,7 @@ pub const entries = .{
             .{ 11, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ba",
@@ -2771,6 +2821,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bal",
@@ -2816,6 +2867,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bal-Arab",
@@ -2861,6 +2913,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bal-Latn",
@@ -2906,6 +2959,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bas",
@@ -2955,6 +3009,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "be",
@@ -3008,6 +3063,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "be-tarask",
@@ -3061,6 +3117,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "bem",
@@ -3106,6 +3163,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bew",
@@ -3151,6 +3209,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bez",
@@ -3196,6 +3255,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bg",
@@ -3252,6 +3312,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "bgc",
@@ -3301,6 +3362,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "०", "१", "२", "३", "४", "५", "६", "७", "८", "९" },
+        .decimal = ".",
     },
     .{
         .tag = "bgn",
@@ -3346,6 +3408,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "bgn-AE",
@@ -3391,6 +3454,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "bgn-AF",
@@ -3436,6 +3500,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "bgn-IR",
@@ -3481,6 +3546,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "bgn-OM",
@@ -3526,6 +3592,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "bho",
@@ -3575,6 +3642,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "०", "१", "२", "३", "४", "५", "६", "७", "८", "९" },
+        .decimal = ".",
     },
     .{
         .tag = "blo",
@@ -3635,6 +3703,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "blt",
@@ -3680,6 +3749,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bm",
@@ -3725,6 +3795,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bm-Nkoo",
@@ -3770,6 +3841,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bn",
@@ -3834,6 +3906,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = [10][]const u8{ "০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯" },
+        .decimal = ".",
     },
     .{
         .tag = "bn-IN",
@@ -3898,6 +3971,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = [10][]const u8{ "০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯" },
+        .decimal = ".",
     },
     .{
         .tag = "bo",
@@ -3947,6 +4021,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bo-IN",
@@ -3996,6 +4071,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bqi",
@@ -4041,6 +4117,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "br",
@@ -4090,6 +4167,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "brx",
@@ -4144,6 +4222,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bs",
@@ -4209,6 +4288,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "bs-Cyrl",
@@ -4265,6 +4345,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "bs-Latn",
@@ -4330,6 +4411,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "bss",
@@ -4375,6 +4457,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "bua",
@@ -4425,6 +4508,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "byn",
@@ -4470,6 +4554,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ca",
@@ -4527,6 +4612,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ca-AD",
@@ -4584,6 +4670,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ca-ES-valencia",
@@ -4641,6 +4728,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ca-FR",
@@ -4698,6 +4786,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ca-IT",
@@ -4755,6 +4844,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "cad",
@@ -4800,6 +4890,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "cch",
@@ -4845,6 +4936,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ccp",
@@ -4901,6 +4993,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = [10][]const u8{ "𑄶", "𑄷", "𑄸", "𑄹", "𑄺", "𑄻", "𑄼", "𑄽", "𑄾", "𑄿" },
+        .decimal = ".",
     },
     .{
         .tag = "ccp-IN",
@@ -4957,6 +5050,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = [10][]const u8{ "𑄶", "𑄷", "𑄸", "𑄹", "𑄺", "𑄻", "𑄼", "𑄽", "𑄾", "𑄿" },
+        .decimal = ".",
     },
     .{
         .tag = "ce",
@@ -5007,6 +5101,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ceb",
@@ -5056,6 +5151,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "cgg",
@@ -5101,6 +5197,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "cho",
@@ -5146,6 +5243,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "chr",
@@ -5199,6 +5297,7 @@ pub const entries = .{
             .{ 4, 0, 720, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "cic",
@@ -5244,6 +5343,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ckb",
@@ -5289,6 +5389,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "ckb-IR",
@@ -5334,6 +5435,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "co",
@@ -5379,6 +5481,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "cop",
@@ -5424,6 +5527,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "cs",
@@ -5485,6 +5589,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "csw",
@@ -5534,6 +5639,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "cu",
@@ -5579,6 +5685,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "cv",
@@ -5624,6 +5731,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "cy",
@@ -5688,6 +5796,7 @@ pub const entries = .{
             .{ 4, 0, 720, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "da",
@@ -5744,6 +5853,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "da-GL",
@@ -5800,6 +5910,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "dav",
@@ -5849,6 +5960,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "de",
@@ -5915,6 +6027,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "de-AT",
@@ -5981,6 +6094,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "de-BE",
@@ -6047,6 +6161,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "de-CH",
@@ -6113,6 +6228,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "de-IT",
@@ -6179,6 +6295,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "de-LI",
@@ -6245,6 +6362,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "de-LU",
@@ -6311,6 +6429,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "dje",
@@ -6360,6 +6479,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "doi",
@@ -6414,6 +6534,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "dsb",
@@ -6463,6 +6584,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "dua",
@@ -6508,6 +6630,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "dv",
@@ -6553,6 +6676,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "dyo",
@@ -6598,6 +6722,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "dz",
@@ -6647,6 +6772,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "༠", "༡", "༢", "༣", "༤", "༥", "༦", "༧", "༨", "༩" },
+        .decimal = ".",
     },
     .{
         .tag = "ebu",
@@ -6692,6 +6818,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ee",
@@ -6744,6 +6871,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ee-TG",
@@ -6796,6 +6924,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "el",
@@ -6854,6 +6983,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "el-CY",
@@ -6912,6 +7042,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "el-polyton",
@@ -6970,6 +7101,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en",
@@ -7026,6 +7158,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-001",
@@ -7082,6 +7215,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-150",
@@ -7138,6 +7272,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-AE",
@@ -7194,6 +7329,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-AG",
@@ -7250,6 +7386,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-AI",
@@ -7306,6 +7443,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-AS",
@@ -7362,6 +7500,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-AT",
@@ -7418,6 +7557,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-AU",
@@ -7483,6 +7623,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-BB",
@@ -7539,6 +7680,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-BE",
@@ -7595,6 +7737,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-BI",
@@ -7651,6 +7794,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-BM",
@@ -7707,6 +7851,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-BS",
@@ -7763,6 +7908,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-BW",
@@ -7819,6 +7965,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-BZ",
@@ -7875,6 +8022,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-CA",
@@ -7931,6 +8079,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-CC",
@@ -7987,6 +8136,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-CH",
@@ -8043,6 +8193,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-CK",
@@ -8099,6 +8250,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-CM",
@@ -8155,6 +8307,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-CX",
@@ -8211,6 +8364,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-CY",
@@ -8267,6 +8421,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-CZ",
@@ -8323,6 +8478,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-DE",
@@ -8379,6 +8535,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-DG",
@@ -8435,6 +8592,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-DK",
@@ -8491,6 +8649,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-DM",
@@ -8547,6 +8706,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-Dsrt",
@@ -8599,6 +8759,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-EE",
@@ -8655,6 +8816,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-ER",
@@ -8711,6 +8873,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-ES",
@@ -8767,6 +8930,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-FI",
@@ -8823,6 +8987,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-FJ",
@@ -8879,6 +9044,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-FK",
@@ -8935,6 +9101,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-FM",
@@ -8991,6 +9158,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-FR",
@@ -9047,6 +9215,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-GB",
@@ -9103,6 +9272,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-GD",
@@ -9159,6 +9329,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-GE",
@@ -9215,6 +9386,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-GG",
@@ -9271,6 +9443,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-GH",
@@ -9327,6 +9500,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-GI",
@@ -9383,6 +9557,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-GM",
@@ -9439,6 +9614,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-GS",
@@ -9495,6 +9671,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-GU",
@@ -9551,6 +9728,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-GY",
@@ -9607,6 +9785,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-HK",
@@ -9663,6 +9842,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-HU",
@@ -9719,6 +9899,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-ID",
@@ -9775,6 +9956,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-IE",
@@ -9831,6 +10013,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-IL",
@@ -9887,6 +10070,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-IM",
@@ -9943,6 +10127,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-IN",
@@ -9999,6 +10184,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-IO",
@@ -10055,6 +10241,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-IT",
@@ -10111,6 +10298,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-JE",
@@ -10167,6 +10355,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-JM",
@@ -10223,6 +10412,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-JP",
@@ -10279,6 +10469,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-KE",
@@ -10335,6 +10526,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-KI",
@@ -10391,6 +10583,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-KN",
@@ -10447,6 +10640,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-KY",
@@ -10503,6 +10697,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-LC",
@@ -10559,6 +10754,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-LR",
@@ -10615,6 +10811,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-LS",
@@ -10671,6 +10868,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-LT",
@@ -10727,6 +10925,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-LV",
@@ -10783,6 +10982,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-MG",
@@ -10839,6 +11039,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MH",
@@ -10895,6 +11096,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MO",
@@ -10951,6 +11153,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MP",
@@ -11007,6 +11210,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MS",
@@ -11063,6 +11267,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MT",
@@ -11119,6 +11324,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MU",
@@ -11175,6 +11381,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MV",
@@ -11231,6 +11438,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MW",
@@ -11287,6 +11495,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-MY",
@@ -11343,6 +11552,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-NA",
@@ -11399,6 +11609,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-NF",
@@ -11455,6 +11666,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-NG",
@@ -11511,6 +11723,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-NL",
@@ -11567,6 +11780,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-NO",
@@ -11623,6 +11837,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-NR",
@@ -11679,6 +11894,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-NU",
@@ -11735,6 +11951,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-NZ",
@@ -11791,6 +12008,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-PG",
@@ -11847,6 +12065,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-PH",
@@ -11903,6 +12122,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-PK",
@@ -11959,6 +12179,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-PL",
@@ -12015,6 +12236,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-PN",
@@ -12071,6 +12293,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-PR",
@@ -12127,6 +12350,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-PT",
@@ -12183,6 +12407,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-PW",
@@ -12239,6 +12464,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-RO",
@@ -12295,6 +12521,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-RW",
@@ -12351,6 +12578,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SB",
@@ -12407,6 +12635,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SC",
@@ -12463,6 +12692,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SD",
@@ -12519,6 +12749,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SE",
@@ -12575,6 +12806,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-SG",
@@ -12631,6 +12863,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SH",
@@ -12687,6 +12920,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-Shaw",
@@ -12739,6 +12973,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SI",
@@ -12795,6 +13030,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-SK",
@@ -12851,6 +13087,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-SL",
@@ -12907,6 +13144,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SS",
@@ -12963,6 +13201,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SX",
@@ -13019,6 +13258,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-SZ",
@@ -13075,6 +13315,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-TC",
@@ -13131,6 +13372,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-TK",
@@ -13187,6 +13429,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-TO",
@@ -13243,6 +13486,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-TT",
@@ -13299,6 +13543,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-TV",
@@ -13355,6 +13600,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-TZ",
@@ -13411,6 +13657,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-UA",
@@ -13467,6 +13714,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-UG",
@@ -13523,6 +13771,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-UM",
@@ -13579,6 +13828,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-VC",
@@ -13635,6 +13885,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-VG",
@@ -13691,6 +13942,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-VI",
@@ -13747,6 +13999,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-VU",
@@ -13803,6 +14056,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-WS",
@@ -13859,6 +14113,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-ZA",
@@ -13915,6 +14170,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "en-ZM",
@@ -13971,6 +14227,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "en-ZW",
@@ -14027,6 +14284,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "eo",
@@ -14072,6 +14330,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es",
@@ -14127,6 +14386,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-419",
@@ -14182,6 +14442,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-AR",
@@ -14237,6 +14498,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-BO",
@@ -14292,6 +14554,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-BR",
@@ -14347,6 +14610,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-BZ",
@@ -14402,6 +14666,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-CL",
@@ -14465,6 +14730,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-CO",
@@ -14528,6 +14794,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-CR",
@@ -14583,6 +14850,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-CU",
@@ -14638,6 +14906,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-DO",
@@ -14693,6 +14962,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-EA",
@@ -14748,6 +15018,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-EC",
@@ -14803,6 +15074,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-GQ",
@@ -14858,6 +15130,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-GT",
@@ -14913,6 +15186,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-HN",
@@ -14968,6 +15242,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-IC",
@@ -15023,6 +15298,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-MX",
@@ -15078,6 +15354,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-NI",
@@ -15133,6 +15410,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-PA",
@@ -15188,6 +15466,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-PE",
@@ -15247,6 +15526,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-PH",
@@ -15302,6 +15582,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-PR",
@@ -15357,6 +15638,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-PY",
@@ -15417,6 +15699,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-SV",
@@ -15472,6 +15755,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-US",
@@ -15527,6 +15811,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "es-UY",
@@ -15586,6 +15871,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "es-VE",
@@ -15641,6 +15927,7 @@ pub const entries = .{
             .{ 10, 1200, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "et",
@@ -15701,6 +15988,7 @@ pub const entries = .{
             .{ 10, 1380, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "eu",
@@ -15758,6 +16046,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ewo",
@@ -15803,6 +16092,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fa",
@@ -15863,6 +16153,7 @@ pub const entries = .{
             .{ 11, 0, 60, 0 },
         },
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "fa-AF",
@@ -15923,6 +16214,7 @@ pub const entries = .{
             .{ 11, 0, 60, 0 },
         },
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "ff",
@@ -15968,6 +16260,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Adlm",
@@ -16025,6 +16318,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-BF",
@@ -16082,6 +16376,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-CM",
@@ -16139,6 +16434,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-GH",
@@ -16196,6 +16492,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-GM",
@@ -16253,6 +16550,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-GW",
@@ -16310,6 +16608,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-LR",
@@ -16367,6 +16666,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-MR",
@@ -16424,6 +16724,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-NE",
@@ -16481,6 +16782,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-NG",
@@ -16538,6 +16840,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-SL",
@@ -16595,6 +16898,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Adlm-SN",
@@ -16652,6 +16956,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞥐", "𞥑", "𞥒", "𞥓", "𞥔", "𞥕", "𞥖", "𞥗", "𞥘", "𞥙" },
+        .decimal = ".",
     },
     .{
         .tag = "ff-Latn",
@@ -16697,6 +17002,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-BF",
@@ -16742,6 +17048,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-CM",
@@ -16787,6 +17094,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-GH",
@@ -16832,6 +17140,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-GM",
@@ -16877,6 +17186,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-GN",
@@ -16922,6 +17232,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-GW",
@@ -16967,6 +17278,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-LR",
@@ -17012,6 +17324,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-MR",
@@ -17057,6 +17370,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-NE",
@@ -17102,6 +17416,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-NG",
@@ -17147,6 +17462,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ff-Latn-SL",
@@ -17192,6 +17508,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fi",
@@ -17258,6 +17575,7 @@ pub const entries = .{
             .{ 10, 1380, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fil",
@@ -17319,6 +17637,7 @@ pub const entries = .{
             .{ 10, 1080, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "fo",
@@ -17373,6 +17692,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fo-DK",
@@ -17427,6 +17747,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr",
@@ -17483,6 +17804,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-BE",
@@ -17539,6 +17861,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-BF",
@@ -17595,6 +17918,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-BI",
@@ -17651,6 +17975,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-BJ",
@@ -17707,6 +18032,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-BL",
@@ -17763,6 +18089,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-CA",
@@ -17819,6 +18146,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-CD",
@@ -17875,6 +18203,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-CF",
@@ -17931,6 +18260,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-CG",
@@ -17987,6 +18317,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-CH",
@@ -18043,6 +18374,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-CI",
@@ -18099,6 +18431,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-CM",
@@ -18155,6 +18488,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-DJ",
@@ -18211,6 +18545,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-DZ",
@@ -18267,6 +18602,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-GA",
@@ -18323,6 +18659,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-GF",
@@ -18379,6 +18716,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-GN",
@@ -18435,6 +18773,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-GP",
@@ -18491,6 +18830,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-GQ",
@@ -18547,6 +18887,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-HT",
@@ -18603,6 +18944,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-KM",
@@ -18659,6 +19001,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-LU",
@@ -18715,6 +19058,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-MA",
@@ -18771,6 +19115,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-MC",
@@ -18827,6 +19172,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-MF",
@@ -18883,6 +19229,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-MG",
@@ -18939,6 +19286,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-ML",
@@ -18999,6 +19347,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-MQ",
@@ -19055,6 +19404,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-MR",
@@ -19111,6 +19461,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-MU",
@@ -19167,6 +19518,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-NC",
@@ -19223,6 +19575,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-NE",
@@ -19279,6 +19632,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-PF",
@@ -19335,6 +19689,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-PM",
@@ -19391,6 +19746,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-RE",
@@ -19447,6 +19803,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-RW",
@@ -19503,6 +19860,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-SC",
@@ -19559,6 +19917,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-SN",
@@ -19615,6 +19974,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-SY",
@@ -19671,6 +20031,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-TD",
@@ -19727,6 +20088,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-TG",
@@ -19783,6 +20145,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-TN",
@@ -19839,6 +20202,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-VU",
@@ -19895,6 +20259,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-WF",
@@ -19951,6 +20316,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fr-YT",
@@ -20007,6 +20373,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "frr",
@@ -20052,6 +20419,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "fur",
@@ -20097,6 +20465,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "fy",
@@ -20142,6 +20511,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ga",
@@ -20187,6 +20557,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ga-GB",
@@ -20232,6 +20603,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gaa",
@@ -20281,6 +20653,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gd",
@@ -20330,6 +20703,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gez",
@@ -20375,6 +20749,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gez-ER",
@@ -20420,6 +20795,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gl",
@@ -20485,6 +20861,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "gn",
@@ -20530,6 +20907,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gsw",
@@ -20586,6 +20964,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gsw-FR",
@@ -20642,6 +21021,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gsw-LI",
@@ -20698,6 +21078,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gu",
@@ -20753,6 +21134,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "guz",
@@ -20802,6 +21184,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "gv",
@@ -20847,6 +21230,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ha",
@@ -20896,6 +21280,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ha-Arab",
@@ -20941,6 +21326,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ha-Arab-SD",
@@ -20986,6 +21372,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ha-GH",
@@ -21035,6 +21422,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ha-NE",
@@ -21084,6 +21472,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "haw",
@@ -21129,6 +21518,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "he",
@@ -21186,6 +21576,7 @@ pub const entries = .{
             .{ 11, 180, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "hi",
@@ -21241,6 +21632,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "hi-Latn",
@@ -21301,6 +21693,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "hnj",
@@ -21351,6 +21744,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞅀", "𞅁", "𞅂", "𞅃", "𞅄", "𞅅", "𞅆", "𞅇", "𞅈", "𞅉" },
+        .decimal = ".",
     },
     .{
         .tag = "hnj-Hmnp",
@@ -21401,6 +21795,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞅀", "𞅁", "𞅂", "𞅃", "𞅄", "𞅅", "𞅆", "𞅇", "𞅈", "𞅉" },
+        .decimal = ".",
     },
     .{
         .tag = "hr",
@@ -21470,6 +21865,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "hr-BA",
@@ -21530,6 +21926,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "hsb",
@@ -21579,6 +21976,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ht",
@@ -21628,6 +22026,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "hu",
@@ -21686,6 +22085,7 @@ pub const entries = .{
             .{ 11, 240, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "hy",
@@ -21746,6 +22146,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ia",
@@ -21795,6 +22196,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "id",
@@ -21847,6 +22249,7 @@ pub const entries = .{
             .{ 10, 1080, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ie",
@@ -21892,6 +22295,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ig",
@@ -21941,6 +22345,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ii",
@@ -21990,6 +22395,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "io",
@@ -22035,6 +22441,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "is",
@@ -22091,6 +22498,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "it",
@@ -22147,6 +22555,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "it-CH",
@@ -22203,6 +22612,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "it-SM",
@@ -22259,6 +22669,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "it-VA",
@@ -22315,6 +22726,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "iu",
@@ -22360,6 +22772,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "iu-Latn",
@@ -22405,6 +22818,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ja",
@@ -22458,6 +22872,7 @@ pub const entries = .{
             .{ 11, 1380, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "jbo",
@@ -22503,6 +22918,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "jgo",
@@ -22552,6 +22968,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "jmc",
@@ -22597,6 +23014,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "jv",
@@ -22642,6 +23060,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ka",
@@ -22698,6 +23117,7 @@ pub const entries = .{
             .{ 10, 1260, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kaa",
@@ -22747,6 +23167,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kaa-Cyrl",
@@ -22796,6 +23217,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kaa-Latn",
@@ -22841,6 +23263,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kab",
@@ -22890,6 +23313,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kaj",
@@ -22935,6 +23359,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kam",
@@ -22980,6 +23405,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kcg",
@@ -23025,6 +23451,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kde",
@@ -23070,6 +23497,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kea",
@@ -23115,6 +23543,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kek",
@@ -23164,6 +23593,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ken",
@@ -23209,6 +23639,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kgp",
@@ -23261,6 +23692,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "khq",
@@ -23306,6 +23738,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ki",
@@ -23351,6 +23784,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kk",
@@ -23411,6 +23845,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kk-Arab",
@@ -23467,6 +23902,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kk-Cyrl",
@@ -23527,6 +23963,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kk-KZ",
@@ -23587,6 +24024,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kkj",
@@ -23637,6 +24075,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kl",
@@ -23686,6 +24125,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kln",
@@ -23735,6 +24175,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "km",
@@ -23796,6 +24237,7 @@ pub const entries = .{
             .{ 10, 1260, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kn",
@@ -23851,6 +24293,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ko",
@@ -23904,6 +24347,7 @@ pub const entries = .{
             .{ 10, 1260, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ko-CN",
@@ -23957,6 +24401,7 @@ pub const entries = .{
             .{ 10, 1260, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ko-KP",
@@ -24010,6 +24455,7 @@ pub const entries = .{
             .{ 10, 1260, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kok",
@@ -24078,6 +24524,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kok-Deva",
@@ -24146,6 +24593,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kok-Latn",
@@ -24201,6 +24649,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kpe",
@@ -24246,6 +24695,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kpe-GN",
@@ -24291,6 +24741,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ks",
@@ -24344,6 +24795,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "ks-Arab",
@@ -24397,6 +24849,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "ks-Deva",
@@ -24455,6 +24908,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ksb",
@@ -24500,6 +24954,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ksf",
@@ -24545,6 +25000,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ksh",
@@ -24602,6 +25058,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ku",
@@ -24651,6 +25108,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ku-Arab",
@@ -24696,6 +25154,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ku-Arab-IR",
@@ -24741,6 +25200,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ku-Latn",
@@ -24790,6 +25250,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ku-Latn-IQ",
@@ -24839,6 +25300,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ku-Latn-SY",
@@ -24888,6 +25350,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ku-TR",
@@ -24937,6 +25400,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "kw",
@@ -24982,6 +25446,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kxv",
@@ -25027,6 +25492,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kxv-Deva",
@@ -25072,6 +25538,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kxv-Latn",
@@ -25117,6 +25584,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kxv-Orya",
@@ -25166,6 +25634,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "kxv-Telu",
@@ -25215,6 +25684,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ky",
@@ -25279,6 +25749,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "la",
@@ -25324,6 +25795,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "lag",
@@ -25369,6 +25841,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "lb",
@@ -25427,6 +25900,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "lg",
@@ -25472,6 +25946,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "lij",
@@ -25524,6 +25999,7 @@ pub const entries = .{
             .{ 10, 1320, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "lkt",
@@ -25574,6 +26050,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "lld",
@@ -25623,6 +26100,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "lmo",
@@ -25672,6 +26150,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ln",
@@ -25717,6 +26196,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ln-AO",
@@ -25762,6 +26242,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ln-CF",
@@ -25807,6 +26288,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ln-CG",
@@ -25852,6 +26334,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "lo",
@@ -25912,6 +26395,7 @@ pub const entries = .{
             .{ 10, 1200, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "lrc",
@@ -25961,6 +26445,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "lrc-IQ",
@@ -26010,6 +26495,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "lt",
@@ -26074,6 +26560,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ltg",
@@ -26119,6 +26606,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "lu",
@@ -26164,6 +26652,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "luo",
@@ -26209,6 +26698,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "luy",
@@ -26254,6 +26744,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "lv",
@@ -26315,6 +26806,7 @@ pub const entries = .{
             .{ 10, 1380, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "lzz",
@@ -26360,6 +26852,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mai",
@@ -26413,6 +26906,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mas",
@@ -26458,6 +26952,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mas-TZ",
@@ -26503,6 +26998,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mdf",
@@ -26548,6 +27044,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mer",
@@ -26593,6 +27090,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mfe",
@@ -26638,6 +27136,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mg",
@@ -26683,6 +27182,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mgh",
@@ -26728,6 +27228,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "mgo",
@@ -26773,6 +27274,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mhn",
@@ -26818,6 +27320,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mi",
@@ -26867,6 +27370,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mic",
@@ -26912,6 +27416,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mk",
@@ -26969,6 +27474,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ml",
@@ -27033,6 +27539,7 @@ pub const entries = .{
             .{ 10, 1140, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mn",
@@ -27094,6 +27601,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mn-Mong",
@@ -27146,6 +27654,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mn-Mong-MN",
@@ -27215,6 +27724,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mni",
@@ -27273,6 +27783,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯" },
+        .decimal = ".",
     },
     .{
         .tag = "mni-Beng",
@@ -27331,6 +27842,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯" },
+        .decimal = ".",
     },
     .{
         .tag = "mni-Mtei",
@@ -27376,6 +27888,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "꯰", "꯱", "꯲", "꯳", "꯴", "꯵", "꯶", "꯷", "꯸", "꯹" },
+        .decimal = ".",
     },
     .{
         .tag = "moh",
@@ -27421,6 +27934,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mr",
@@ -27478,6 +27992,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = [10][]const u8{ "०", "१", "२", "३", "४", "५", "६", "७", "८", "९" },
+        .decimal = ".",
     },
     .{
         .tag = "ms",
@@ -27533,6 +28048,7 @@ pub const entries = .{
             .{ 10, 1140, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ms-Arab",
@@ -27584,6 +28100,7 @@ pub const entries = .{
             .{ 10, 1140, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ms-Arab-BN",
@@ -27635,6 +28152,7 @@ pub const entries = .{
             .{ 10, 1140, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ms-BN",
@@ -27690,6 +28208,7 @@ pub const entries = .{
             .{ 10, 1140, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ms-ID",
@@ -27745,6 +28264,7 @@ pub const entries = .{
             .{ 10, 1140, 1440, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ms-SG",
@@ -27800,6 +28320,7 @@ pub const entries = .{
             .{ 10, 1140, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mt",
@@ -27854,6 +28375,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mua",
@@ -27899,6 +28421,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "mus",
@@ -27944,6 +28467,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mww",
@@ -27989,6 +28513,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞅀", "𞅁", "𞅂", "𞅃", "𞅄", "𞅅", "𞅆", "𞅇", "𞅈", "𞅉" },
+        .decimal = ".",
     },
     .{
         .tag = "mww-Hmnp",
@@ -28034,6 +28559,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "𞅀", "𞅁", "𞅂", "𞅃", "𞅄", "𞅅", "𞅆", "𞅇", "𞅈", "𞅉" },
+        .decimal = ".",
     },
     .{
         .tag = "my",
@@ -28086,6 +28612,7 @@ pub const entries = .{
             .{ 10, 1140, 1440, 0 },
         },
         .digits = [10][]const u8{ "၀", "၁", "၂", "၃", "၄", "၅", "၆", "၇", "၈", "၉" },
+        .decimal = ".",
     },
     .{
         .tag = "myv",
@@ -28131,6 +28658,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "mzn",
@@ -28176,6 +28704,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "naq",
@@ -28221,6 +28750,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "nb",
@@ -28281,6 +28811,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nb-SJ",
@@ -28341,6 +28872,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nd",
@@ -28386,6 +28918,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "nds",
@@ -28431,6 +28964,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nds-NL",
@@ -28476,6 +29010,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ne",
@@ -28537,6 +29072,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = [10][]const u8{ "०", "१", "२", "३", "४", "५", "६", "७", "८", "९" },
+        .decimal = ".",
     },
     .{
         .tag = "ne-IN",
@@ -28598,6 +29134,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = [10][]const u8{ "०", "१", "२", "३", "४", "५", "६", "७", "८", "९" },
+        .decimal = ".",
     },
     .{
         .tag = "nl",
@@ -28653,6 +29190,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nl-AW",
@@ -28708,6 +29246,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nl-BE",
@@ -28763,6 +29302,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nl-BQ",
@@ -28818,6 +29358,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nl-CW",
@@ -28873,6 +29414,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nl-SR",
@@ -28928,6 +29470,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nl-SX",
@@ -28983,6 +29526,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nmg",
@@ -29028,6 +29572,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nn",
@@ -29093,6 +29638,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nnh",
@@ -29138,6 +29684,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "no",
@@ -29198,6 +29745,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nqo",
@@ -29248,6 +29796,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "߀", "߁", "߂", "߃", "߄", "߅", "߆", "߇", "߈", "߉" },
+        .decimal = ".",
     },
     .{
         .tag = "nr",
@@ -29293,6 +29842,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "nso",
@@ -29342,6 +29892,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "nus",
@@ -29387,6 +29938,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "nv",
@@ -29432,6 +29984,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ny",
@@ -29477,6 +30030,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "nyn",
@@ -29522,6 +30076,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "oc",
@@ -29567,6 +30122,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "oc-ES",
@@ -29612,6 +30168,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "oka",
@@ -29657,6 +30214,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "oka-US",
@@ -29702,6 +30260,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "om",
@@ -29747,6 +30306,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "om-KE",
@@ -29792,6 +30352,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "or",
@@ -29837,6 +30398,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "os",
@@ -29895,6 +30457,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "os-RU",
@@ -29953,6 +30516,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "osa",
@@ -30003,6 +30567,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pa",
@@ -30058,6 +30623,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pa-Arab",
@@ -30109,6 +30675,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "pa-Guru",
@@ -30164,6 +30731,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pap",
@@ -30209,6 +30777,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pap-AW",
@@ -30254,6 +30823,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pcm",
@@ -30307,6 +30877,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pi",
@@ -30352,6 +30923,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pi-Latn",
@@ -30397,6 +30969,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pis",
@@ -30442,6 +31015,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "pl",
@@ -30508,6 +31082,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pms",
@@ -30553,6 +31128,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "prg",
@@ -30602,6 +31178,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ps",
@@ -30651,6 +31228,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "ps-PK",
@@ -30700,6 +31278,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "pt",
@@ -30756,6 +31335,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-AO",
@@ -30812,6 +31392,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-CH",
@@ -30868,6 +31449,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-CV",
@@ -30924,6 +31506,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-GQ",
@@ -30980,6 +31563,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-GW",
@@ -31036,6 +31620,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-LU",
@@ -31092,6 +31677,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-MO",
@@ -31148,6 +31734,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-MZ",
@@ -31204,6 +31791,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-PT",
@@ -31260,6 +31848,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-ST",
@@ -31316,6 +31905,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "pt-TL",
@@ -31372,6 +31962,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "qu",
@@ -31417,6 +32008,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "qu-BO",
@@ -31462,6 +32054,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "qu-EC",
@@ -31507,6 +32100,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "quc",
@@ -31552,6 +32146,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "raj",
@@ -31601,6 +32196,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "०", "१", "२", "३", "४", "५", "६", "७", "८", "९" },
+        .decimal = ".",
     },
     .{
         .tag = "rhg",
@@ -31646,6 +32242,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "rhg-Rohg",
@@ -31691,6 +32288,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "rhg-Rohg-BD",
@@ -31736,6 +32334,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "rif",
@@ -31781,6 +32380,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "rm",
@@ -31834,6 +32434,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "rn",
@@ -31879,6 +32480,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ro",
@@ -31931,6 +32533,7 @@ pub const entries = .{
             .{ 10, 1320, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ro-MD",
@@ -31987,6 +32590,7 @@ pub const entries = .{
             .{ 10, 1320, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "rof",
@@ -32032,6 +32636,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ru",
@@ -32092,6 +32697,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ru-BY",
@@ -32152,6 +32758,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ru-KG",
@@ -32212,6 +32819,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ru-KZ",
@@ -32272,6 +32880,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ru-MD",
@@ -32332,6 +32941,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ru-UA",
@@ -32392,6 +33002,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "rw",
@@ -32437,6 +33048,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "rwk",
@@ -32482,6 +33094,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sa",
@@ -32535,6 +33148,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "०", "१", "२", "३", "४", "५", "६", "७", "८", "९" },
+        .decimal = ".",
     },
     .{
         .tag = "sah",
@@ -32584,6 +33198,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "saq",
@@ -32629,6 +33244,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sat",
@@ -32678,6 +33294,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "᱐", "᱑", "᱒", "᱓", "᱔", "᱕", "᱖", "᱗", "᱘", "᱙" },
+        .decimal = ".",
     },
     .{
         .tag = "sat-Deva",
@@ -32723,6 +33340,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "०", "१", "२", "३", "४", "५", "६", "७", "८", "९" },
+        .decimal = ".",
     },
     .{
         .tag = "sat-Olck",
@@ -32772,6 +33390,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "᱐", "᱑", "᱒", "᱓", "᱔", "᱕", "᱖", "᱗", "᱘", "᱙" },
+        .decimal = ".",
     },
     .{
         .tag = "sbp",
@@ -32817,6 +33436,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sc",
@@ -32866,6 +33486,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "scn",
@@ -32918,6 +33539,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sd",
@@ -32963,6 +33585,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = ".",
     },
     .{
         .tag = "sd-Arab",
@@ -33008,6 +33631,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = ".",
     },
     .{
         .tag = "sd-Deva",
@@ -33070,6 +33694,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sdh",
@@ -33115,6 +33740,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "sdh-IQ",
@@ -33160,6 +33786,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = [10][]const u8{ "٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩" },
+        .decimal = "٫",
     },
     .{
         .tag = "se",
@@ -33209,6 +33836,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "se-FI",
@@ -33258,6 +33886,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "se-SE",
@@ -33307,6 +33936,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "seh",
@@ -33352,6 +33982,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ses",
@@ -33397,6 +34028,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sg",
@@ -33442,6 +34074,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sgs",
@@ -33487,6 +34120,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "shi",
@@ -33532,6 +34166,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "shi-Latn",
@@ -33577,6 +34212,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "shi-Tfng",
@@ -33622,6 +34258,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "shn",
@@ -33680,6 +34317,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "shn-TH",
@@ -33738,6 +34376,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "si",
@@ -33796,6 +34435,7 @@ pub const entries = .{
             .{ 11, 0, 60, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sid",
@@ -33841,6 +34481,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sk",
@@ -33902,6 +34543,7 @@ pub const entries = .{
             .{ 10, 1320, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "skr",
@@ -33947,6 +34589,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sl",
@@ -34004,6 +34647,7 @@ pub const entries = .{
             .{ 10, 1320, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sma",
@@ -34049,6 +34693,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sma-NO",
@@ -34094,6 +34739,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "smj",
@@ -34139,6 +34785,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "smj-NO",
@@ -34184,6 +34831,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "smn",
@@ -34234,6 +34882,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sms",
@@ -34279,6 +34928,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sn",
@@ -34328,6 +34978,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "so",
@@ -34381,6 +35032,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "so-DJ",
@@ -34434,6 +35086,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "so-ET",
@@ -34487,6 +35140,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "so-KE",
@@ -34540,6 +35194,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sq",
@@ -34601,6 +35256,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sq-MK",
@@ -34662,6 +35318,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sq-XK",
@@ -34723,6 +35380,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr",
@@ -34779,6 +35437,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr-Cyrl",
@@ -34835,6 +35494,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr-Cyrl-BA",
@@ -34891,6 +35551,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr-Cyrl-ME",
@@ -34947,6 +35608,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr-Cyrl-XK",
@@ -35003,6 +35665,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr-Latn",
@@ -35059,6 +35722,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr-Latn-BA",
@@ -35115,6 +35779,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr-Latn-ME",
@@ -35171,6 +35836,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sr-Latn-XK",
@@ -35227,6 +35893,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ss",
@@ -35272,6 +35939,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ss-SZ",
@@ -35317,6 +35985,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ssy",
@@ -35362,6 +36031,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "st",
@@ -35411,6 +36081,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "st-LS",
@@ -35460,6 +36131,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "su",
@@ -35509,6 +36181,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "su-Latn",
@@ -35558,6 +36231,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "suz",
@@ -35603,6 +36277,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "suz-Deva",
@@ -35648,6 +36323,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "suz-Sunu",
@@ -35693,6 +36369,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sv",
@@ -35749,6 +36426,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sv-AX",
@@ -35805,6 +36483,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sv-FI",
@@ -35861,6 +36540,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sw",
@@ -35918,6 +36598,7 @@ pub const entries = .{
             .{ 10, 1140, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sw-CD",
@@ -35975,6 +36656,7 @@ pub const entries = .{
             .{ 10, 1140, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "sw-KE",
@@ -36032,6 +36714,7 @@ pub const entries = .{
             .{ 10, 1140, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "sw-UG",
@@ -36089,6 +36772,7 @@ pub const entries = .{
             .{ 10, 1140, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "syr",
@@ -36138,6 +36822,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "syr-SY",
@@ -36187,6 +36872,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "szl",
@@ -36232,6 +36918,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ta",
@@ -36291,6 +36978,7 @@ pub const entries = .{
             .{ 10, 1260, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ta-LK",
@@ -36350,6 +37038,7 @@ pub const entries = .{
             .{ 10, 1260, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ta-MY",
@@ -36409,6 +37098,7 @@ pub const entries = .{
             .{ 10, 1260, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ta-SG",
@@ -36468,6 +37158,7 @@ pub const entries = .{
             .{ 10, 1260, 180, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "te",
@@ -36519,6 +37210,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "teo",
@@ -36564,6 +37256,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "teo-KE",
@@ -36609,6 +37302,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "tg",
@@ -36654,6 +37348,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "th",
@@ -36712,6 +37407,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ti",
@@ -36757,6 +37453,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ti-ER",
@@ -36802,6 +37499,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "tig",
@@ -36847,6 +37545,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "tk",
@@ -36905,6 +37604,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "tn",
@@ -36954,6 +37654,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "tn-BW",
@@ -37003,6 +37704,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "to",
@@ -37060,6 +37762,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "tok",
@@ -37109,6 +37812,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "tpi",
@@ -37154,6 +37858,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "tr",
@@ -37212,6 +37917,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "tr-CY",
@@ -37270,6 +37976,7 @@ pub const entries = .{
             .{ 10, 1260, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "trv",
@@ -37315,6 +38022,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "trw",
@@ -37360,6 +38068,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ts",
@@ -37405,6 +38114,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "tt",
@@ -37450,6 +38160,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "twq",
@@ -37499,6 +38210,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "tyv",
@@ -37544,6 +38256,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "tzm",
@@ -37593,6 +38306,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "ug",
@@ -37642,6 +38356,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "uk",
@@ -37702,6 +38417,7 @@ pub const entries = .{
             .{ 10, 0, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "und",
@@ -37750,6 +38466,7 @@ pub const entries = .{
             .{ 3, 720, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ur",
@@ -37806,6 +38523,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ur-IN",
@@ -37862,6 +38580,7 @@ pub const entries = .{
             .{ 10, 1200, 240, 0 },
         },
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "uz",
@@ -37918,6 +38637,7 @@ pub const entries = .{
             .{ 10, 1320, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "uz-Arab",
@@ -37970,6 +38690,7 @@ pub const entries = .{
             .{ 10, 1320, 360, 0 },
         },
         .digits = [10][]const u8{ "۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹" },
+        .decimal = "٫",
     },
     .{
         .tag = "uz-Cyrl",
@@ -38022,6 +38743,7 @@ pub const entries = .{
             .{ 10, 1320, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "uz-Latn",
@@ -38078,6 +38800,7 @@ pub const entries = .{
             .{ 10, 1320, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "vai",
@@ -38123,6 +38846,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "vai-Latn",
@@ -38168,6 +38892,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "vai-Vaii",
@@ -38213,6 +38938,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "ve",
@@ -38258,6 +38984,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "vec",
@@ -38303,6 +39030,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "vi",
@@ -38367,6 +39095,7 @@ pub const entries = .{
             .{ 10, 1260, 240, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "vmw",
@@ -38416,6 +39145,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "vo",
@@ -38461,6 +39191,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "vun",
@@ -38506,6 +39237,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "wa",
@@ -38551,6 +39283,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "wae",
@@ -38596,6 +39329,7 @@ pub const entries = .{
         .min_days_in_first_week = 4,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "wal",
@@ -38641,6 +39375,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "wbp",
@@ -38686,6 +39421,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "wo",
@@ -38731,6 +39467,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "xh",
@@ -38785,6 +39522,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "xnr",
@@ -38830,6 +39568,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "xog",
@@ -38875,6 +39614,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "yav",
@@ -38920,6 +39660,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "yi",
@@ -38969,6 +39710,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "yo",
@@ -39023,6 +39765,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "yo-BJ",
@@ -39077,6 +39820,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "yrl",
@@ -39129,6 +39873,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "yrl-CO",
@@ -39181,6 +39926,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "yrl-VE",
@@ -39233,6 +39979,7 @@ pub const entries = .{
             .{ 10, 0, 360, 0 },
         },
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "yue",
@@ -39286,6 +40033,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "yue-Hans",
@@ -39339,6 +40087,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "yue-Hant",
@@ -39392,6 +40141,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "yue-Hant-CN",
@@ -39445,6 +40195,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "yue-Hant-MO",
@@ -39498,6 +40249,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "za",
@@ -39547,6 +40299,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zgh",
@@ -39592,6 +40345,7 @@ pub const entries = .{
         .min_days_in_first_week = 1,
         .day_period_rules = &[_][4]u16{},
         .digits = null,
+        .decimal = ",",
     },
     .{
         .tag = "zh",
@@ -39649,6 +40403,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hans",
@@ -39706,6 +40461,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hans-HK",
@@ -39763,6 +40519,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hans-MO",
@@ -39820,6 +40577,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hans-MY",
@@ -39877,6 +40635,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hans-SG",
@@ -39934,6 +40693,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hant",
@@ -39987,6 +40747,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hant-HK",
@@ -40040,6 +40801,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hant-MO",
@@ -40093,6 +40855,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Hant-MY",
@@ -40146,6 +40909,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zh-Latn",
@@ -40199,6 +40963,7 @@ pub const entries = .{
             .{ 10, 0, 300, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
     .{
         .tag = "zu",
@@ -40258,6 +41023,7 @@ pub const entries = .{
             .{ 10, 1140, 1440, 0 },
         },
         .digits = null,
+        .decimal = ".",
     },
 };
 

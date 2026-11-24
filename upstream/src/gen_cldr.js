@@ -256,6 +256,25 @@ function digitsOf(tag) {
   return Array.from(definition._digits);
 }
 
+// The decimal separator of the locale's default numbering system, which
+// is what a fraction of a second is written after when a skeleton asks for
+// one and the pattern it matched has none: ICU's DateTimePatternGenerator
+// appends it between the seconds and the fraction, so German writes
+// `mm:ss,SSS` and Egyptian Arabic `mm:ss٫SSS`. Taken from the same
+// numbering system the digits are, because a separator from one system
+// between digits of another is a number nobody writes.
+function decimalOf(tag) {
+  let numbers;
+  try {
+    numbers = read(numbersPath, 'main', tag, 'numbers.json').main[tag].numbers;
+  } catch {
+    return '.';
+  }
+  const system = numbers.defaultNumberingSystem || 'latn';
+  const symbols = numbers[`symbols-numberSystem-${system}`] || numbers['symbols-numberSystem-latn'];
+  return (symbols && symbols.decimal) || '.';
+}
+
 // ---------------------------------------------------------------------
 
 const mainDir = path.resolve(datesPath, 'main');
@@ -363,6 +382,7 @@ for (const tag of tags) {
 
   const rules = dayPeriodRules(tag);
   const digits = digitsOf(tag);
+  const decimal = decimalOf(tag);
 
   if (!dateFormats.every(Boolean) || !timeFormats.every(Boolean) || !dateTimeFormats.every(Boolean) ||
       !dateTimeAtTimeFormats.every(Boolean)) {
@@ -447,6 +467,7 @@ for (const tag of tags) {
       ? '        .digits = null,'
       : `        .digits = ${zigArray('[10][]const u8', digits)},`,
   );
+  out.push(`        .decimal = ${zigString(decimal)},`);
 
   out.push('    },');
   count += 1;

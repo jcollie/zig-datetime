@@ -263,6 +263,10 @@ pub fn build(b: *std.Build) void {
     });
 
     const run_cldr_dump = b.addRunArtifact(cldr_dump);
+    // The skeletons need each locale's `availableFormats`, which the
+    // generated tables leave out, so the dump reads them from the same
+    // package the tables were generated from.
+    if (b.lazyDependency("cldr_dates", .{})) |dates| run_cldr_dump.addDirectoryArg(dates.path(""));
     const run_cldr = b.addRunArtifact(cldr_oracle);
     run_cldr.addFileArg(run_cldr_dump.captureStdOut(.{ .basename = "cldr.tsv" }));
     run_cldr.stdio = .inherit;

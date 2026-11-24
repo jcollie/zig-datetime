@@ -9,7 +9,7 @@
 //! pattern has to be comptime known for `cldr.format` to take it apart
 //! while this is compiled, so only this side can enumerate them.
 //!
-//! Output is one record per line, tab separated, of two kinds.
+//! Output is one record per line, tab separated, of three kinds.
 //!
 //! A `P` record is a pattern applied to a value: the locale, the instant
 //! as milliseconds since the Unix epoch, the offset it is read at in
@@ -27,6 +27,16 @@
 //! its neighbors, so what is being compared is two libraries' reading of
 //! the same locale data rather than one library's reading of the other's
 //! answer.
+//!
+//! A `K` record is a skeleton: the same first three fields, then whether
+//! `match_hour_field_length` was set, the skeleton, and what
+//! `cldr.formatSkeletonWith` wrote. The generated locales carry no
+//! `availableFormats`, so this reads each locale's from the cldr-dates-full
+//! package the tables are generated from, whose directory is the one
+//! argument; ICU reads its own copy of the same data, and is asked through
+//! `DateTimePatternGenerator::getBestPattern` with the same option. What is
+//! compared is the written date rather than the pattern, so that two
+//! spellings of one pattern are not a divergence.
 
 const std = @import("std");
 const Io = std.Io;
@@ -185,6 +195,67 @@ const styles = [_][2]i8{
     .{ 0, 3 },  .{ 3, 0 },  .{ 2, 3 },
 };
 
+/// The skeletons every locale is asked for.
+///
+/// What a skeleton can differ about is which of the locale's patterns it
+/// lands on and how that pattern is bent toward it, so these are chosen
+/// for the rules rather than for coverage of the fields: the hour on both
+/// clocks at both widths and through `j`, the minute and second widths a
+/// locale keeps, a fraction of a second with and without the seconds it
+/// goes after, dates whose widths disagree with every key, and dates and
+/// times that no one pattern holds.
+const skeletons = [_][]const u8{
+    "H",      "HH",     "h",      "hh",      "Hm",     "Hmm",   "HHmm",     "Hms",
+    "Hmmss",  "HHmmss", "hm",     "hmm",     "hhmm",   "hms",   "hhmmss",   "jm",
+    "jmm",    "jms",    "jjmm",   "ms",      "mmss",   "mmssS", "mmssSSS",  "msSS",
+    "HmsSSS", "hmsSS",  "mSSS",   "HmSSS",   "sS",     "ssSSS", "jmsSSS",   "yMd",
+    "yMMdd",  "yMMMd",  "yMMMMd", "yMMMEd",  "MMMd",   "Md",    "MMdd",     "yM",
+    "yMMM",   "yMMMM",  "d",      "dd",      "EEEEd",  "Ed",    "GyMMMd",   "MMMMd",
+    "yQQQ",   "Hmv",    "hmv",    "yMMMdjm", "yMdHms", "EHm",   "MMMMEdjm", "GyMd",
+};
+
+/// The instants and offsets every skeleton is written at: a morning, where
+/// a one-digit hour shows, and an evening, where the twelve-hour clock
+/// does, each at UTC and at an offset that has minutes in it.
+const skeleton_instant_indexes = [_]usize{ 4, 0 };
+const skeleton_offset_indexes = [_]usize{ 0, 2 };
+
+/// Reads a locale's `availableFormats` out of cldr-dates-full, sorted by
+/// key, which is the order ICU reads them in and so the order that settles
+/// a tie the way ICU settles it.
+///
+/// The keys with a hyphen in them are left out: `-alt-variant` is a
+/// second opinion ICU does not load, and `-count-one` and its neighbors
+/// are plural forms of a pattern, which ICU keeps in a table of its own.
+fn availableFormats(
+    gpa: std.mem.Allocator,
+    io: Io,
+    dates_dir: []const u8,
+    tag: []const u8,
+) ![]cldr.AvailableFormat {
+    const path = try std.fmt.allocPrint(gpa, "{s}/main/{s}/ca-gregorian.json", .{ dates_dir, tag });
+    const text = try Io.Dir.cwd().readFileAlloc(io, path, gpa, .unlimited);
+    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, gpa, text, .{});
+
+    var node = parsed;
+    for ([_][]const u8{ "main", tag, "dates", "calendars", "gregorian", "dateTimeFormats", "availableFormats" }) |key| {
+        node = node.object.get(key) orelse return error.MissingAvailableFormats;
+    }
+
+    var list: std.ArrayList(cldr.AvailableFormat) = .empty;
+    var entries = node.object.iterator();
+    while (entries.next()) |entry| {
+        if (std.mem.findScalar(u8, entry.key_ptr.*, '-') != null) continue;
+        try list.append(gpa, .{ .skeleton = entry.key_ptr.*, .pattern = entry.value_ptr.string });
+    }
+    std.mem.sortUnstable(cldr.AvailableFormat, list.items, {}, struct {
+        fn lessThan(_: void, a: cldr.AvailableFormat, b: cldr.AvailableFormat) bool {
+            return std.mem.order(u8, a.skeleton, b.skeleton) == .lt;
+        }
+    }.lessThan);
+    return list.items;
+}
+
 /// Reads `millis` at `offset`, which is the value both sides are asked
 /// about.
 fn reading(millis: i64, offset: i32) DateTime {
@@ -255,6 +326,43 @@ pub fn main(init: std.process.Init) !void {
                         );
                     }
                     try out.writeByte('\n');
+                }
+            }
+        }
+    }
+
+    // The skeletons, when the build handed over the data to match them
+    // against.
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    if (args.len > 1) {
+        const dates_dir = args[1];
+        for (cldr.all) |base| {
+            var arena: std.heap.ArenaAllocator = .init(init.gpa);
+            defer arena.deinit();
+
+            var locale = base;
+            locale.available_formats = try availableFormats(arena.allocator(), io, dates_dir, base.tag);
+
+            for (skeleton_instant_indexes) |instant_index| {
+                const millis = instants[instant_index];
+                for (skeleton_offset_indexes) |offset_index| {
+                    const offset = offsets[offset_index];
+                    const value = reading(millis, offset);
+                    for (skeletons) |skeleton| {
+                        for ([_]bool{ false, true }) |hour_length| {
+                            try out.print("K\t{s}\t{d}\t{d}\t{d}\t{s}\t", .{
+                                locale.tag,
+                                millis,
+                                offset,
+                                @intFromBool(hour_length),
+                                skeleton,
+                            });
+                            try cldr.formatSkeletonWith(value, skeleton, locale, .{
+                                .match_hour_field_length = hour_length,
+                            }, out);
+                            try out.writeByte('\n');
+                        }
+                    }
                 }
             }
         }

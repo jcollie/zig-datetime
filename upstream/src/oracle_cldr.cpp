@@ -7,8 +7,11 @@
 //
 // tools/oracle_cldr_dump.zig writes one record per line -- the locale,
 // the instant in milliseconds, the offset it is read at in seconds, the
-// pattern or the pair of lengths, and what this library made of it -- and
-// this asks ICU the same question and reports every answer that differs.
+// pattern, the pair of lengths or the skeleton, and what this library made
+// of it -- and this asks ICU the same question and reports every answer
+// that differs. A skeleton goes through ICU's DateTimePatternGenerator,
+// which `cldr.formatSkeleton` is a port of, and the pattern it returns is
+// then formatted like any other.
 //
 // Three things are set up so that the two are answering the same
 // question rather than nearly the same one:
@@ -36,6 +39,7 @@
 #include <unicode/calendar.h>
 #include <unicode/datefmt.h>
 #include <unicode/dtfmtsym.h>
+#include <unicode/dtptngen.h>
 #include <unicode/gregocal.h>
 #include <unicode/locid.h>
 #include <unicode/simpletz.h>
@@ -97,6 +101,75 @@ std::string excuse(const std::string &tag, bool shortDate) {
   if (tag == "fr-ML") return "CLDR and ICU inherit this pattern differently";
 
   return "";
+}
+
+std::string formatPattern(const std::string &tag, const std::string &pattern, int offset,
+                          double millis, bool &ok);
+std::string toUtf8(const UnicodeString &text);
+Locale localeFor(const std::string &tag);
+std::string excuse(const std::string &tag, bool shortDate);
+
+// The same for a skeleton, which has divergences of its own: they are in
+// how a pattern is chosen rather than in how one is written.
+std::string excuseSkeleton(const std::string &tag, const std::string &skeleton) {
+  // `j` is the hour on the locale's clock. ICU reads the clock off CLDR's
+  // table of the hour cycles each region allows, and this library reads it
+  // off the locale's own short time, having no such table. The two agree
+  // everywhere but here: Kurdish in Latin script writes its short time as
+  // `HH:mm`, and Iraq is a twelve-hour region.
+  if (tag == "ku-Latn-IQ" && skeleton.find('j') != std::string::npos)
+    return "`j` follows the region's hour cycle in ICU and the locale's short time here";
+
+  // ICU's DateTimePatternGenerator reads at most fifty tokens of a pattern,
+  // and every character of punctuation and every quote is a token of its
+  // own. Toki Pona's long date is a run of quoted words and comes to more
+  // than fifty before its day, so ICU files it without one and a request
+  // for a long month with a day goes elsewhere. This reads the whole
+  // pattern rather than reproduce a limit that would also cut a pattern
+  // short when it is written.
+  if (tag == "tok" && skeleton.find("MMMM") != std::string::npos)
+    return "ICU stops reading a pattern after fifty tokens";
+
+  // Two of Australian English's patterns are equally near a long month
+  // with an abbreviated weekday: `MMMEd`, a month too short, and
+  // `MMMMEEEEd`, a weekday too long. ICU settles a tie by the order it read
+  // the keys in, which is the locale's own keys and then each parent's in
+  // turn, and en-AU has the second of these itself and inherits the first
+  // from en-001. CLDR's JSON distribution has already merged the parents
+  // in, so the order that would settle it is not in the data.
+  if (tag == "en-AU" && skeleton.rfind("MMMMEd", 0) == 0)
+    return "a tie ICU settles by inheritance order, which resolved data does not keep";
+
+  // The date and the time are joined by the pattern the S records
+  // already excuse.
+  if (tag == "fr-ML") return excuse(tag, true);
+
+  return "";
+}
+
+// What ICU writes for `skeleton`: the generator's best pattern, then that
+// pattern formatted the way a `P` record is.
+std::string formatSkeleton(const std::string &tag, const std::string &skeleton, bool hourLength,
+                           int offset, double millis, bool &ok) {
+  static std::map<std::string, std::unique_ptr<DateTimePatternGenerator>> generators;
+  auto &generator = generators[tag];
+  UErrorCode status = U_ZERO_ERROR;
+  if (!generator) {
+    generator.reset(DateTimePatternGenerator::createInstance(localeFor(tag), status));
+    if (U_FAILURE(status)) {
+      generator.reset();
+      ok = false;
+      return u_errorName(status);
+    }
+  }
+  UnicodeString pattern = generator->getBestPattern(
+      UnicodeString::fromUTF8(skeleton),
+      hourLength ? UDATPG_MATCH_HOUR_FIELD_LENGTH : UDATPG_MATCH_NO_OPTIONS, status);
+  if (U_FAILURE(status)) {
+    ok = false;
+    return u_errorName(status);
+  }
+  return formatPattern(tag, toUtf8(pattern), offset, millis, ok);
 }
 
 // The locales CLDR ships and this ICU does not, which are skipped and
@@ -331,6 +404,33 @@ int main(int argc, char **argv) {
           what += timeStyle < 0 ? "none" : names[timeStyle];
           mismatches.push_back(
               {tag, what, ours, theirs, static_cast<long long>(millis), offset});
+        }
+      }
+    } else if (line[0] == 'K') {
+      auto parts = split(line, '\t', 7);
+      if (parts.size() != 7) {
+        std::fprintf(stderr, "oracle: malformed K record: %s\n", line.c_str());
+        return 2;
+      }
+      const std::string &tag = parts[1];
+      if (!known(tag)) continue;
+
+      double millis = std::strtod(parts[2].c_str(), nullptr);
+      int offset = std::atoi(parts[3].c_str());
+      bool hourLength = parts[4] == "1";
+      const std::string &skeleton = parts[5];
+      const std::string &ours = parts[6];
+
+      bool ok = false;
+      std::string theirs = formatSkeleton(tag, skeleton, hourLength, offset, millis, ok);
+      checked += 1;
+      if (!ok || ours != theirs) {
+        std::string reason = excuseSkeleton(tag, skeleton);
+        if (!reason.empty()) {
+          excused[tag + ": " + reason] += 1;
+        } else {
+          std::string what = "skeleton " + skeleton + (hourLength ? " matching the hour's length" : "");
+          mismatches.push_back({tag, what, ours, theirs, static_cast<long long>(millis), offset});
         }
       }
     } else {

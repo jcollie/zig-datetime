@@ -216,8 +216,9 @@ pub const Locale = struct {
     /// skeleton; see `AvailableFormat` for why this is empty on every
     /// locale generated here and what to do about it.
     ///
-    /// Order matters only in that an exact match is taken as soon as it is
-    /// seen; otherwise `cldr.matchSkeleton` scores the whole table.
+    /// Order matters only between two entries a request is equally near,
+    /// where the earlier wins. ICU reads CLDR's keys in sorted order, so
+    /// sorting them by `skeleton` is what gives ICU's answer in a tie.
     available_formats: []const AvailableFormat = &.{},
 
     /// The day a week begins on here, which `e`, `c` and `w` count from.
@@ -238,6 +239,14 @@ pub const Locale = struct {
     /// locale rather than as something done to the output afterwards.
     /// Null means the ASCII digits.
     digits: ?*const [10][]const u8 = null,
+
+    /// The decimal separator of that same numbering system: `.` in
+    /// English, `,` in German, `٫` in Egyptian Arabic. A date pattern
+    /// never needs one, but a skeleton asking for a fraction of a second
+    /// does when the pattern it matched has none, because then the
+    /// fraction is appended after the seconds with this between them;
+    /// see `cldr.formatSkeleton`.
+    decimal: []const u8 = ".",
 
     /// Returns the name of `month` at `width` in `context`.
     ///
@@ -666,6 +675,7 @@ fn fromEntry(comptime raw: anytype) Locale {
         .min_days_in_first_week = raw.min_days_in_first_week,
         .day_period_rules = &tables.rules,
         .digits = if (tables.digits) |*ten| ten else null,
+        .decimal = raw.decimal,
     };
 }
 

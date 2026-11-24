@@ -586,6 +586,42 @@ French and `2024/03/05 14:30` in Japanese, because the arrangement is
 data rather than something this library decided. `formatDate` and
 `formatTime` ask for one half.
 
+#### Skeletons
+
+The third way of asking is a skeleton, which names the fields wanted and
+how wide, in any order, and leaves their arrangement to the locale:
+
+```zig
+try datetime.cldr.formatSkeleton(value, "yMMMd", locale, writer);   // Mar 5, 2024 / 5. März 2024
+try datetime.cldr.formatSkeleton(value, "jmm", locale, writer);     // 2:30 PM / 14:30
+try datetime.cldr.formatSkeletonWith(value, "Hmm", locale, .{
+    .match_hour_field_length = true,
+}, writer);                                                          // 8:05 rather than 08:05
+```
+
+`cldr.bestPattern` returns the pattern itself. This is a port of ICU's
+`DateTimePatternGenerator`, which is what `Intl.DateTimeFormat` calls,
+rather than something that resembles it: the same table of the locale's
+patterns, the same measure of which is nearest, and the same rules for
+bending that pattern toward the request. A fraction of a second the
+pattern has no room for is written after the seconds with the locale's
+decimal separator, `mm:ss,SSS` in German. The hour, minute and second
+keep the widths the locale wrote unless `SkeletonOptions` asks for the
+request's, which is what ECMA-402 does for the hour.
+
+A skeleton is matched against CLDR's `availableFormats`, and the locales
+generated here leave those out: they are the largest table CLDR has, and
+most programs never ask for them. A program that does fills
+`Locale.available_formats` in on a copy of a locale, sorted by skeleton,
+which is the order ICU reads them in.
+
+Two things ICU does are out of reach. A field no pattern of the locale's
+holds is appended the way CLDR says to only when that is a plain space —
+an era, a year, a weekday, a zone — because the other kinds are appended
+beside the field's localized name, which is not carried here. And `j`
+reads the locale's clock off its short time, where ICU consults a table of
+the hour cycles each region allows; the two disagree for one locale.
+
 There are two entry points because CLDR patterns arrive both ways.
 `format` takes the pattern at comptime, tokenizes it while the program is
 compiled, and refuses one that is not a pattern with a compile error;
@@ -628,12 +664,16 @@ ICU is the reference implementation of UTS #35, and `zig build
 oracle-cldr` diffs against it: every field at every count, the shapes
 callers write, the corners of the quoting, and then every embedded locale
 against the patterns a locale can differ about, at seven instants and
-three offsets each.
+three offsets each. Skeletons are checked the same way, with each locale's
+`availableFormats` read from the CLDR release the tables were generated
+from: fifty-six skeletons chosen for the matching rules, with and without
+`match_hour_field_length`, put to ICU's own `getBestPattern` and the dates
+written with each side's pattern compared.
 
 ```
-889650 comparisons against ICU 78.3
+1177266 comparisons against ICU 78.3
 124 locales CLDR ships and ICU 78.3 does not, unchecked
-105 known and documented
+185 known and documented
 no divergence beyond those
 ```
 
@@ -665,12 +705,18 @@ rather than a bug:
   oracle's corpus stops at the millisecond. The same choice, for the same
   reason, as the moment sequences make.
 
-- **Two locales are excused**, and the oracle counts them. Hawaiian
+- **Five locales are excused**, and the oracle counts them. Hawaiian
   writes the month of its short date in lowercase Roman numerals, which
   CLDR expresses by hanging a numbering system on one field of a pattern;
   a numbering system here is ten digits and `romanlow` is an algorithm.
   French as written in Mali has a joining pattern that CLDR's JSON and
-  ICU inherit differently, and they disagree about a comma.
+  ICU inherit differently, and they disagree about a comma. The other
+  three are skeletons: Kurdish in Latin script as written in Iraq, where
+  `j` is the one clock this library and ICU read differently; Toki Pona,
+  whose long date is longer than the fifty tokens ICU reads of a pattern;
+  and Australian English, where two patterns are equally near a long
+  month with a weekday and ICU breaks the tie by an order of inheritance
+  that CLDR's resolved data no longer holds.
 
 Beyond that, `z` and its neighbors take UTS #35's documented fallback:
 given no zone to name, the localized GMT format, so `z` is `GMT-5` and
@@ -900,7 +946,7 @@ run on every `-Format` name and `-UFormat` conversion, in four timezones.
 are compiled from C# inside the script so that they take seconds.
 
 ```
-50032 comparisons against PowerShell 7.6.5 on .NET 10.0.11, no divergence beyond 95 known and documented
+50032 comparisons against PowerShell 7.6.9 on .NET 10.0.14, no divergence beyond 95 known and documented
 ```
 
 .NET has two types a format string is applied to, and the library follows
@@ -1735,6 +1781,11 @@ The documents this library is written against.
   <https://unicode-org.github.io/icu/userguide/format_parse/datetime/>. The
   reference implementation of UTS #35, and what `zig build oracle-cldr`
   diffs against.
+- **[ICU-DTPG]** Unicode Consortium, `dtptngen.cpp`, ICU4C 78.3,
+  <https://github.com/unicode-org/icu/blob/release-78.3/icu4c/source/i18n/dtptngen.cpp>.
+  ICU's `DateTimePatternGenerator`, which `src/skeleton.zig` ports: the
+  table of the locale's patterns, the distance between a skeleton and a
+  pattern, and the rules for adjusting the widths of the one chosen.
 - **[MOMENT]** *Moment.js Documentation*, <https://momentjs.com/docs/>. The
   format-string sequences `DateTime.format` uses, the two parsing modes, and
   the locale data `-Dembed-locales` compiles in.
